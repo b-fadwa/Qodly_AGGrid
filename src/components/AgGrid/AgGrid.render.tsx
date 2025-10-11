@@ -19,12 +19,16 @@ import {
   IGetRowsParams,
   SortModelItem,
   StateUpdatedEvent,
+  ModuleRegistry,
+  ColumnHoverModule,
   themeQuartz,
 } from 'ag-grid-community';
 import isEqual from 'lodash/isEqual';
 import cloneDeep from 'lodash/cloneDeep';
 import CustomCell from './CustomCell';
 import { format } from 'date-fns';
+
+ModuleRegistry.registerModules([ColumnHoverModule]);
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -50,6 +54,7 @@ const AgGrid: FC<IAgGridProps> = ({
   rowVerticalPaddingScale,
   iconSize,
   enableCellFocus,
+  enableColumnHover,
   style,
   disabled = false,
   saveLocalStorage,
@@ -282,6 +287,7 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
+    if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
     if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
       const columnState = params.api.getColumnState();
       if (saveLocalStorage) {
@@ -516,6 +522,7 @@ const AgGrid: FC<IAgGridProps> = ({
           onCellKeyDown={onCellKeyDown}
           theme={theme}
           className={cn({ 'pointer-events-none opacity-40': disabled })}
+          columnHoverHighlight={enableColumnHover}
         />
       ) : (
         <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">

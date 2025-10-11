@@ -222,6 +222,12 @@ const generalSettings: TSetting[] = [
     placeholder: '.example',
   },
   {
+    key: 'enableColumnHover',
+    label: 'Enable Column Hover',
+    type: ESetting.CHECKBOX,
+    defaultValue: true,
+  },
+  {
     key: 'enableCellFocus',
     label: 'Enable Cell Focus',
     type: ESetting.CHECKBOX,
