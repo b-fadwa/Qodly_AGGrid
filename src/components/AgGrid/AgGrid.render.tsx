@@ -92,11 +92,11 @@ const AgGrid: FC<IAgGridProps> = ({
     return null;
   }, [ds?.id, (ds as any)?.entitysel]);
 
-  const { fetchIndex } = useDataLoader({
+  const { fetchIndex, fetchPage } = useDataLoader({
     source: ds,
   });
 
-  const { fetchIndex: fetchIndexClone } = useDataLoader({
+  const { fetchPage: fetchClone } = useDataLoader({
     source: searchDs,
   });
 
@@ -194,7 +194,8 @@ const AgGrid: FC<IAgGridProps> = ({
     setCount,
     fetchIndex,
     onDsChange: ({ length, selected }) => {
-      // TODO: fix scroll to selected row after refresh
+      // TODO: bug when scroll on changed ds
+      console.log('onDsChange called with selected:', selected, 'and length:', length);
       if (!gridRef.current) return;
       gridRef.current.api?.refreshInfiniteCache();
       if (selected >= 0) {
@@ -400,8 +401,9 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }, []);
 
-  const fetchData = useCallback(async (fetchIndex: any, params: IGetRowsParams) => {
-    const entities = await fetchIndex(params.startRow);
+  const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
+    const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
+
     const rowData = entities.map((data: any) => {
       const row: any = {};
       columns.forEach((col) => {
@@ -444,7 +446,9 @@ const AgGrid: FC<IAgGridProps> = ({
           index = (currentElement as any).getPos();
         }
         const rowNode = api.getRowNode(index.toString());
-        api.ensureIndexVisible(index, 'middle');
+        (ds as any)?.getSelection().getServerRef() !==
+          (searchDs as any).getSelection().getServerRef() &&
+          api.ensureIndexVisible(index, 'middle');
         rowNode?.setSelected(true);
       } catch (e) {
         // proceed
@@ -471,14 +475,14 @@ const AgGrid: FC<IAgGridProps> = ({
 
           await applySorting(rowParams, columns, searchDs);
 
-          const result = await fetchData(fetchIndexClone, rowParams);
+          const result = await fetchData(fetchClone, rowParams);
           entities = result.entities;
           rowData = result.rowData;
           length = searchDs.entitysel._private.selLength;
         } else {
           await applySorting(rowParams, columns, ds);
 
-          const result = await fetchData(fetchIndex, rowParams);
+          const result = await fetchData(fetchPage, rowParams);
           entities = result.entities;
           rowData = result.rowData;
           length = (ds as any).entitysel._private.selLength;
