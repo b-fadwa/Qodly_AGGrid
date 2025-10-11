@@ -222,6 +222,12 @@ const generalSettings: TSetting[] = [
     placeholder: '.example',
   },
   {
+    key: 'enableCellFocus',
+    label: 'Enable Cell Focus',
+    type: ESetting.CHECKBOX,
+    defaultValue: true,
+  },
+  {
     key: 'style.width',
     label: 'Width',
     type: ESetting.UNITFIELD,

@@ -49,6 +49,7 @@ const AgGrid: FC<IAgGridProps> = ({
   cellHorizontalPaddingScale,
   rowVerticalPaddingScale,
   iconSize,
+  enableCellFocus,
   style,
   disabled = false,
   saveLocalStorage,
@@ -175,7 +176,7 @@ const AgGrid: FC<IAgGridProps> = ({
     iconSize,
     foregroundColor: textColor,
     borderRadius: wrapperBorderRadius,
-    rangeSelectionBorderColor: 'transparent',
+    rangeSelectionBorderColor: !enableCellFocus ? 'transparent' : undefined,
   });
 
   const { updateCurrentDsValue } = useDsChangeHandler({

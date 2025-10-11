@@ -224,6 +224,7 @@ export default {
     headerTextColor: '',
     rowBorder: true,
     columnBorder: false,
+    enableCellFocus: true,
     headerColumnBorder: false,
     headerVerticalPaddingScale: 1,
     headerFontSize: '14px',
@@ -257,6 +258,7 @@ export interface IAgGridProps extends webforms.ComponentProps {
   cellHorizontalPaddingScale: number;
   rowVerticalPaddingScale: number;
   iconSize: string;
+  enableCellFocus?: boolean;
 }
 
 export interface IColumn {
