@@ -15,11 +15,13 @@ const CustomCell = ({ format, dataType, value }: { format: any; dataType: string
         </>
       );
     case dataType === 'number' && typeof value === 'boolean' && format === 'checkbox':
-      return <input type="checkbox" checked={value} disabled />;
+      return <input className="checkbox" type="checkbox" checked={value} disabled />;
     case dataType === 'number' && typeof value === 'boolean' && format === 'icon':
-      return value ? <MdCheck /> : <MdClose />;
+      return (
+        <div className="icon h-full flex items-center">{value ? <MdCheck /> : <MdClose />}</div>
+      );
     case dataType === 'number' && typeof value === 'number' && format === 'slider':
-      return <input type="range" value={value} disabled />;
+      return <input className="slider" type="range" value={value} disabled />;
     case dataType === 'bool' && typeof value === 'boolean' && format === 'boolean':
       return <div className="cell">{value.toString()}</div>;
     default:
