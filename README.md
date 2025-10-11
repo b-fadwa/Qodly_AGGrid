@@ -2,97 +2,173 @@
 
 ## Overview
 
-The Qodly AG Grid component is a powerful and flexible data grid for displaying and manipulating tabular data. It supports various features such as sorting, filtering, row selection, and more.
+The Qodly AG Grid component wraps AG Grid and integrates it with Qodly data sources for high‑performance, infinite scrolling data grids. It supports server-side sorting and filtering via the bound Qodly datasource, single row selection synchronized with a current element, rich cell rendering/formatting, and theme customization via AG Grid's theme Quartz parameters.
 
 ![dataGrid](public/original.png)
 
 ![dataGrid](public/table.png)
 
-## Features
+## Key Features
 
-- **Multi-Sorting**: Hold the 'Shift' key and click on column headers to sort by multiple columns.
-- **Filtering**: Supports text, number, and date filters.
-- **Row Selection**: Single row selection is enabled by default.
-- **Customizable**: Various settings to customize the appearance and behavior of the grid.
-- **State Saving**: You can save the grid state (column order, sort and size) in a Qodly source, for example, saving it in the database.
+- Infinite row model with paged fetching from a Qodly datasource
+- Server-side sorting and filtering driven by column settings
+- Single row selection (click to select), synchronized with a current element source
+- Multi-column sorting (hold Shift and click headers), sorting order cycles asc → desc
+- Text/Number/Date column filters with rich operators and multi-condition AND/OR
+- Custom cell renderer:
+  - Images (deferred URIs)
+  - Boolean as checkbox or icon (check/close)
+  - Slider for numeric values
+  - General formatting via @ws-ui/formatter and formatValue
+- Column state persistence (order, width, sort) to a Qodly source or localStorage
+- Theming/styling via AG Grid Quartz theme parameters and CSS
 
-## Save State
+## How it Works
 
-You can save the state of column visibility, Size and order using `Qodly Source` or `localStorage`:
-
-- **Column Visibility**: Toggle column visibility, and changes will be automatically saved.
-- **Column Size**: Change the Size of the column and make it suitable for your screen, the new sizes will be saved.
-- **Column Order**: Reorder columns by dragging and dropping them, and the new order will be saved.
+- Build mode (editor): Renders a mock grid using defined columns to help design and preview styles.
+- Render mode (runtime): Renders a live grid bound to a Qodly datasource with:
+  - Infinite scrolling row model
+  - Server-side sorting via `orderBy`
+  - Server-side filtering by translating AG Grid filter models into Qodly query strings
+  - Selection synchronized with an optional "Selected Element" source
 
 ## Data Access
 
-| Name                 | Type             | Required | Description                                                                                                      |
-| -------------------- | ---------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
-| Qodly Source         | Entity Selection | Yes      | Specifies the selection of entities to be displayed as data in the component                                     |
-| Selected Element     | Entity           | No       | Each item of the virtualizer is featured by this property once it's selected                                     |
-| State                | Array            | No       | Used to save the current states of the grid, such as selected rows, filters, or other contextual data            |
-| Save in LocalStorage | boolean          | No       | Used to save the current states of the grid, such as selected rows, filters, or other contextual data            |
-| Server Side          | string           | No       | When set to `true`, the component will store the grid state (e.g., column order, column sort) in `localStorage`. |
+Bind the following sources in the editor (Data Access group):
 
-## Properties
+| Name                  | Type                                 | Required | Description                                                                                       |
+| --------------------- | ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------- |
+| Qodly Source          | Entity Selection / Array-like Scalar | Yes      | The main data source the grid reads from. Must be iterable.                                       |
+| Selected Element      | Entity / Object Scalar               | No       | Current element bound to the selected row. The grid updates this when the user selects a row.     |
+| State Source          | Scalar (object/array)                | No       | Optional; when provided and local storage is disabled, the grid saves/restores column state here. |
+| Save In Local Storage | boolean                              | No       | If true, grid state is saved in `localStorage` instead of a Qodly source. Default: false.         |
 
-The Qodly AG Grid component provides various properties to customize its appearance and behavior. Here are some of the key settings:
+Notes:
 
-### General Settings
+- The settings also expose a "Server Side" text field. It is reserved for platform integrations and not used directly by this component’s code.
 
-- **Disabled**: Disable the grid.
-- **Class**: Add custom CSS classes.
-- **Width**: Set the width of the grid.
-- **Height**: Set the height of the grid.
-- **Spacing**: Set the spacing between grid elements.
-- **Accent Color**: Set the accent color.
-- **Background Color**: Set the background color.
-- **Text Color**: Set the text color.
-- **Font Size**: Set the font size.
+## Columns Configuration
 
-### Border Settings
+Configure columns in the "Columns" data grid setting:
 
-- **Border Color**: Set the border color.
-- **Border Radius**: Set the border radius.
-- **Row Border**: Enable or disable row borders.
-- **Column Border**: Enable or disable column borders.
+- Title (string): Column header label
+- Source (Qodly attribute): Attribute name to read from each entity
+- Format (string): Optional format used by @ws-ui/formatter / formatValue (e.g., for dates, numbers, styles)
+- Width (number): Initial width in pixels
+- Flex (number): Flex size; AG Grid uses width/flex for layout
+- Enable Sorting (boolean): Enable sorting (disabled for image/object types)
+- Enable Filtering (boolean): Enable filtering (supported for text/string, number/long, and date)
+- Locked Position (boolean): Lock column position
+- Enable Sizing (boolean): Allow column resizing by the user
 
-### Header Settings
+Data types and filtering:
 
-- **Header Background Color**: Set the header background color.
-- **Header Text Color**: Set the header text color.
-- **Header Vertical Padding Scale**: Set the vertical padding scale for headers.
-- **Header Column Border**: Enable or disable column borders in the header.
-- **Header Font Size**: Set the font size for headers.
-- **Header Font Weight**: Set the font weight for headers.
+- text/string → agTextColumnFilter with contains/equals/notEqual/startsWith/endsWith
+- number/long → agNumberColumnFilter with equals/notEqual/greater*/less*/inRange
+- date → agDateColumnFilter with equals/notEqual/greaterThan/lessThan/inRange
 
-### Cell Settings
+## Selection
 
-- **Odd Row Background Color**: Set the background color for odd rows.
-- **Cell Horizontal Padding Scale**: Set the horizontal padding scale for cells.
-- **Row Vertical Padding Scale**: Set the vertical padding scale for rows.
+- Row selection mode: single row
+- Clicking a row selects it and, if "Selected Element" is bound, updates the bound current element to the selected entity.
 
-### Icon Settings
+## Sorting
 
-- **Icon Size**: Set the size of icons.
+- Enable per column using "Enable Sorting"
+- Multi-sort by holding Shift and clicking additional headers
+- Sorting order: asc → desc
+
+## Filtering
+
+- Enable per column using "Enable Filtering"
+- Filters are translated into server-side Qodly queries
+- Multi-condition filters (AND/OR) are supported by the UI and translated to combined queries
+
+## Save/Restore Column State
+
+The grid persists column state (order, width, sort) when it changes:
+
+- If "Save In Local Storage" is true:
+  - Saves to `localStorage` under key `gridState_<componentId>`
+  - On load, applies state from localStorage if present
+- Else if "State Source" is bound:
+  - Saves the state array into the bound source
+  - On load, reads the array and applies it
+- State is emitted with the "On SaveState" event after it is updated
 
 ## Events
 
-The Qodly AG Grid component supports various events to handle user interactions:
+The component exposes the following events. Payloads (where applicable) are sent via `emit`:
 
-- **On Select**: Triggered when a row is selected.
-- **On Click**: Triggered when the grid is clicked.
-- **On HeaderClick**: Triggered when a column header is clicked.
-- **On CellClick**: Triggered when a cell is clicked.
-- **On SaveState**: Triggered when the grid state is saved.
+- On Row Click (`onrowclick`)
+- On Row Double Click (`onrowdblclick`)
+- On Header Click (`onheaderclick`)
+  - Payload: `{ column }`
+- On Cell Click (`oncellclick`)
+  - Payload: `{ column: string, value: any }`
+- On Cell Double Click (`oncelldblclick`)
+  - Payload: `{ column: string, value: any }`
+- On Cell Key Down (`oncellkeydown`)
+  - Payload: `{ column: string, value: any, key: string }`
+- On Cell Mouse Over (`oncellmouseover`)
+  - Payload: `{ column: string, value: any }`
+- On Cell Mouse Out (`oncellmouseout`)
+  - Payload: `{ column: string, value: any }`
+- On Cell Mouse Down (`oncellmousedown`)
+  - Payload: `{ column: string, value: any }`
+- On SaveState (`onsavestate`)
+  - Payload: `ColumnState[]` (AG Grid column state array)
+
+## Properties (Styling & Behavior)
+
+General
+
+- Disabled (boolean)
+- Class (CSS classes)
+- Width/Height (unit fields)
+- Spacing (unit)
+- Accent Color (color)
+- Background Color (color)
+- Text Color (color)
+- Font Size (unit)
+- Enable Column Hover (boolean)
+- Enable Cell Focus (boolean)
+
+Border
+
+- Border Color (color)
+- Border Radius (unit)
+- Row Border (boolean)
+- Column Border (boolean)
+
+Header
+
+- Header Background Color (color)
+- Header Text Color (color)
+- Header Vertical Padding Scale (number)
+- Header Column Border (boolean)
+- Header Font Size (unit)
+- Header Font Weight (400–900)
+
+Cell
+
+- Odd Row Background Color (color)
+- Cell Horizontal Padding Scale (number)
+- Row Vertical Padding Scale (number)
+
+Icon
+
+- Icon Size (unit)
+
+These properties feed into AG Grid’s Quartz theme via `themeQuartz.withParams`.
 
 ## Styling
 
-If you are familiar with CSS, you can easily style your component using AG Grid's default CSS selectors. AG Grid provides a variety of classes that you can target to customize the appearance of the grid, headers, rows, cells, pagination, and more.
+If you are familiar with CSS, you can style your component using AG Grid’s CSS selectors. You can also leverage the theme parameters listed above.
 
 For more details: https://www.ag-grid.com/javascript-data-grid/theming-css/
 
-For example:
+Example CSS:
 
 ```CSS
 /* Change the grid background */
@@ -143,7 +219,6 @@ self .ag-row:nth-child(even) {
 self .ag-row:nth-child(odd) {
     background-color: #ffffff;
 }
-
 
 /* Increase padding inside cells */
 self .ag-cell {
@@ -220,7 +295,7 @@ self .ag-header-cell-text {
 }
 ```
 
-Or you can change the CSS variables :
+Or customize CSS variables:
 
 ```CSS
 self {
@@ -234,6 +309,21 @@ self {
     --ag-text-color: white;
 }
 ```
+
+## Usage Checklist
+
+1. Drag and drop the AgGrid component into your page.
+2. Bind "Qodly Source" to an iterable selection or array-like scalar.
+3. Optionally bind "Selected Element" to sync the current entity with row selection.
+4. Define columns: set Title, Source, and settings (sorting, filtering, width/flex, etc.).
+5. Optionally set "State Source", or toggle "Save In Local Storage" for column state persistence.
+6. Adjust styling via General/Border/Header/Cell/Icon settings or CSS.
+
+## Notes and Limitations
+
+- Sorting is disabled for `image` and `object` data types by design.
+- Filtering is supported for `text/string`, `number/long`, and `date` data types.
+- Column state persistence covers order, width, and sort. Visibility state depends on whether you provide controls to toggle it.
 
 ## License
 
