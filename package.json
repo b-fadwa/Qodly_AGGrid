@@ -21,7 +21,7 @@
     "@ws-ui/craftjs-layers": "^0.2.4",
     "@ws-ui/craftjs-utils": "^0.2.3",
     "@ws-ui/webform-editor": "^1.6.0",
-    "ag-grid-react": "^33.0.3",
+    "ag-grid-react": "^34.2.0",
     "react": "^17.0.2",
     "react-dom": "^17.0.2"
   },

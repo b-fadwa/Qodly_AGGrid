@@ -57,7 +57,18 @@ const AgGrid: FC<IAgGridProps> = ({
 }) => {
   const { connect, emit } = useRenderer({
     autoBindEvents: !disabled,
-    omittedEvents: ['onselect', 'onclick', 'onheaderclick', 'oncellclick', 'onsavestate'],
+    omittedEvents: [
+      'onrowclick',
+      'onrowdblclick',
+      'onheaderclick',
+      'oncellclick',
+      'oncelldblclick',
+      'oncellkeydown',
+      'oncellmouseover',
+      'oncellmouseout',
+      'oncellmousedown',
+      'onsavestate',
+    ],
   });
   const {
     sources: { datasource: ds, currentElement },
@@ -87,7 +98,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const stateDS = window.DataSource.getSource(state, path);
 
   const [selected, setSelected] = useState(-1);
-  const [_scrollIndex, setScrollIndex] = useState(0);
+  const [scrollIndex, setScrollIndex] = useState(0);
   const [_count, setCount] = useState(0);
   const colDefs: ColDef[] = useMemo(
     () =>
@@ -172,10 +183,12 @@ const AgGrid: FC<IAgGridProps> = ({
     currentDs: currentElement,
     selected,
     setSelected,
+    scrollIndex: scrollIndex,
     setScrollIndex,
     setCount,
     fetchIndex,
-    onDsChange: (length, selected) => {
+    onDsChange: ({ length, selected }) => {
+      // TODO: fix scroll to selected row after refresh
       if (!gridRef.current) return;
       gridRef.current.api?.refreshInfiniteCache();
       if (selected >= 0) {
@@ -190,7 +203,6 @@ const AgGrid: FC<IAgGridProps> = ({
       const rowNode = gridRef.current.api?.getRowNode(selected.toString());
       gridRef.current.api?.ensureIndexVisible(selected);
       rowNode?.setSelected(true);
-
       entitySubject.next({
         action: EntityActions.UPDATE,
         payload: {
@@ -201,15 +213,23 @@ const AgGrid: FC<IAgGridProps> = ({
     },
   });
 
-  const selectRow = useCallback(async (event: any) => {
+  const onRowClicked = useCallback(async (event: any) => {
     if (!ds) return;
     await updateCurrentDsValue({
       index: event.rowIndex,
     });
-    emit('onselect');
+    emit('onrowclick');
   }, []);
 
-  const selectCell = useCallback((event: any) => {
+  const onRowDoubleClicked = useCallback(async (event: any) => {
+    if (!ds) return;
+    await updateCurrentDsValue({
+      index: event.rowIndex,
+    });
+    emit('onrowdblclick');
+  }, []);
+
+  const onCellClicked = useCallback((event: any) => {
     if (!ds) return;
     emit('oncellclick', {
       column: event.column.getColId(),
@@ -217,13 +237,50 @@ const AgGrid: FC<IAgGridProps> = ({
     });
   }, []);
 
-  const selectHeader = useCallback((event: any) => {
+  const onCellDoubleClicked = useCallback((event: any) => {
+    if (!ds) return;
+    emit('oncelldblclick', {
+      column: event.column.getColId(),
+      value: event.value,
+    });
+  }, []);
+
+  const onHeaderClicked = useCallback((event: any) => {
     emit('onheaderclick', {
       column: event.column,
     });
   }, []);
 
-  const stateUpdated = useCallback((params: StateUpdatedEvent) => {
+  const onCellMouseOver = useCallback((event: any) => {
+    emit('oncellmouseover', {
+      column: event.column.getColId(),
+      value: event.value,
+    });
+  }, []);
+
+  const onCellMouseOut = useCallback((event: any) => {
+    emit('oncellmouseout', {
+      column: event.column.getColId(),
+      value: event.value,
+    });
+  }, []);
+
+  const onCellMouseDown = useCallback((event: any) => {
+    emit('oncellmousedown', {
+      column: event.column.getColId(),
+      value: event.value,
+    });
+  }, []);
+
+  const onCellKeyDown = useCallback((event: any) => {
+    emit('oncellkeydown', {
+      column: event.column.getColId(),
+      value: event.value,
+      key: event.event.key,
+    });
+  }, []);
+
+  const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
     if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
       const columnState = params.api.getColumnState();
       if (saveLocalStorage) {
@@ -438,7 +495,8 @@ const AgGrid: FC<IAgGridProps> = ({
           ref={gridRef}
           columnDefs={colDefs}
           defaultColDef={defaultColDef}
-          onRowClicked={selectRow}
+          onRowClicked={onRowClicked}
+          onRowDoubleClicked={onRowDoubleClicked}
           onGridReady={onGridReady}
           rowModelType="infinite"
           rowSelection={{ mode: 'singleRow', enableClickSelection: true, checkboxes: false }}
@@ -447,9 +505,14 @@ const AgGrid: FC<IAgGridProps> = ({
           cacheOverflowSize={2}
           maxConcurrentDatasourceRequests={1}
           rowBuffer={0}
-          onStateUpdated={stateUpdated}
-          onCellClicked={selectCell}
-          onColumnHeaderClicked={selectHeader}
+          onStateUpdated={onStateUpdated}
+          onCellClicked={onCellClicked}
+          onCellDoubleClicked={onCellDoubleClicked}
+          onColumnHeaderClicked={onHeaderClicked}
+          onCellMouseDown={onCellMouseDown}
+          onCellMouseOut={onCellMouseOut}
+          onCellMouseOver={onCellMouseOver}
+          onCellKeyDown={onCellKeyDown}
           theme={theme}
           className={cn({ 'pointer-events-none opacity-40': disabled })}
         />

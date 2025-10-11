@@ -60,20 +60,40 @@ export default {
     icon: MdOutlineGridOn,
     events: [
       {
-        label: 'On Select',
-        value: 'onselect',
+        label: 'On Row Click',
+        value: 'onrowclick',
       },
       {
-        label: 'On Click',
-        value: 'onclick',
+        label: 'On Row Double Click',
+        value: 'onrowdblclick',
       },
       {
-        label: 'On HeaderClick',
+        label: 'On Header Click',
         value: 'onheaderclick',
       },
       {
-        label: 'On CellClick',
+        label: 'On Cell Click',
         value: 'oncellclick',
+      },
+      {
+        label: 'On Cell Double Click',
+        value: 'oncelldblclick',
+      },
+      {
+        label: 'On Cell Key Down',
+        value: 'oncellkeydown',
+      },
+      {
+        label: 'On Cell Mouse Over',
+        value: 'oncellmouseover',
+      },
+      {
+        label: 'On Cell Mouse Out',
+        value: 'oncellmouseout',
+      },
+      {
+        label: 'On Cell Mouse Down',
+        value: 'oncellmousedown',
       },
       {
         label: 'On SaveState',
