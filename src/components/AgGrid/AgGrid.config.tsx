@@ -282,3 +282,9 @@ export interface IColumn {
   dataType: string;
   flex: number;
 }
+
+export interface ColumnState {
+  field: string;
+  isHidden: boolean;
+  pinned: any;
+}

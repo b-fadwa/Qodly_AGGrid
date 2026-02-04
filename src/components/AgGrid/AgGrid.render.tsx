@@ -11,7 +11,7 @@ import {
 import cn from 'classnames';
 import { FC, useCallback, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { IAgGridProps } from './AgGrid.config';
+import { ColumnState, IAgGridProps } from './AgGrid.config';
 import {
   ColDef,
   GridApi,
@@ -111,19 +111,21 @@ const AgGrid: FC<IAgGridProps> = ({
   const [_count, setCount] = useState(0);
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   // column visibility state
-  const [columnVisibility, setColumnVisibility] = useState(
+  const [columnVisibility, setColumnVisibility] = useState<ColumnState[]>(
     columns.map(col => ({
       field: col.title,
       isHidden: col.hidden,
+      pinned: null
     }))
   );
 
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map(col => {
-      const visibility = columnVisibility.find(c => c.field === col.title)?.isHidden ?? false;
+      const colState = columnVisibility.find(c => c.field === col.title) || { isHidden: false, pinned: null };
       return {
         field: col.title,
-        hide: visibility,
+        hide: colState.isHidden,
+        pinned: colState.pinned,
         cellRendererParams: {
           format: col.format,
           dataType: col.dataType,
@@ -526,6 +528,19 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
+  const handlePinChange = (colField: string, value: string) => {
+    setColumnVisibility(prev =>
+      prev.map(col => {
+        if (col.field !== colField) return col;
+        //  pinnedValue : 'left' | 'right' | null
+        const pinnedValue = value === 'unpinned' ? null : (value as 'left' | 'right');
+        return {
+          ...col,
+          pinned: pinnedValue,
+        };
+      })
+    );
+  };
 
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
@@ -573,7 +588,8 @@ const AgGrid: FC<IAgGridProps> = ({
                   <div key={idx} className="w-full bg-white rounded-md shadow-sm flex items-center gap-2 px-4 py-2 mb-2 text-gray-800">
                     <input type="checkbox" checked={!column.isHidden} onChange={() => handleColumnToggle(column.field)} />
                     <span >{column?.field}</span>
-                    <select name="pinningPositions" id="pinningPositions" className="ml-auto border border-gray-300 rounded-md p-1">
+                    <select name="pinningPositions" id="pinningPositions" className="ml-auto border border-gray-300 rounded-md p-1" onChange={(e) => handlePinChange(column.field, e.target.value)}
+                    >
                       <option value="unpinned">Unpinned</option>
                       <option value="left">Left</option>
                       <option value="right">Right</option>
