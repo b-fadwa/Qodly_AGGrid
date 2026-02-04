@@ -1,5 +1,5 @@
 import { PluginOption, defineConfig, loadEnv } from 'vite';
-import react from '@vitejs/plugin-react-swc';
+import react from '@vitejs/plugin-react';
 import importMetaUrlPlugin from '@ws-ui/vite-plugins/dist/esbuild-plugin-import-meta-url';
 import monacoEditorPlugin from '@ws-ui/vite-plugins/dist/vite-plugin-monaco-editor';
 import standaloneEditorPlugin from '@ws-ui/vite-plugins/dist/standalone-editor-plugin';

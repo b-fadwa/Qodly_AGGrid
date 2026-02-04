@@ -177,23 +177,24 @@ export default {
                     sorting: false,
                     filtering: false,
                     locked: false,
+                    hidden: false,
                     sizing: true,
                     id: generate(),
                     ...(item.attribute.type === 'image'
                       ? {
-                          dataType: item.attribute.type,
-                        }
+                        dataType: item.attribute.type,
+                      }
                       : item.attribute.type === 'bool'
                         ? {
-                            dataType: item.attribute.type,
-                            format: 'boolean',
-                          }
+                          dataType: item.attribute.type,
+                          format: 'boolean',
+                        }
                         : ['blob', 'object'].includes(item.attribute.type)
                           ? {}
                           : {
-                              format: '',
-                              dataType: item.attribute.type,
-                            }),
+                            format: '',
+                            dataType: item.attribute.type,
+                          }),
                   } as any,
                 ];
             }
@@ -208,6 +209,8 @@ export default {
   defaultProps: {
     columns: [],
     state: '',
+    currentSelection: '',
+    multiSelection: false,
     saveLocalStorage: false,
     style: {
       height: '300px',
@@ -239,6 +242,8 @@ export default {
 export interface IAgGridProps extends webforms.ComponentProps {
   columns: IColumn[];
   state?: string;
+  currentSelection?: string;
+  multiSelection: boolean;
   saveLocalStorage: boolean;
   spacing: string;
   accentColor: string;
@@ -269,6 +274,7 @@ export interface IColumn {
   sorting: boolean;
   filtering: boolean;
   locked: boolean;
+  hidden: boolean;
   sizing: boolean;
   width: number;
   format: string;

@@ -34,6 +34,7 @@ const AgGrid: FC<IAgGridProps> = ({
   datasource,
   columns,
   state = '',
+  currentSelection = '',
   spacing,
   accentColor,
   backgroundColor,
@@ -55,6 +56,7 @@ const AgGrid: FC<IAgGridProps> = ({
   iconSize,
   enableCellFocus,
   enableColumnHover,
+  multiSelection,
   style,
   disabled = false,
   saveLocalStorage,
@@ -102,14 +104,26 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const path = useWebformPath();
   const stateDS = window.DataSource.getSource(state, path);
+  const currentSelectionDS = window.DataSource.getSource(currentSelection, path);
 
   const [selected, setSelected] = useState(-1);
   const [scrollIndex, setScrollIndex] = useState(0);
   const [_count, setCount] = useState(0);
-  const colDefs: ColDef[] = useMemo(
-    () =>
-      columns.map((col) => ({
+  const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
+  // column visibility state
+  const [columnVisibility, setColumnVisibility] = useState(
+    columns.map(col => ({
+      field: col.title,
+      isHidden: col.hidden,
+    }))
+  );
+
+  const colDefs: ColDef[] = useMemo(() => {
+    return columns.map(col => {
+      const visibility = columnVisibility.find(c => c.field === col.title)?.isHidden ?? false;
+      return {
         field: col.title,
+        hide: visibility,
         cellRendererParams: {
           format: col.format,
           dataType: col.dataType,
@@ -134,22 +148,23 @@ const AgGrid: FC<IAgGridProps> = ({
               ? ['contains', 'equals', 'notEqual', 'startsWith', 'endsWith']
               : col.dataType === 'long' || col.dataType === 'number'
                 ? [
-                    'equals',
-                    'notEqual',
-                    'greaterThan',
-                    'greaterThanOrEqual',
-                    'lessThan',
-                    'lessThanOrEqual',
-                    'inRange',
-                  ]
+                  'equals',
+                  'notEqual',
+                  'greaterThan',
+                  'greaterThanOrEqual',
+                  'lessThan',
+                  'lessThanOrEqual',
+                  'inRange',
+                ]
                 : col.dataType === 'date'
                   ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
                   : [],
           defaultOption: 'equals',
         },
-      })),
-    [],
-  );
+      };
+    });
+  }, [columns, columnVisibility]);
+
 
   const defaultColDef = useMemo<ColDef>(() => {
     return {
@@ -194,8 +209,6 @@ const AgGrid: FC<IAgGridProps> = ({
     setCount,
     fetchIndex,
     onDsChange: ({ length, selected }) => {
-      // TODO: bug when scroll on changed ds
-      console.log('onDsChange called with selected:', selected, 'and length:', length);
       if (!gridRef.current) return;
       gridRef.current.api?.refreshInfiniteCache();
       if (selected >= 0) {
@@ -221,7 +234,7 @@ const AgGrid: FC<IAgGridProps> = ({
   });
 
   const onRowClicked = useCallback(async (event: any) => {
-    if (!ds) return;
+    if (!ds || multiSelection) return;
     await updateCurrentDsValue({
       index: event.rowIndex,
     });
@@ -229,7 +242,7 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onRowDoubleClicked = useCallback(async (event: any) => {
-    if (!ds) return;
+    if (!ds || multiSelection) return;
     await updateCurrentDsValue({
       index: event.rowIndex,
     });
@@ -285,6 +298,14 @@ const AgGrid: FC<IAgGridProps> = ({
       value: event.value,
       key: event.event.key,
     });
+  }, []);
+
+  const onSelectionChanged = useCallback(async (event: any) => {
+    if (currentElement || !multiSelection) return; // handled by onRowClicked
+    if (!currentSelectionDS) return;
+
+    const selectedRows = event.api.getSelectedRows();
+    await currentSelectionDS.setValue(null, selectedRows);
   }, []);
 
   const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
@@ -403,7 +424,6 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
     const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
-
     const rowData = entities.map((data: any) => {
       const row: any = {};
       columns.forEach((col) => {
@@ -416,6 +436,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const getSelectedRow = useCallback(async (api: GridApi) => {
     // select current element
+    if (multiSelection) return;
     if (currentElement && selected === -1) {
       try {
         let index = -1;
@@ -499,41 +520,109 @@ const AgGrid: FC<IAgGridProps> = ({
     getState(params);
   }, []);
 
+  const handleColumnToggle = (colField: string) => {
+    setColumnVisibility(prev =>
+      prev.map(c => c.field === colField ? { ...c, isHidden: !c.isHidden } : c)
+    );
+  };
+
+
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
-      {datasource ? (
-        <AgGridReact
-          ref={gridRef}
-          columnDefs={colDefs}
-          defaultColDef={defaultColDef}
-          onRowClicked={onRowClicked}
-          onRowDoubleClicked={onRowDoubleClicked}
-          onGridReady={onGridReady}
-          rowModelType="infinite"
-          rowSelection={{ mode: 'singleRow', enableClickSelection: true, checkboxes: false }}
-          cacheBlockSize={100}
-          maxBlocksInCache={10}
-          cacheOverflowSize={2}
-          maxConcurrentDatasourceRequests={1}
-          rowBuffer={0}
-          onStateUpdated={onStateUpdated}
-          onCellClicked={onCellClicked}
-          onCellDoubleClicked={onCellDoubleClicked}
-          onColumnHeaderClicked={onHeaderClicked}
-          onCellMouseDown={onCellMouseDown}
-          onCellMouseOut={onCellMouseOut}
-          onCellMouseOver={onCellMouseOver}
-          onCellKeyDown={onCellKeyDown}
-          theme={theme}
-          className={cn({ 'pointer-events-none opacity-40': disabled })}
-          columnHoverHighlight={enableColumnHover}
-        />
-      ) : (
-        <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
-          <p>Error</p>
+      <div className="flex flex-col gap-2 h-full">
+        {/* AGGrid header actions */}
+        <div className="flex justify-end cursor-pointer">
+          {/* columns customizer button */}
+          <button
+            className="inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+            onClick={() => setShowPropertiesDialog(true)}
+          >
+            Customize columns
+          </button>
         </div>
-      )}
-    </div>
+        {/* columns customizer dialog */}
+        {showPropertiesDialog && (
+          <div
+            className="customizer-dialog fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-[1000]"
+            onClick={() => setShowPropertiesDialog(false)}
+          >
+            <div
+              className="bg-white rounded-lg overflow-y-auto shadow-[0_2px_16px_rgba(0,0,0,0.2)]"
+              style={{
+                maxHeight: '80vh',
+                minWidth: '50%'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-4 bg-gray-100 p-4 bottom-px">
+                <div className='flex flex-col'>
+                  <h1 className="text-lg font-bold">COLUMN STATE</h1>
+                  <span>Show or hide columns for this grid view</span>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-md border border-gray-300 bg-gray-300 text-gray-700 p-2"
+                  onClick={() => setShowPropertiesDialog(false)}           >
+                  Close
+                </button>
+              </div>
+              {columns.length === 0 ? (
+                <li>No properties found.</li>
+              ) : (
+                columnVisibility.map((column, idx) => (
+                  <div key={idx} className="w-full bg-white rounded-md shadow-sm flex items-center gap-2 px-4 py-2 mb-2 text-gray-800">
+                    <input type="checkbox" checked={!column.isHidden} onChange={() => handleColumnToggle(column.field)} />
+                    <span >{column?.field}</span>
+                    <select name="pinningPositions" id="pinningPositions" className="ml-auto border border-gray-300 rounded-md p-1">
+                      <option value="unpinned">Unpinned</option>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+        {datasource ? (
+          <AgGridReact
+            ref={gridRef}
+            columnDefs={colDefs}
+            defaultColDef={defaultColDef}
+            onRowClicked={onRowClicked}
+            onSelectionChanged={onSelectionChanged}
+            onRowDoubleClicked={onRowDoubleClicked}
+            onGridReady={onGridReady}
+            rowModelType="infinite"
+            rowSelection={{
+              mode: multiSelection ? 'multiRow' : 'singleRow',
+              enableClickSelection: !multiSelection,
+              checkboxes: multiSelection,
+            }}
+            cacheBlockSize={100}
+            maxBlocksInCache={10}
+            cacheOverflowSize={2}
+            maxConcurrentDatasourceRequests={1}
+            rowBuffer={0}
+            onStateUpdated={onStateUpdated}
+            onCellClicked={onCellClicked}
+            onCellDoubleClicked={onCellDoubleClicked}
+            onColumnHeaderClicked={onHeaderClicked}
+            onCellMouseDown={onCellMouseDown}
+            onCellMouseOut={onCellMouseOut}
+            onCellMouseOver={onCellMouseOver}
+            onCellKeyDown={onCellKeyDown}
+            theme={theme}
+            className={cn({ 'pointer-events-none opacity-40': disabled })}
+            columnHoverHighlight={enableColumnHover}
+          />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
+            <p>Error</p>
+          </div>
+        )}
+      </div>
+    </div >
   );
 };
 
