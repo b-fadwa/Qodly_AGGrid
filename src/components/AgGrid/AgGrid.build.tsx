@@ -109,6 +109,27 @@ const AgGrid: FC<IAgGridProps> = ({
               </button>
             </div>
           </div>
+          {/* new view section */}
+          <div className="flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="font-semibold">Save view:</span>
+            <div className="flex gap-2">
+              <input type="text" placeholder="View name" className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" />
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800'>Save new</button>
+            </div>
+          </div>
+          {/* saved views section */}
+          <div className="flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="font-semibold">Saved views:</span>
+            <div className="flex gap-2">
+              <select className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" >
+                <option value="">Select view</option>
+              </select>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >Load</button>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >Overwrite</button>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >Delete</button>
+
+            </div>
+          </div>
         </div>
         {datasource ? (
           columns.length > 0 ? (

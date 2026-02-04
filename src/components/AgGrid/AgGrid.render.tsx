@@ -9,7 +9,7 @@ import {
   useWebformPath,
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
-import { FC, useCallback, useMemo, useRef, useState } from 'react';
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { IAgGridProps } from './AgGrid.config';
 import {
@@ -115,6 +115,19 @@ const AgGrid: FC<IAgGridProps> = ({
   const [scrollIndex, setScrollIndex] = useState(0);
   const [_count, setCount] = useState(0);
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
+  // views management
+  const [viewName, setViewName] = useState<string>('');
+  // view = name + columnVisibility
+  const [savedViews, setSavedViews] = useState<{ name: string, selectedProperties: string[] }[]>([]);
+  const [selectedView, setSelectedView] = useState<string>('');
+
+  // Load saved views from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem(`savedViews_${nodeID}`);
+    if (stored) {
+      setSavedViews(JSON.parse(stored));
+    }
+  }, [nodeID]);
 
   //very initial state of columns
   const initialColumnVisibility = useMemo(
@@ -579,6 +592,39 @@ const AgGrid: FC<IAgGridProps> = ({
     emit('onprintstate');
   }
 
+  // views actions
+  const saveNewView = () => {
+    if (!viewName.trim()) return;
+    const newView = { name: viewName, columnVisibility: [...columnVisibility] };
+    const updatedViews: any = [...savedViews, newView];
+    setSavedViews(updatedViews);
+    localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    setViewName('');
+  }
+
+  const loadView = () => {
+    const view: any = savedViews.find(view => view.name === selectedView);
+    if (!view) return;
+    setColumnVisibility(view.columnVisibility);
+  };
+
+  const deleteView = () => {
+    const updatedViews = savedViews.filter(view => view.name !== selectedView);
+    setSavedViews(updatedViews);
+    localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+  }
+
+  const updateView = () => {
+    const updatedViews = savedViews.map(view => {
+      if (view.name === selectedView) {
+        return { ...view, columnVisibility: [...columnVisibility] };
+      }
+      return view;
+    });
+    setSavedViews(updatedViews);
+    localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+  }
+
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
       <div className="flex flex-col gap-2 h-full">
@@ -611,6 +657,30 @@ const AgGrid: FC<IAgGridProps> = ({
               >
                 Reset default view
               </button>
+            </div>
+          </div>
+          {/* new view section */}
+          <div className="flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="font-semibold">Save view:</span>
+            <div className="flex gap-2">
+              <input type="text" placeholder="View name" className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={saveNewView}>Save new</button>
+            </div>
+          </div>
+          {/* saved views section */}
+          <div className="flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="font-semibold">Saved views:</span>
+            <div className="flex gap-2">
+              <select className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" onChange={(e: any) => { setSelectedView(e.target.value) }}>
+                <option value="">Select view</option>
+                {savedViews.map((view, _) => (
+                  <option value={view.name}>{view.name}</option>
+                ))}
+              </select>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={loadView}>Load</button>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={updateView}>Overwrite</button>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={deleteView}>Delete</button>
+
             </div>
           </div>
         </div>
