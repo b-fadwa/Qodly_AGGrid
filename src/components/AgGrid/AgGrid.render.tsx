@@ -11,7 +11,7 @@ import {
 import cn from 'classnames';
 import { FC, useCallback, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { ColumnState, IAgGridProps } from './AgGrid.config';
+import { IAgGridProps } from './AgGrid.config';
 import {
   ColDef,
   GridApi,
@@ -76,6 +76,11 @@ const AgGrid: FC<IAgGridProps> = ({
       'oncellmouseout',
       'oncellmousedown',
       'onsavestate',
+      'onnewstate',
+      'onallstate',
+      'onminusstate',
+      'onreducestate',
+      'onprintstate',
     ],
   });
   const {
@@ -110,14 +115,19 @@ const AgGrid: FC<IAgGridProps> = ({
   const [scrollIndex, setScrollIndex] = useState(0);
   const [_count, setCount] = useState(0);
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
-  // column visibility state
-  const [columnVisibility, setColumnVisibility] = useState<ColumnState[]>(
-    columns.map(col => ({
-      field: col.title,
-      isHidden: col.hidden,
-      pinned: null
-    }))
+
+  //very initial state of columns
+  const initialColumnVisibility = useMemo(
+    () =>
+      columns.map(col => ({
+        field: col.title,
+        isHidden: false,
+        pinned: null as 'left' | 'right' | null,
+      })),
+    [columns]
   );
+
+  const [columnVisibility, setColumnVisibility] = useState<any[]>(initialColumnVisibility);
 
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map(col => {
@@ -528,6 +538,11 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
+  const resetColumnview = () => {
+    setColumnVisibility(initialColumnVisibility);
+    (gridRef.current as any)?.columnApi.resetColumnState();
+  }
+
   const handlePinChange = (colField: string, value: string) => {
     setColumnVisibility(prev =>
       prev.map(col => {
@@ -542,18 +557,62 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
+  // action buttons handlers
+  const onNewClick = () => {
+    emit('onnewstate');
+
+  }
+
+  const onAllClick = () => {
+    emit('onallstate');
+  }
+
+  const onMinusClick = () => {
+    emit('onminusstate');
+  }
+
+  const onReduceClick = () => {
+    emit('onreducestate');
+  }
+
+  const onPrintClick = () => {
+    emit('onprintstate');
+  }
+
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
       <div className="flex flex-col gap-2 h-full">
         {/* AGGrid header actions */}
-        <div className="flex justify-end cursor-pointer">
+        <div className="flex gap-2 items-center cursor-pointer flex-wrap">
+          {/* actions section */}
+          <div className=" flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="font-semibold">Actions:</span>
+            <div className="flex gap-2">
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onNewClick}>New</button>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onAllClick}>All</button>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onMinusClick}>Minus</button>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onReduceClick}>Reduce</button>
+              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onPrintClick}>Print</button>
+            </div>
+          </div>
           {/* columns customizer button */}
-          <button
-            className="inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
-            onClick={() => setShowPropertiesDialog(true)}
-          >
-            Customize columns
-          </button>
+          <div className="flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="font-semibold">View:</span>
+            <div className="flex gap-2">
+              <button
+                className="inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                onClick={() => setShowPropertiesDialog(true)}
+              >
+                Customize columns
+              </button>
+              <button
+                className="inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                onClick={resetColumnview}
+              >
+                Reset default view
+              </button>
+            </div>
+          </div>
         </div>
         {/* columns customizer dialog */}
         {showPropertiesDialog && (
