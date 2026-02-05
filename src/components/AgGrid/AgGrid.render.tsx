@@ -659,6 +659,7 @@ const AgGrid: FC<IAgGridProps> = ({
         stateDS.setValue(null, gridData);
       })
     }
+    resetColumnview()
   }
 
   const updateView = () => {
