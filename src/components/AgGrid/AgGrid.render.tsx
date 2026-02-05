@@ -642,6 +642,12 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!view) return;
     if (view.columnState && gridRef.current?.api) {
       gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
+      const updatedVisibility = view.columnState.map((col: any) => ({
+        field: col.colId,
+        isHidden: col.hide || false,
+        pinned: col.pinned || null,
+      }));
+      setColumnVisibility(updatedVisibility);
     }
   };
 
@@ -779,7 +785,12 @@ const AgGrid: FC<IAgGridProps> = ({
                   <div key={idx} className="w-full bg-white rounded-md shadow-sm flex items-center gap-2 px-4 py-2 mb-2 text-gray-800">
                     <input type="checkbox" checked={!column.isHidden} onChange={() => handleColumnToggle(column.field)} />
                     <span >{column?.field}</span>
-                    <select name="pinningPositions" id="pinningPositions" className="ml-auto border border-gray-300 rounded-md p-1" onChange={(e) => handlePinChange(column.field, e.target.value)}
+                    <select
+                      value={column.pinned || 'unpinned'}
+                      name="pinningPositions"
+                      id="pinningPositions"
+                      className="ml-auto border border-gray-300 rounded-md p-1"
+                      onChange={(e) => handlePinChange(column.field, e.target.value)}
                     >
                       <option value="unpinned">Unpinned</option>
                       <option value="left">Left</option>
