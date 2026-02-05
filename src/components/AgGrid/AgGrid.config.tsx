@@ -233,7 +233,7 @@ export default {
     multiSelection: false,
     saveLocalStorage: false,
     style: {
-      height: '300px',
+      height: '600px',
     },
     spacing: '8px',
     accentColor: '#2196F3',

@@ -143,7 +143,7 @@ const AgGrid: FC<IAgGridProps> = ({
     () =>
       columns.map(col => ({
         field: col.title,
-        isHidden: false,
+        isHidden: col.hidden || false, // use col.hidden directly from properties
         pinned: null as 'left' | 'right' | null,
       })),
     [columns]
@@ -347,19 +347,21 @@ const AgGrid: FC<IAgGridProps> = ({
     if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
     if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
       const columnState = params.api.getColumnState();
+      const filterModel = params.api.getFilterModel();
       if (saveLocalStorage) {
-        localStorage.setItem(`gridState_${nodeID}`, JSON.stringify(columnState));
+        localStorage.setItem(`gridState_${nodeID}`, JSON.stringify({ columnState, filterModel }));
       } else if (stateDS) {
         // Save combined data to stateDS
         stateDS.getValue().then((currentData: any) => {
           const gridData = {
             ...currentData,
-            columnState
+            columnState,
+            filterModel
           };
           stateDS.setValue(null, gridData);
         })
       }
-      emit('onsavestate', columnState);
+      emit('onsavestate', { columnState, filterModel });
     }
   }, []);
 
@@ -373,6 +375,9 @@ const AgGrid: FC<IAgGridProps> = ({
       const dsValue = await stateDS?.getValue();
       if (dsValue && dsValue.columnState) {
         params.api.applyColumnState({ state: dsValue.columnState, applyOrder: true });
+        if (dsValue.filterModel) {
+          params.api.setFilterModel(dsValue.filterModel);
+        }
       }
     }
   }, []);
@@ -577,6 +582,8 @@ const AgGrid: FC<IAgGridProps> = ({
     setSelectedView('');
     if (initialColumnState && gridRef.current?.api) {
       gridRef.current.api.applyColumnState({ state: initialColumnState, applyOrder: true });
+      // Clear all filters
+      gridRef.current.api.setFilterModel(null);
     }
   }
 
@@ -620,7 +627,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const saveNewView = () => {
     if (!viewName.trim()) return;
     const columnState = gridRef.current?.api?.getColumnState();
-    const newView = { name: viewName, columnState };
+    const filterModel = gridRef.current?.api?.getFilterModel();
+    const newView = { name: viewName, columnState, filterModel };
     const updatedViews: any = [...savedViews, newView];
     setSavedViews(updatedViews);
     if (saveLocalStorage) {
@@ -642,6 +650,10 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!view) return;
     if (view.columnState && gridRef.current?.api) {
       gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
+      // Restore filter model of selected view
+      if (view.filterModel) {
+        gridRef.current.api.setFilterModel(view.filterModel);
+      }
       const updatedVisibility = view.columnState.map((col: any) => ({
         field: col.colId,
         isHidden: col.hide || false,
@@ -670,9 +682,10 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const updateView = () => {
     const columnState = gridRef.current?.api?.getColumnState();
+    const filterModel = gridRef.current?.api?.getFilterModel();
     const updatedViews = savedViews.map(view => {
       if (view.name === selectedView) {
-        return { ...view, columnState };
+        return { ...view, columnState, filterModel };
       }
       return view;
     });
