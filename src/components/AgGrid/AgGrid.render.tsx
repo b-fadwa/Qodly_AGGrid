@@ -117,8 +117,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   // views management
   const [viewName, setViewName] = useState<string>('');
-  // view = name + columnVisibility + columnState
-  const [savedViews, setSavedViews] = useState<{ name: string, selectedProperties: string[], columnState?: any }[]>([]);
+  // view = name + columnState
+  const [savedViews, setSavedViews] = useState<{ name: string, columnState?: any }[]>([]);
   const [selectedView, setSelectedView] = useState<string>('');
 
   // Load saved views from localStorage/stateDS on init
@@ -150,6 +150,7 @@ const AgGrid: FC<IAgGridProps> = ({
   );
 
   const [columnVisibility, setColumnVisibility] = useState<any[]>(initialColumnVisibility);
+  const [initialColumnState, setInitialColumnState] = useState<any>(null); // Store the initial AG Grid column state
 
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map(col => {
@@ -521,6 +522,8 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onGridReady = useCallback((params: GridReadyEvent) => {
+    // save initial column state on first load
+    setInitialColumnState(params.api.getColumnState());
     params.api.setGridOption('datasource', {
       getRows: async (rowParams: IGetRowsParams) => {
         let entities = null;
@@ -572,6 +575,9 @@ const AgGrid: FC<IAgGridProps> = ({
   const resetColumnview = () => {
     setColumnVisibility(initialColumnVisibility);
     setSelectedView('');
+    if (initialColumnState && gridRef.current?.api) {
+      gridRef.current.api.applyColumnState({ state: initialColumnState, applyOrder: true });
+    }
   }
 
   const handlePinChange = (colField: string, value: string) => {
@@ -614,7 +620,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const saveNewView = () => {
     if (!viewName.trim()) return;
     const columnState = gridRef.current?.api?.getColumnState();
-    const newView = { name: viewName, columnVisibility: [...columnVisibility], columnState };
+    const newView = { name: viewName, columnState };
     const updatedViews: any = [...savedViews, newView];
     setSavedViews(updatedViews);
     if (saveLocalStorage) {
@@ -634,7 +640,6 @@ const AgGrid: FC<IAgGridProps> = ({
   const loadView = () => {
     const view: any = savedViews.find(view => view.name === selectedView);
     if (!view) return;
-    setColumnVisibility(view.columnVisibility);
     if (view.columnState && gridRef.current?.api) {
       gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
     }
@@ -660,7 +665,7 @@ const AgGrid: FC<IAgGridProps> = ({
     const columnState = gridRef.current?.api?.getColumnState();
     const updatedViews = savedViews.map(view => {
       if (view.name === selectedView) {
-        return { ...view, columnVisibility: [...columnVisibility], columnState };
+        return { ...view, columnState };
       }
       return view;
     });
@@ -724,7 +729,10 @@ const AgGrid: FC<IAgGridProps> = ({
           <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
             <span className="views-title font-semibold">Saved views:</span>
             <div className="flex gap-2">
-              <select className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" onChange={(e: any) => { setSelectedView(e.target.value) }}>
+              <select
+                value={selectedView}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800"
+                onChange={(e: any) => { setSelectedView(e.target.value) }}>
                 <option value="">Select view</option>
                 {savedViews.map((view, _) => (
                   <option value={view.name}>{view.name}</option>
