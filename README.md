@@ -21,6 +21,7 @@ The Qodly AG Grid component wraps AG Grid and integrates it with Qodly data sour
   - Slider for numeric values
   - General formatting via @ws-ui/formatter and formatValue
 - Column state persistence (order, width, sort) to a Qodly source or localStorage
+- Selected Selection data source support: on selection change, selected rows are written to a bound "Selected Selection" data source.
 - Theming/styling via AG Grid Quartz theme parameters and CSS
 
 ## How it Works
@@ -36,16 +37,18 @@ The Qodly AG Grid component wraps AG Grid and integrates it with Qodly data sour
 
 Bind the following sources in the editor (Data Access group):
 
-| Name                  | Type                                 | Required | Description                                                                                       |
-| --------------------- | ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------- |
-| Qodly Source          | Entity Selection / Array-like Scalar | Yes      | The main data source the grid reads from. Must be iterable.                                       |
-| Selected Element      | Entity / Object Scalar               | No       | Current element bound to the selected row. The grid updates this when the user selects a row.     |
-| State Source          | Scalar (object/array)                | No       | Optional; when provided and local storage is disabled, the grid saves/restores column state here. |
-| Save In Local Storage | boolean                              | No       | If true, grid state is saved in `localStorage` instead of a Qodly source. Default: false.         |
+| Name                  | Type                                 | Required | Description                                                                                         |
+| --------------------- | ------------------------------------ | -------- | --------------------------------------------------------------------------------------------------- |
+| Qodly Source          | Entity Selection / Array-like Scalar | Yes      | The main data source the grid reads from. Must be iterable.                                         |
+| Selected Element      | Entity / Object Scalar               | No       | Current element bound to the selected row. The grid updates this when the user selects a row.       |
+| Selected Selection    | Scalar (array)                       | No       | When bound, the component writes the array of selected row data to this source on selection change. |
+| State Source          | Scalar (object/array)                | No       | Optional; when provided and local storage is disabled, the grid saves/restores column state here.   |
+| Save In Local Storage | boolean                              | No       | If true, grid state is saved in `localStorage` instead of a Qodly source. Default: false.           |
 
 Notes:
 
 - The settings also expose a "Server Side" text field. It is reserved for platform integrations and not used directly by this component’s code.
+- If "Selected Element" is bound or the grid is configured for single-row selection, the "Selected Selection" source will not be updated.
 
 ## Columns Configuration
 
@@ -69,8 +72,9 @@ Data types and filtering:
 
 ## Selection
 
-- Row selection mode: single row
+- Row selection mode: single row by default.
 - Clicking a row selects it and, if "Selected Element" is bound, updates the bound current element to the selected entity.
+- If you bind "Selected Selection" to a scalar array source, the component writes the array of currently selected rows to that source whenever selection changes (via AG Grid’s onSelectionChanged). This is typically used when enabling multi-row selection.
 
 ## Sorting
 
@@ -277,6 +281,24 @@ self .ag-body-viewport::-webkit-scrollbar-thumb:hover {
     background: #0056b3;
 }
 
+/* customize the header */
+self .grid-header{
+background-color: red;
+}
+
+
+self .actions-section , .customizer-section ,.view-section ,.views-section{
+}
+
+self .actions-title , .customizer-title , .view-title ,.views-title{
+}
+
+self .header-button{
+}
+
+self .view-input{
+}
+
 /* Add animation */
 self .ag-header-cell-text {
     background: linear-gradient(90deg, red, orange, yellow, green, blue, indigo, violet, red);
@@ -314,7 +336,7 @@ self {
 
 1. Drag and drop the AgGrid component into your page.
 2. Bind "Qodly Source" to an iterable selection or array-like scalar.
-3. Optionally bind "Selected Element" to sync the current entity with row selection.
+3. Optionally bind "Selected Element" to sync the current entity with row selection, or bind "Selected Selection" to capture the array of selected rows on selection changes.
 4. Define columns: set Title, Source, and settings (sorting, filtering, width/flex, etc.).
 5. Optionally set "State Source", or toggle "Save In Local Storage" for column state persistence.
 6. Adjust styling via General/Border/Header/Cell/Icon settings or CSS.

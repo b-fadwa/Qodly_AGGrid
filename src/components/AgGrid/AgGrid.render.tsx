@@ -629,30 +629,30 @@ const AgGrid: FC<IAgGridProps> = ({
     <div ref={connect} style={style} className={cn(className, classNames)}>
       <div className="flex flex-col gap-2 h-full">
         {/* AGGrid header actions */}
-        <div className="flex gap-2 items-center cursor-pointer flex-wrap">
+        <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
           {/* actions section */}
-          <div className=" flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-            <span className="font-semibold">Actions:</span>
+          <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="actions-title font-semibold">Actions:</span>
             <div className="flex gap-2">
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onNewClick}>New</button>
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onAllClick}>All</button>
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onMinusClick}>Minus</button>
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onReduceClick}>Reduce</button>
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onPrintClick}>Print</button>
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onNewClick}>New</button>
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onAllClick}>All</button>
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onMinusClick}>Minus</button>
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onReduceClick}>Reduce</button>
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onPrintClick}>Print</button>
             </div>
           </div>
           {/* columns customizer button */}
-          <div className="flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-            <span className="font-semibold">View:</span>
+          <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="customizer-title font-semibold">View:</span>
             <div className="flex gap-2">
               <button
-                className="inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
                 onClick={() => setShowPropertiesDialog(true)}
               >
                 Customize columns
               </button>
               <button
-                className="inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
                 onClick={resetColumnview}
               >
                 Reset default view
@@ -660,16 +660,16 @@ const AgGrid: FC<IAgGridProps> = ({
             </div>
           </div>
           {/* new view section */}
-          <div className="flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-            <span className="font-semibold">Save view:</span>
+          <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="view-title font-semibold">Save view:</span>
             <div className="flex gap-2">
-              <input type="text" placeholder="View name" className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={saveNewView}>Save new</button>
+              <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={saveNewView}>Save new</button>
             </div>
           </div>
           {/* saved views section */}
-          <div className="flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-            <span className="font-semibold">Saved views:</span>
+          <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+            <span className="views-title font-semibold">Saved views:</span>
             <div className="flex gap-2">
               <select className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" onChange={(e: any) => { setSelectedView(e.target.value) }}>
                 <option value="">Select view</option>
@@ -677,9 +677,9 @@ const AgGrid: FC<IAgGridProps> = ({
                   <option value={view.name}>{view.name}</option>
                 ))}
               </select>
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={loadView}>Load</button>
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={updateView}>Overwrite</button>
-              <button className='inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={deleteView}>Delete</button>
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={loadView}>Load</button>
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={updateView}>Overwrite</button>
+              <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={deleteView}>Delete</button>
 
             </div>
           </div>
