@@ -117,17 +117,26 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   // views management
   const [viewName, setViewName] = useState<string>('');
-  // view = name + columnVisibility
-  const [savedViews, setSavedViews] = useState<{ name: string, selectedProperties: string[] }[]>([]);
+  // view = name + columnVisibility + columnState
+  const [savedViews, setSavedViews] = useState<{ name: string, selectedProperties: string[], columnState?: any }[]>([]);
   const [selectedView, setSelectedView] = useState<string>('');
 
-  // Load saved views from localStorage
+  // Load saved views from localStorage/stateDS on init
   useEffect(() => {
-    const stored = localStorage.getItem(`savedViews_${nodeID}`);
-    if (stored) {
-      setSavedViews(JSON.parse(stored));
+    if (saveLocalStorage) {
+      const stored = localStorage.getItem(`savedViews_${nodeID}`);
+      if (stored) {
+        setSavedViews(JSON.parse(stored));
+      }
+    } else if (stateDS) {
+      // Load from stateDS the saved views
+      stateDS.getValue().then((data: any) => {
+        if (data && data.savedViews) {
+          setSavedViews(data.savedViews);
+        }
+      })
     }
-  }, [nodeID]);
+  }, []);
 
   //very initial state of columns
   const initialColumnVisibility = useMemo(
@@ -340,7 +349,14 @@ const AgGrid: FC<IAgGridProps> = ({
       if (saveLocalStorage) {
         localStorage.setItem(`gridState_${nodeID}`, JSON.stringify(columnState));
       } else if (stateDS) {
-        stateDS.setValue(null, columnState);
+        // Save combined data to stateDS
+        stateDS.getValue().then((currentData: any) => {
+          const gridData = {
+            ...currentData,
+            columnState
+          };
+          stateDS.setValue(null, gridData);
+        })
       }
       emit('onsavestate', columnState);
     }
@@ -354,7 +370,9 @@ const AgGrid: FC<IAgGridProps> = ({
       }
     } else if (stateDS) {
       const dsValue = await stateDS?.getValue();
-      params.api.applyColumnState({ state: dsValue, applyOrder: true });
+      if (dsValue && dsValue.columnState) {
+        params.api.applyColumnState({ state: dsValue.columnState, applyOrder: true });
+      }
     }
   }, []);
 
@@ -553,7 +571,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const resetColumnview = () => {
     setColumnVisibility(initialColumnVisibility);
-    (gridRef.current as any)?.columnApi.resetColumnState();
+    setSelectedView('');
   }
 
   const handlePinChange = (colField: string, value: string) => {
@@ -595,10 +613,21 @@ const AgGrid: FC<IAgGridProps> = ({
   // views actions
   const saveNewView = () => {
     if (!viewName.trim()) return;
-    const newView = { name: viewName, columnVisibility: [...columnVisibility] };
+    const columnState = gridRef.current?.api?.getColumnState();
+    const newView = { name: viewName, columnVisibility: [...columnVisibility], columnState };
     const updatedViews: any = [...savedViews, newView];
     setSavedViews(updatedViews);
-    localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    if (saveLocalStorage) {
+      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    } else if (stateDS) {
+      stateDS.getValue().then((currentData: any) => {
+        const gridData = {
+          ...currentData,
+          savedViews: updatedViews
+        };
+        stateDS.setValue(null, gridData);
+      })
+    }
     setViewName('');
   }
 
@@ -606,23 +635,47 @@ const AgGrid: FC<IAgGridProps> = ({
     const view: any = savedViews.find(view => view.name === selectedView);
     if (!view) return;
     setColumnVisibility(view.columnVisibility);
+    if (view.columnState && gridRef.current?.api) {
+      gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
+    }
   };
 
   const deleteView = () => {
     const updatedViews = savedViews.filter(view => view.name !== selectedView);
     setSavedViews(updatedViews);
-    localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    if (saveLocalStorage) {
+      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    } else if (stateDS) {
+      stateDS.getValue().then((currentData: any) => {
+        const gridData = {
+          ...currentData,
+          savedViews: updatedViews
+        };
+        stateDS.setValue(null, gridData);
+      })
+    }
   }
 
   const updateView = () => {
+    const columnState = gridRef.current?.api?.getColumnState();
     const updatedViews = savedViews.map(view => {
       if (view.name === selectedView) {
-        return { ...view, columnVisibility: [...columnVisibility] };
+        return { ...view, columnVisibility: [...columnVisibility], columnState };
       }
       return view;
     });
     setSavedViews(updatedViews);
-    localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    if (saveLocalStorage) {
+      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    } else if (stateDS) {
+      stateDS.getValue().then((currentData: any) => {
+        const gridData = {
+          ...currentData,
+          savedViews: updatedViews
+        };
+        stateDS.setValue(null, gridData);
+      })
+    }
   }
 
   return (
