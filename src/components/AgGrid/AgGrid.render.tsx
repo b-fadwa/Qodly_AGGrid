@@ -137,6 +137,23 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }, []);
 
+  //to deselct if current selection ds value is cleared from outside 
+  useEffect(() => {
+    if (!currentSelectionDS) return;
+
+    const listener = async (/* event */) => {
+      const value = await currentSelectionDS.getValue();
+      if (value.length === 0) {
+        gridRef.current?.api?.deselectAll();
+      }
+    };
+    listener();
+    currentSelectionDS.addListener('changed', listener);
+    return () => {
+      currentSelectionDS.removeListener('changed', listener);
+    };
+  }, [currentSelectionDS]);
+
   //very initial state of columns
   const initialColumnVisibility = useMemo(
     () =>
