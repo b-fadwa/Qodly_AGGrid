@@ -99,26 +99,6 @@ export default {
         label: 'On SaveState',
         value: 'onsavestate',
       },
-      {
-        label: 'On NewState',
-        value: 'onnewstate',
-      },
-      {
-        label: 'On AllState',
-        value: 'onallstate',
-      },
-      {
-        label: 'On MinusState',
-        value: 'onminusstate',
-      },
-      {
-        label: 'On ReduceState',
-        value: 'onreducestate',
-      },
-      {
-        label: 'On PrintState',
-        value: 'onprintstate',
-      },
     ],
     datasources: {
       declarations: (props) => {

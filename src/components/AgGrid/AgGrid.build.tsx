@@ -1,10 +1,11 @@
-import { useDatasourceSub, useEnhancedNode } from '@ws-ui/webform-editor';
+import { selectResolver, useDatasourceSub, useEnhancedEditor, useEnhancedNode } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { FC, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { IAgGridProps } from './AgGrid.config';
 import { ColDef, themeQuartz } from 'ag-grid-community';
 import { BsFillInfoCircleFill } from 'react-icons/bs';
+import { Element } from '@ws-ui/craftjs-core';
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -36,6 +37,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const {
     connectors: { connect },
   } = useEnhancedNode();
+  const { resolver } = useEnhancedEditor(selectResolver);
 
   const colDefs: ColDef[] = columns.map((col) => ({ field: col.title }));
   const defaultColDef = useMemo<ColDef>(() => {
@@ -88,11 +90,11 @@ const AgGrid: FC<IAgGridProps> = ({
               <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                 <span className="actions-title font-semibold">Actions:</span>
                 <div className="flex gap-2">
-                  <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >New</button>
-                  <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >All</button>
-                  <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >Minus</button>
-                  <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >Reduce</button>
-                  <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800'>Print</button>
+                  <Element
+                    id="agGridActions"
+                    is={resolver.StyleBox}
+                    canvas
+                  ></Element>
                 </div>
               </div>
               {/* columns customizer button */}

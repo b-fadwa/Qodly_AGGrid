@@ -7,6 +7,7 @@ import {
   EntityActions,
   useEnhancedNode,
   useWebformPath,
+  useEnhancedEditor,
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -27,6 +28,8 @@ import isEqual from 'lodash/isEqual';
 import cloneDeep from 'lodash/cloneDeep';
 import CustomCell from './CustomCell';
 import { format } from 'date-fns';
+import { Element } from '@ws-ui/craftjs-core';
+import { selectResolver } from '@ws-ui/webform-editor';
 
 ModuleRegistry.registerModules([ColumnHoverModule]);
 
@@ -76,13 +79,9 @@ const AgGrid: FC<IAgGridProps> = ({
       'oncellmouseout',
       'oncellmousedown',
       'onsavestate',
-      'onnewstate',
-      'onallstate',
-      'onminusstate',
-      'onreducestate',
-      'onprintstate',
     ],
   });
+  const { resolver } = useEnhancedEditor(selectResolver);
   const {
     sources: { datasource: ds, currentElement },
   } = useSources({ acceptIteratorSel: true });
@@ -601,27 +600,6 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
-  // action buttons handlers
-  const onNewClick = () => {
-    emit('onnewstate');
-
-  }
-
-  const onAllClick = () => {
-    emit('onallstate');
-  }
-
-  const onMinusClick = () => {
-    emit('onminusstate');
-  }
-
-  const onReduceClick = () => {
-    emit('onreducestate');
-  }
-
-  const onPrintClick = () => {
-    emit('onprintstate');
-  }
 
   // views actions
   const saveNewView = () => {
@@ -713,11 +691,7 @@ const AgGrid: FC<IAgGridProps> = ({
             <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
               <span className="actions-title font-semibold">Actions:</span>
               <div className="flex gap-2">
-                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onNewClick}>New</button>
-                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onAllClick}>All</button>
-                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onMinusClick}>Minus</button>
-                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onReduceClick}>Reduce</button>
-                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={onPrintClick}>Print</button>
+                <Element id="agGridActions" is={resolver.StyleBox} canvas />
               </div>
             </div>
             {/* columns customizer button */}
