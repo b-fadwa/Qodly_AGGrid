@@ -18,7 +18,7 @@ const commonSettings: TSetting[] = [
         label: 'Source',
         // defaultValue: '',
         type: ESetting.DS_AUTO_SUGGEST,
-        // datasourceProperty: 'datasource',
+        datasourceProperty: 'mySource',
         key: 'source',
       },
       {
@@ -77,7 +77,7 @@ const commonSettings: TSetting[] = [
 
 const dataAccessSettings: TSetting[] = [
   {
-    key: 'datasource',
+    key: 'mySource',
     label: 'Qodly Source',
     type: ESetting.DS_AUTO_SUGGEST,
   },
