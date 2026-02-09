@@ -18,6 +18,7 @@ const commonSettings: TSetting[] = [
         label: 'Source',
         // defaultValue: '',
         type: ESetting.DS_AUTO_SUGGEST,
+        // datasourceProperty: 'datasource',
         key: 'source',
       },
       {

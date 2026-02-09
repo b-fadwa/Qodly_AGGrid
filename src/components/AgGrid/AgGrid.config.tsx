@@ -39,6 +39,7 @@ export default {
     kind: EComponentKind.BASIC,
     props: {
       name: '',
+      iterable: true,
       classNames: [],
       events: [],
     },
