@@ -18,6 +18,7 @@ const commonSettings: TSetting[] = [
         label: 'Source',
         // defaultValue: '',
         type: ESetting.DS_AUTO_SUGGEST,
+        // datasourceProperty: 'datasource',
         key: 'source',
       },
       {
@@ -53,6 +54,12 @@ const commonSettings: TSetting[] = [
         key: 'filtering',
       },
       {
+        label: 'Hide column',
+        defaultValue: false,
+        type: ESetting.CHECKBOX,
+        key: 'hidden',
+      },
+      {
         label: 'Locked Position',
         defaultValue: false,
         type: ESetting.CHECKBOX,
@@ -78,6 +85,17 @@ const dataAccessSettings: TSetting[] = [
     key: 'currentElement',
     label: 'Selected Element',
     type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'currentSelection',
+    label: 'Selected Selection',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'multiSelection',
+    label: 'Enable Multi-Selection',
+    type: ESetting.CHECKBOX,
+    defaultValue: false,
   },
   {
     key: 'state',

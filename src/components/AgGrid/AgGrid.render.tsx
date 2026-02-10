@@ -7,9 +7,10 @@ import {
   EntityActions,
   useEnhancedNode,
   useWebformPath,
+  useEnhancedEditor,
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
-import { FC, useCallback, useMemo, useRef, useState } from 'react';
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { IAgGridProps } from './AgGrid.config';
 import {
@@ -27,6 +28,8 @@ import isEqual from 'lodash/isEqual';
 import cloneDeep from 'lodash/cloneDeep';
 import CustomCell from './CustomCell';
 import { format } from 'date-fns';
+import { Element } from '@ws-ui/craftjs-core';
+import { selectResolver } from '@ws-ui/webform-editor';
 
 ModuleRegistry.registerModules([ColumnHoverModule]);
 
@@ -34,6 +37,7 @@ const AgGrid: FC<IAgGridProps> = ({
   datasource,
   columns,
   state = '',
+  currentSelection = '',
   spacing,
   accentColor,
   backgroundColor,
@@ -55,6 +59,7 @@ const AgGrid: FC<IAgGridProps> = ({
   iconSize,
   enableCellFocus,
   enableColumnHover,
+  multiSelection,
   style,
   disabled = false,
   saveLocalStorage,
@@ -76,6 +81,7 @@ const AgGrid: FC<IAgGridProps> = ({
       'onsavestate',
     ],
   });
+  const { resolver } = useEnhancedEditor(selectResolver);
   const {
     sources: { datasource: ds, currentElement },
   } = useSources({ acceptIteratorSel: true });
@@ -102,14 +108,73 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const path = useWebformPath();
   const stateDS = window.DataSource.getSource(state, path);
+  const currentSelectionDS = window.DataSource.getSource(currentSelection, path);
 
   const [selected, setSelected] = useState(-1);
   const [scrollIndex, setScrollIndex] = useState(0);
   const [_count, setCount] = useState(0);
-  const colDefs: ColDef[] = useMemo(
+  const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
+  // views management
+  const [viewName, setViewName] = useState<string>('');
+  // view = name + columnState
+  const [savedViews, setSavedViews] = useState<{ name: string, columnState?: any }[]>([]);
+  const [selectedView, setSelectedView] = useState<string>('');
+
+  // Load saved views from localStorage/stateDS on init
+  useEffect(() => {
+    if (saveLocalStorage) {
+      const stored = localStorage.getItem(`savedViews_${nodeID}`);
+      if (stored) {
+        setSavedViews(JSON.parse(stored));
+      }
+    } else if (stateDS) {
+      // Load from stateDS the saved views
+      stateDS.getValue().then((data: any) => {
+        if (data && data.savedViews) {
+          setSavedViews(data.savedViews);
+        }
+      })
+    }
+  }, []);
+
+  //to deselct if current selection ds value is cleared from outside 
+  useEffect(() => {
+    if (!currentSelectionDS) return;
+
+    const listener = async (/* event */) => {
+      const value = await currentSelectionDS.getValue();
+      if (value.length === 0) {
+        gridRef.current?.api?.deselectAll();
+      }
+    };
+    listener();
+    currentSelectionDS.addListener('changed', listener);
+    return () => {
+      currentSelectionDS.removeListener('changed', listener);
+    };
+  }, [currentSelectionDS]);
+
+  //very initial state of columns
+  const initialColumnVisibility = useMemo(
     () =>
-      columns.map((col) => ({
+      columns.map(col => ({
         field: col.title,
+        isHidden: col.hidden || false, // use col.hidden directly from properties
+        pinned: null as 'left' | 'right' | null,
+      })),
+    [columns]
+  );
+
+  const [columnVisibility, setColumnVisibility] = useState<any[]>(initialColumnVisibility);
+  const [initialColumnState, setInitialColumnState] = useState<any>(null); // Store the initial AG Grid column state
+
+  const colDefs: ColDef[] = useMemo(() => {
+    return columns.map(col => {
+      const colState = columnVisibility.find(c => c.field === col.title) || { isHidden: false, pinned: null };
+      return {
+        field: col.title,
+        hide: colState.isHidden,
+        pinned: colState.pinned,
         cellRendererParams: {
           format: col.format,
           dataType: col.dataType,
@@ -134,22 +199,23 @@ const AgGrid: FC<IAgGridProps> = ({
               ? ['contains', 'equals', 'notEqual', 'startsWith', 'endsWith']
               : col.dataType === 'long' || col.dataType === 'number'
                 ? [
-                    'equals',
-                    'notEqual',
-                    'greaterThan',
-                    'greaterThanOrEqual',
-                    'lessThan',
-                    'lessThanOrEqual',
-                    'inRange',
-                  ]
+                  'equals',
+                  'notEqual',
+                  'greaterThan',
+                  'greaterThanOrEqual',
+                  'lessThan',
+                  'lessThanOrEqual',
+                  'inRange',
+                ]
                 : col.dataType === 'date'
                   ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
                   : [],
           defaultOption: 'equals',
         },
-      })),
-    [],
-  );
+      };
+    });
+  }, [columns, columnVisibility]);
+
 
   const defaultColDef = useMemo<ColDef>(() => {
     return {
@@ -194,8 +260,6 @@ const AgGrid: FC<IAgGridProps> = ({
     setCount,
     fetchIndex,
     onDsChange: ({ length, selected }) => {
-      // TODO: bug when scroll on changed ds
-      console.log('onDsChange called with selected:', selected, 'and length:', length);
       if (!gridRef.current) return;
       gridRef.current.api?.refreshInfiniteCache();
       if (selected >= 0) {
@@ -221,7 +285,7 @@ const AgGrid: FC<IAgGridProps> = ({
   });
 
   const onRowClicked = useCallback(async (event: any) => {
-    if (!ds) return;
+    if (!ds || multiSelection) return;
     await updateCurrentDsValue({
       index: event.rowIndex,
     });
@@ -229,7 +293,7 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onRowDoubleClicked = useCallback(async (event: any) => {
-    if (!ds) return;
+    if (!ds || multiSelection) return;
     await updateCurrentDsValue({
       index: event.rowIndex,
     });
@@ -287,16 +351,33 @@ const AgGrid: FC<IAgGridProps> = ({
     });
   }, []);
 
+  const onSelectionChanged = useCallback(async (event: any) => {
+    if (currentElement || !multiSelection) return; // handled by onRowClicked
+    if (!currentSelectionDS) return;
+
+    const selectedRows = event.api.getSelectedRows();
+    await currentSelectionDS.setValue(null, selectedRows);
+  }, []);
+
   const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
     if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
     if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
       const columnState = params.api.getColumnState();
+      const filterModel = params.api.getFilterModel();
       if (saveLocalStorage) {
-        localStorage.setItem(`gridState_${nodeID}`, JSON.stringify(columnState));
+        localStorage.setItem(`gridState_${nodeID}`, JSON.stringify({ columnState, filterModel }));
       } else if (stateDS) {
-        stateDS.setValue(null, columnState);
+        // Save combined data to stateDS
+        stateDS.getValue().then((currentData: any) => {
+          const gridData = {
+            ...currentData,
+            columnState,
+            filterModel
+          };
+          stateDS.setValue(null, gridData);
+        })
       }
-      emit('onsavestate', columnState);
+      emit('onsavestate', { columnState, filterModel });
     }
   }, []);
 
@@ -308,7 +389,12 @@ const AgGrid: FC<IAgGridProps> = ({
       }
     } else if (stateDS) {
       const dsValue = await stateDS?.getValue();
-      params.api.applyColumnState({ state: dsValue, applyOrder: true });
+      if (dsValue && dsValue.columnState) {
+        params.api.applyColumnState({ state: dsValue.columnState, applyOrder: true });
+        if (dsValue.filterModel) {
+          params.api.setFilterModel(dsValue.filterModel);
+        }
+      }
     }
   }, []);
 
@@ -403,7 +489,6 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
     const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
-
     const rowData = entities.map((data: any) => {
       const row: any = {};
       columns.forEach((col) => {
@@ -416,6 +501,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const getSelectedRow = useCallback(async (api: GridApi) => {
     // select current element
+    if (multiSelection) return;
     if (currentElement && selected === -1) {
       try {
         let index = -1;
@@ -457,6 +543,8 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onGridReady = useCallback((params: GridReadyEvent) => {
+    // save initial column state on first load
+    setInitialColumnState(params.api.getColumnState());
     params.api.setGridOption('datasource', {
       getRows: async (rowParams: IGetRowsParams) => {
         let entities = null;
@@ -499,35 +587,268 @@ const AgGrid: FC<IAgGridProps> = ({
     getState(params);
   }, []);
 
+  const handleColumnToggle = (colField: string) => {
+    setColumnVisibility(prev =>
+      prev.map(c => c.field === colField ? { ...c, isHidden: !c.isHidden } : c)
+    );
+  };
+
+  const resetColumnview = () => {
+    setColumnVisibility(initialColumnVisibility);
+    setSelectedView('');
+    if (initialColumnState && gridRef.current?.api) {
+      gridRef.current.api.applyColumnState({ state: initialColumnState, applyOrder: true });
+      // Clear all filters
+      gridRef.current.api.setFilterModel(null);
+    }
+  }
+
+  const handlePinChange = (colField: string, value: string) => {
+    setColumnVisibility(prev =>
+      prev.map(col => {
+        if (col.field !== colField) return col;
+        //  pinnedValue : 'left' | 'right' | null
+        const pinnedValue = value === 'unpinned' ? null : (value as 'left' | 'right');
+        return {
+          ...col,
+          pinned: pinnedValue,
+        };
+      })
+    );
+  };
+
+
+  // views actions
+  const saveNewView = () => {
+    if (!viewName.trim()) return;
+    const columnState = gridRef.current?.api?.getColumnState();
+    const filterModel = gridRef.current?.api?.getFilterModel();
+    const newView = { name: viewName, columnState, filterModel };
+    const updatedViews: any = [...savedViews, newView];
+    setSavedViews(updatedViews);
+    if (saveLocalStorage) {
+      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    } else if (stateDS) {
+      stateDS.getValue().then((currentData: any) => {
+        const gridData = {
+          ...currentData,
+          savedViews: updatedViews
+        };
+        stateDS.setValue(null, gridData);
+      })
+    }
+    setViewName('');
+  }
+
+  const loadView = () => {
+    const view: any = savedViews.find(view => view.name === selectedView);
+    if (!view) return;
+    if (view.columnState && gridRef.current?.api) {
+      gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
+      // Restore filter model of selected view
+      if (view.filterModel) {
+        gridRef.current.api.setFilterModel(view.filterModel);
+      }
+      const updatedVisibility = view.columnState.map((col: any) => ({
+        field: col.colId,
+        isHidden: col.hide || false,
+        pinned: col.pinned || null,
+      }));
+      setColumnVisibility(updatedVisibility);
+    }
+  };
+
+  const deleteView = () => {
+    const updatedViews = savedViews.filter(view => view.name !== selectedView);
+    setSavedViews(updatedViews);
+    if (saveLocalStorage) {
+      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    } else if (stateDS) {
+      stateDS.getValue().then((currentData: any) => {
+        const gridData = {
+          ...currentData,
+          savedViews: updatedViews
+        };
+        stateDS.setValue(null, gridData);
+      })
+    }
+    resetColumnview()
+  }
+
+  const updateView = () => {
+    const columnState = gridRef.current?.api?.getColumnState();
+    const filterModel = gridRef.current?.api?.getFilterModel();
+    const updatedViews = savedViews.map(view => {
+      if (view.name === selectedView) {
+        return { ...view, columnState, filterModel };
+      }
+      return view;
+    });
+    setSavedViews(updatedViews);
+    if (saveLocalStorage) {
+      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
+    } else if (stateDS) {
+      stateDS.getValue().then((currentData: any) => {
+        const gridData = {
+          ...currentData,
+          savedViews: updatedViews
+        };
+        stateDS.setValue(null, gridData);
+      })
+    }
+  }
+
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
       {datasource ? (
-        <AgGridReact
-          ref={gridRef}
-          columnDefs={colDefs}
-          defaultColDef={defaultColDef}
-          onRowClicked={onRowClicked}
-          onRowDoubleClicked={onRowDoubleClicked}
-          onGridReady={onGridReady}
-          rowModelType="infinite"
-          rowSelection={{ mode: 'singleRow', enableClickSelection: true, checkboxes: false }}
-          cacheBlockSize={100}
-          maxBlocksInCache={10}
-          cacheOverflowSize={2}
-          maxConcurrentDatasourceRequests={1}
-          rowBuffer={0}
-          onStateUpdated={onStateUpdated}
-          onCellClicked={onCellClicked}
-          onCellDoubleClicked={onCellDoubleClicked}
-          onColumnHeaderClicked={onHeaderClicked}
-          onCellMouseDown={onCellMouseDown}
-          onCellMouseOut={onCellMouseOut}
-          onCellMouseOver={onCellMouseOver}
-          onCellKeyDown={onCellKeyDown}
-          theme={theme}
-          className={cn({ 'pointer-events-none opacity-40': disabled })}
-          columnHoverHighlight={enableColumnHover}
-        />
+        <div className="flex flex-col gap-2 h-full">
+          {/* AGGrid header actions */}
+          <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
+            {/* actions section */}
+            <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+              <span className="actions-title font-semibold">Actions:</span>
+              <div className="flex gap-2">
+                <Element id="agGridActions" is={resolver.StyleBox} canvas />
+              </div>
+            </div>
+            {/* columns customizer button */}
+            <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+              <span className="customizer-title font-semibold">View:</span>
+              <div className="flex gap-2">
+                <button
+                  className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                  onClick={() => setShowPropertiesDialog(true)}
+                >
+                  Customize columns
+                </button>
+                <button
+                  className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                  onClick={resetColumnview}
+                >
+                  Reset default view
+                </button>
+              </div>
+            </div>
+            {/* new view section */}
+            <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+              <span className="view-title font-semibold">Save view:</span>
+              <div className="flex gap-2">
+                <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
+                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={saveNewView}>Save new</button>
+              </div>
+            </div>
+            {/* saved views section */}
+            <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+              <span className="views-title font-semibold">Saved views:</span>
+              <div className="flex gap-2">
+                <select
+                  value={selectedView}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800"
+                  onChange={(e: any) => { setSelectedView(e.target.value) }}>
+                  <option value="">Select view</option>
+                  {savedViews.map((view, _) => (
+                    <option value={view.name}>{view.name}</option>
+                  ))}
+                </select>
+                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={loadView}>Load</button>
+                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={updateView}>Overwrite</button>
+                <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={deleteView}>Delete</button>
+
+              </div>
+            </div>
+          </div>
+          {/* columns customizer dialog */}
+          {showPropertiesDialog && (
+            <div
+              className="customizer-dialog fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-[1000]"
+              onClick={() => setShowPropertiesDialog(false)}
+            >
+              <div
+                className="bg-white rounded-lg overflow-y-auto shadow-[0_2px_16px_rgba(0,0,0,0.2)]"
+                style={{
+                  maxHeight: '80vh',
+                  minWidth: '50%'
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center mb-4 bg-gray-100 p-4 bottom-px">
+                  <div className='flex flex-col'>
+                    <h1 className="text-lg font-bold">COLUMN STATE</h1>
+                    <span>Show or hide columns for this grid view</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md border border-gray-300 bg-gray-300 text-gray-700 p-2"
+                    onClick={() => setShowPropertiesDialog(false)}           >
+                    Close
+                  </button>
+                </div>
+                {columns.length === 0 ? (
+                  <li>No properties found.</li>
+                ) : (
+                  columnVisibility.map((column, idx) => {
+                    if (column.field === "ag-Grid-SelectionColumn") return null;
+
+                    return (
+                      <div
+                        key={idx}
+                        className="w-full bg-white rounded-md shadow-sm flex items-center gap-2 px-4 py-2 mb-2 text-gray-800"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!column.isHidden}
+                          onChange={() => handleColumnToggle(column.field)}
+                        />
+                        <span>{column.field}</span>
+
+                        <select
+                          value={column.pinned || "unpinned"}
+                          className="ml-auto border border-gray-300 rounded-md p-1"
+                          onChange={(e) => handlePinChange(column.field, e.target.value)}
+                        >
+                          <option value="unpinned">Unpinned</option>
+                          <option value="left">Left</option>
+                          <option value="right">Right</option>
+                        </select>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+          <AgGridReact
+            ref={gridRef}
+            columnDefs={colDefs}
+            defaultColDef={defaultColDef}
+            onRowClicked={onRowClicked}
+            onSelectionChanged={onSelectionChanged}
+            onRowDoubleClicked={onRowDoubleClicked}
+            onGridReady={onGridReady}
+            rowModelType="infinite"
+            rowSelection={{
+              mode: multiSelection ? 'multiRow' : 'singleRow',
+              enableClickSelection: !multiSelection,
+              checkboxes: multiSelection,
+            }}
+            cacheBlockSize={100}
+            maxBlocksInCache={10}
+            cacheOverflowSize={2}
+            maxConcurrentDatasourceRequests={1}
+            rowBuffer={0}
+            onStateUpdated={onStateUpdated}
+            onCellClicked={onCellClicked}
+            onCellDoubleClicked={onCellDoubleClicked}
+            onColumnHeaderClicked={onHeaderClicked}
+            onCellMouseDown={onCellMouseDown}
+            onCellMouseOut={onCellMouseOut}
+            onCellMouseOver={onCellMouseOver}
+            onCellKeyDown={onCellKeyDown}
+            theme={theme}
+            className={cn({ 'pointer-events-none opacity-40': disabled })}
+            columnHoverHighlight={enableColumnHover}
+          />
+        </div>
       ) : (
         <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
           <p>Error</p>
