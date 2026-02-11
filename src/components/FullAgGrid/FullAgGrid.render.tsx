@@ -22,6 +22,7 @@ import {
   ModuleRegistry,
   ColumnHoverModule,
   themeQuartz,
+  ColumnState,
 } from 'ag-grid-community';
 import isEqual from 'lodash/isEqual';
 import cloneDeep from 'lodash/cloneDeep';
@@ -122,7 +123,17 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
   const [allProperties, setAllProperties] = useState<any[]>([]);
 
   const [columnVisibility, setColumnVisibility] = useState<any[]>([]);
-  const [initialColumnState, setInitialColumnState] = useState<any>(null); // Store the initial AG Grid column state
+
+  //Ref to store intial grid state on first load
+  const initialColumnStateRef = useRef<ColumnState[] | null>(null);
+
+  // Ref to hold the fetchData function=>force it to be updated when dependencies change
+  const fetchDataRef = useRef<(
+    params: IGetRowsParams,
+    loaderFn: (start: number, count: number) => Promise<any[]> //2 possible fcts
+  ) => Promise<{ entities: any[], rowData: any[] }>>(
+    async () => ({ entities: [], rowData: [] })
+  );
 
   useEffect(() => {
     if (!ds) return;
@@ -424,10 +435,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
       pinned: null,
     }))
     setColumnVisibility(initialColumnState);
-    setInitialColumnState(initialColumnState);
   }, [normalizedColumns,]);
-
-
 
   const onRowClicked = useCallback(async (event: any) => {
     if (!ds || multiSelection) return;
@@ -544,6 +552,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
   }, []);
 
   const buildFilterQuery = useCallback((filter: any, source: string): string => {
+    if (!filter || !source) return '';
     const filterType = filter.filterType;
     const filterValue = filter.filter;
     switch (filterType) {
@@ -678,15 +687,6 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
     }
   }, []);
 
-  // Ref to hold the fetchData function=>force it to be updated when dependencies change
-  const fetchDataRef = useRef<(
-    params: IGetRowsParams,
-    loaderFn: (start: number, count: number) => Promise<any[]>
-  ) => Promise<{ entities: any[], rowData: any[] }>>(
-    async () => ({ entities: [], rowData: [] })
-  );
-
-
   useEffect(() => {
     if (!normalizedColumns.length) return;
 
@@ -714,7 +714,10 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
 
   const onGridReady = useCallback((params: GridReadyEvent) => {
     // save initial column state on first load
-    setInitialColumnState(params.api.getColumnState());
+    if (!initialColumnStateRef.current) {
+      initialColumnStateRef.current = params.api.getColumnState();
+    }
+
     params.api.setGridOption('datasource', {
       getRows: async (rowParams: IGetRowsParams) => {
         let entities: any[] = [];
@@ -764,24 +767,18 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
   };
 
   const resetColumnview = () => {
-    if (!gridRef.current) return;
-    // Restore the first 10 visible columns logic
-    setColumnVisibility(initialColumnState);
-    setTimeout(() => {
-      if (!gridRef.current) return;
-      gridRef.current.api.applyColumnState({
-        state: initialColumnState.map((col: any) => ({
-          colId: col.colId,
-          hide: col.hide,
-          pinned: col.pinned ?? null,
-        })),
-        applyOrder: true,
-      });
-    }, 0);
-    //Clear all filters
+    if (!gridRef.current || !initialColumnStateRef.current) return;
+
+    gridRef.current.api.applyColumnState({
+      state: initialColumnStateRef.current,
+      applyOrder: true,
+    });
+
     gridRef.current.api.setFilterModel(null);
+    gridRef.current.api.refreshInfiniteCache();
     setSelectedView('');
   };
+
 
   const handlePinChange = (colField: string, value: string) => {
     setColumnVisibility(prev =>
