@@ -604,13 +604,14 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
 
   const buildFilterQueries = useCallback(
     (filterModel: any, props: any[]): string[] => {
+
       return Object.keys(filterModel).map((key) => {
-        const filter = filterModel[key];        // const column = props.find((col) => col.title === key);
+        const filter = filterModel[key];
         const column = normalizedColumns.find(
           (c) => c.title === key
         );
         if (!column) return '';
-        const source = column.title;
+        const source = column.title || column.source;
         if (filter.operator && filter.conditions) {
           const conditionQueries = filter.conditions.map((condition: any) =>
             buildFilterQuery(condition, source),
@@ -688,13 +689,20 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
 
   useEffect(() => {
     if (!normalizedColumns.length) return;
-    fetchDataRef.current = async (params: IGetRowsParams) => {
-      // your existing fetchData logic
-      let entities = await fetchPage(params.startRow, params.endRow - params.startRow);
+
+    fetchDataRef.current = async (
+      params: IGetRowsParams,
+      loaderFn?: (start: number, count: number) => Promise<any[]>
+    ) => {
+      const loader = loaderFn ?? fetchPage;
+      //either it's fetchPage or fetchClone
+      const entities = await loader(params.startRow, params.endRow - params.startRow)
+        ? await loader(params.startRow, params.endRow - params.startRow)
+        : await loader(params.startRow, params.endRow - params.startRow);
 
       const rowData = entities.map((data: any) => {
         const row: any = {};
-        normalizedColumns.forEach((col) => {
+        normalizedColumns.forEach((col: any) => {
           row[col.title] = data[col.source];
         });
         return row;
@@ -702,7 +710,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
 
       return { entities, rowData };
     };
-  }, [normalizedColumns]);
+  }, [normalizedColumns, fetchPage, fetchClone]);
 
   const onGridReady = useCallback((params: GridReadyEvent) => {
     // save initial column state on first load
@@ -734,7 +742,6 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
           if (fetchDataRef.current) {
             const result = await fetchDataRef.current(rowParams, fetchPage);
             entities = result.entities;
-
             rowData = result.rowData;
             length = (ds as any).entitysel._private.selLength;
           }
@@ -748,7 +755,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
       },
     });
     getState(params);
-  }, [normalizedColumns, searchDs, applySorting, buildFilterQueries, getSelectedRow, fetchDataRef]);
+  }, [normalizedColumns, searchDs, applySorting, buildFilterQueries, buildFilterQuery, getSelectedRow, fetchDataRef]);
 
   const handleColumnToggle = (colField: string) => {
     setColumnVisibility(prev =>
@@ -760,14 +767,17 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
     if (!gridRef.current) return;
     // Restore the first 10 visible columns logic
     setColumnVisibility(initialColumnState);
-    gridRef.current.api.applyColumnState({
-      state: initialColumnState.map((col: any) => ({
-        colId: col.field,
-        hide: col.isHidden,
-        pinned: col.pinned ?? null,
-      })),
-      applyOrder: true,
-    });
+    setTimeout(() => {
+      if (!gridRef.current) return;
+      gridRef.current.api.applyColumnState({
+        state: initialColumnState.map((col: any) => ({
+          colId: col.colId,
+          hide: col.hide,
+          pinned: col.pinned ?? null,
+        })),
+        applyOrder: true,
+      });
+    }, 0);
     //Clear all filters
     gridRef.current.api.setFilterModel(null);
     setSelectedView('');
