@@ -1,28 +1,25 @@
-export type DataclassAttributeInfo = {
-  name: string;
-  kind?: string;
-  type?: string;
-  behavior?: string;
+export type DataclassAttributeInfo = Pick<catalog.Attribute, 'name' | 'kind' | 'type'> & {
+  behavior: catalog.CalculatedAttribute['behavior'];
 };
 
-const toAttributeInfo = (item: any): DataclassAttributeInfo => ({
+const toAttributeInfo = (item: catalog.Attribute): DataclassAttributeInfo => ({
   name: item?.name,
   kind: item?.kind,
   type: item?.type,
-  behavior: item?.behavior,
+  behavior: item.kind === 'calculated' ? item?.behavior : undefined,
 });
 
-export const getDataclassAttributeInfo = (dataclass: any) => {
+export const getDataclassAttributeInfo = (dataclass: datasources.DataClass) => {
   if (!dataclass?.getAllAttributes) {
-    return { combined: [] as DataclassAttributeInfo[], formatted: [] as DataclassAttributeInfo[], all: [] as DataclassAttributeInfo[] };
+    return { combined: [] as DataclassAttributeInfo[], formatted: [] as DataclassAttributeInfo[] };
   }
 
   const processedEntities = new Set<string>();
   const combined: DataclassAttributeInfo[] = [];
   const formatted: DataclassAttributeInfo[] = Object.values(dataclass.getAllAttributes()).map(toAttributeInfo);
 
-  const processAttributes = (attributes: any[], dataClassName: string, depth: number = 0) => {
-    attributes.forEach((item: any) => {
+  const processAttributes = (attributes: catalog.Attribute[], dataClassName: string, depth: number = 0) => {
+    attributes.forEach((item) => {
       const uniquePath = dataClassName + item.name;
       if (
         (item.kind === 'relatedEntities' ||
@@ -34,15 +31,15 @@ export const getDataclassAttributeInfo = (dataclass: any) => {
         if (processedEntities.has(uniquePath)) return;
         processedEntities.add(uniquePath);
         const relatedEntityAttributes = Object.values(
-          (dataclass._private?.datastore as any)?.[dataType]?.getAllAttributes?.() || {},
+          window?.$$datastores?.ds?.getDataClass?.(dataType).getAllAttributes?.() || {},
         );
-        relatedEntityAttributes.forEach((attr: any) => {
+        relatedEntityAttributes.forEach((attr) => {
           if (attr.kind === 'storage' && !processedEntities.has(uniquePath + '.' + attr.name)) {
             combined.push(toAttributeInfo({ ...attr, name: uniquePath + '.' + attr.name }));
             processedEntities.add(uniquePath + '.' + attr.name);
           }
         });
-        processAttributes(relatedEntityAttributes as any[], uniquePath + '.', depth + 1);
+        processAttributes(relatedEntityAttributes, uniquePath + '.', depth + 1);
       } else if (item.kind === 'storage' && !processedEntities.has(uniquePath)) {
         combined.push(toAttributeInfo({ ...item, name: uniquePath }));
         processedEntities.add(uniquePath);
@@ -58,9 +55,5 @@ export const getDataclassAttributeInfo = (dataclass: any) => {
   );
   processAttributes(topLevelAttributes as any[], '');
 
-  const all = Array.from(
-    new Map([...combined, ...formatted].filter((item) => item?.name).map((item) => [item.name, item])).values(),
-  );
-
-  return { combined, formatted, all };
+  return { combined, formatted };
 };

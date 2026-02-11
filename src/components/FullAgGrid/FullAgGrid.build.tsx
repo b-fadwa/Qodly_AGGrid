@@ -1,14 +1,11 @@
 import { selectResolver, useDatasourceSub, useEnhancedEditor, useEnhancedNode } from '@ws-ui/webform-editor';
 import cn from 'classnames';
-import { FC, useEffect, useMemo } from 'react';
+import { FC, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { ColDef, themeQuartz } from 'ag-grid-community';
 import { BsFillInfoCircleFill } from 'react-icons/bs';
 import { Element } from '@ws-ui/craftjs-core';
 import { IFullAgGridProps } from './FullAgGrid.config';
-import { useDatasourceDataclass } from './use-datasource-dataclass';
-
-export let datasourceDataclass = '';
 
 const FullAgGrid: FC<IFullAgGridProps> = ({
   datasource,
@@ -41,11 +38,6 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
   } = useEnhancedNode();
   const { resolver } = useEnhancedEditor(selectResolver);
   let columns: any[] = [];
-
-  const resolvedDataclass = useDatasourceDataclass(datasource);
-  useEffect(() => {
-    datasourceDataclass = resolvedDataclass;
-  }, [resolvedDataclass]);
 
   const colDefs: ColDef[] = columns.map((col) => ({ field: col.title }));
   const defaultColDef = useMemo<ColDef>(() => {
