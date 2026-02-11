@@ -4,7 +4,6 @@ import {
     isDatasourcePayload,
     isAttributePayload,
     getDataTransferSourceID,
-    splitDatasourceID,
     Settings,
     T4DComponentDatasourceDeclaration,
     IExostiveElementProps,
@@ -15,8 +14,6 @@ import cloneDeep from 'lodash/cloneDeep';
 import findIndex from 'lodash/findIndex';
 import { generate } from 'short-uuid';
 import FullAgGridSettings, { BasicSettings } from './FullAgGrid.settings';
-import { datasourceDataclass } from './FullAgGrid.build';
-import { getDataclassAttributeInfo } from './utils';
 
 const types: string[] = [
     'bool',
@@ -107,41 +104,11 @@ export default {
             declarations: (props) => {
                 const { currentElement = '', datasource = '' } = props;
                 const declarations: T4DComponentDatasourceDeclaration[] = [
-                    { path: datasource, iterable: true },
+                    { path: datasource, iterable: true, includeAttributes: 'all' },
                 ];
                 if (currentElement) {
                     declarations.push({ path: currentElement });
                 }
-                if (!datasourceDataclass) return declarations;
-                const dataclass = window?.$$datastores?.ds?.getDataClasses?.()[datasourceDataclass];
-                if (!dataclass) return declarations;
-
-                const attributes: string[] = getDataclassAttributeInfo(dataclass).all.map((item) => item.name);
-
-                if (attributes.length > 0) {
-                    const { id: ds, namespace } = splitDatasourceID(datasource?.trim()) || {};
-                    const { id: currentDs, namespace: currentDsNamespace } = splitDatasourceID(currentElement) || {};
-
-                    if (!ds && !currentDs) {
-                        return;
-                    }
-
-                    attributes.forEach((attr) => {
-                        if (currentDs && currentDsNamespace === namespace) {
-                            const colSrcID = `${currentDs}.${attr.trim()}`;
-                            declarations.push({
-                                path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
-                            });
-                        }
-                        const colSrcID = `${ds}.[].${attr.trim()}`;
-                        const iterable = ds.startsWith('$');
-                        declarations.push({
-                            path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
-                            iterable,
-                        });
-                    });
-                }
-
                 return declarations;
             },
 
