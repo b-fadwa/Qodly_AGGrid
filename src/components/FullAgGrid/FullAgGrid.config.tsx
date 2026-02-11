@@ -103,37 +103,37 @@ export default {
         ],
         datasources: {
             declarations: (props) => {
-                const { columns, currentElement = '', datasource = '' } = props;
+                const { currentElement = '', datasource = '' } = props;
                 const declarations: T4DComponentDatasourceDeclaration[] = [
                     { path: datasource, iterable: true },
                 ];
                 if (currentElement) {
                     declarations.push({ path: currentElement });
                 }
-                if (columns) {
-                    const { id: ds, namespace } = splitDatasourceID(datasource?.trim()) || {};
-                    const { id: currentDs, namespace: currentDsNamespace } =
-                        splitDatasourceID(currentElement) || {};
+                // if (columns) {
+                //     const { id: ds, namespace } = splitDatasourceID(datasource?.trim()) || {};
+                //     const { id: currentDs, namespace: currentDsNamespace } =
+                //         splitDatasourceID(currentElement) || {};
 
-                    if (!ds && !currentDs) {
-                        return;
-                    }
+                //     if (!ds && !currentDs) {
+                //         return;
+                //     }
 
-                    columns.forEach((col) => {
-                        if (currentDs && currentDsNamespace === namespace) {
-                            const colSrcID = `${currentDs}.${col.source.trim()}`;
-                            declarations.push({
-                                path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
-                            });
-                        }
-                        const colSrcID = `${ds}.[].${col.source.trim()}`;
-                        const iterable = ds.startsWith('$');
-                        declarations.push({
-                            path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
-                            iterable,
-                        });
-                    });
-                }
+                //     columns.forEach((col) => {
+                //         if (currentDs && currentDsNamespace === namespace) {
+                //             const colSrcID = `${currentDs}.${col.source.trim()}`;
+                //             declarations.push({
+                //                 path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
+                //             });
+                //         }
+                //         const colSrcID = `${ds}.[].${col.source.trim()}`;
+                //         const iterable = ds.startsWith('$');
+                //         declarations.push({
+                //             path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
+                //             iterable,
+                //         });
+                //     });
+                // }
                 return declarations;
             },
 

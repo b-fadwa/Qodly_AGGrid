@@ -287,16 +287,19 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
     }
   }, [initialColumnVisibility]);
 
+
+
   const colDefs: ColDef[] = useMemo(() => {
     return normalizedColumns.map((col: any) => {
       const colState = columnVisibility.find((c) => c.field === col.title) || { isHidden: false, pinned: null };
       const dataType = col.type || col.dataType;
+      const format = col.format;
       return {
         field: col.title,
         hide: colState.isHidden,
         pinned: colState.pinned,
         cellRendererParams: {
-          format: col.format,
+          format,
           dataType,
         },
         lockPosition: false,
@@ -334,7 +337,6 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
       } as ColDef;
     });
   }, [normalizedColumns, columnVisibility]);
-
 
   const defaultColDef = useMemo<ColDef>(() => {
     return {
@@ -403,15 +405,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
     },
   });
 
-  // useEffect(() => {
-  //   console.log({ allProperties })
-  // }, [allProperties]);
-
-  // useEffect(() => {
-  //   console.log({ normalizedColumns })
-  // }, [normalizedColumns]);
-
-
+  //make first 10 visible
   useEffect(() => {
     if (!normalizedColumns.length) return;
     // Get storage attributes
@@ -611,10 +605,12 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
   const buildFilterQueries = useCallback(
     (filterModel: any, props: any[]): string[] => {
       return Object.keys(filterModel).map((key) => {
-        const filter = filterModel[key];
-        const column = props.find((col) => col.name === key);
+        const filter = filterModel[key];        // const column = props.find((col) => col.title === key);
+        const column = normalizedColumns.find(
+          (c) => c.title === key
+        );
         if (!column) return '';
-        const source = column.name;
+        const source = column.title;
         if (filter.operator && filter.conditions) {
           const conditionQueries = filter.conditions.map((condition: any) =>
             buildFilterQuery(condition, source),
@@ -625,7 +621,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
         }
       });
     },
-    [buildFilterQuery],
+    [buildFilterQuery, normalizedColumns],
   );
 
   const applySorting = useCallback(async (params: IGetRowsParams, props: any[], ds: any) => {
@@ -692,10 +688,10 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
 
   useEffect(() => {
     if (!normalizedColumns.length) return;
-
     fetchDataRef.current = async (params: IGetRowsParams) => {
       // your existing fetchData logic
       let entities = await fetchPage(params.startRow, params.endRow - params.startRow);
+
       const rowData = entities.map((data: any) => {
         const row: any = {};
         normalizedColumns.forEach((col) => {
@@ -703,6 +699,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
         });
         return row;
       });
+
       return { entities, rowData };
     };
   }, [normalizedColumns]);
@@ -718,6 +715,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
         if (!isEqual(rowParams.filterModel, {})) {
           const filterQueries = buildFilterQueries(rowParams.filterModel, normalizedColumns);
           const queryStr = filterQueries.filter(Boolean).join(' AND ');
+
           const { entitysel } = searchDs as any;
           const dataSetName = entitysel?.getServerRef();
           (searchDs as any).entitysel = searchDs.dataclass.query(queryStr, {
@@ -736,6 +734,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
           if (fetchDataRef.current) {
             const result = await fetchDataRef.current(rowParams, fetchPage);
             entities = result.entities;
+
             rowData = result.rowData;
             length = (ds as any).entitysel._private.selLength;
           }
@@ -749,7 +748,7 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
       },
     });
     getState(params);
-  }, []);
+  }, [normalizedColumns, searchDs, applySorting, buildFilterQueries, getSelectedRow, fetchDataRef]);
 
   const handleColumnToggle = (colField: string) => {
     setColumnVisibility(prev =>
