@@ -124,175 +124,6 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
   const [columnVisibility, setColumnVisibility] = useState<any[]>([]);
   const [initialColumnState, setInitialColumnState] = useState<any>(null); // Store the initial AG Grid column state
 
-  // Load saved views from localStorage/stateDS on init
-  useEffect(() => {
-    if (saveLocalStorage) {
-      const stored = localStorage.getItem(`savedViews_${nodeID}`);
-      if (stored) {
-        setSavedViews(JSON.parse(stored));
-      }
-    } else if (stateDS) {
-      // Load from stateDS the saved views
-      stateDS.getValue().then((data: any) => {
-        if (data && data.savedViews) {
-          setSavedViews(data.savedViews);
-        }
-      })
-    }
-  }, []);
-
-  //to deselct if current selection ds value is cleared from outside 
-  useEffect(() => {
-    if (!currentSelectionDS) return;
-
-    const listener = async (/* event */) => {
-      const value = await currentSelectionDS.getValue();
-      if (value.length === 0) {
-        gridRef.current?.api?.deselectAll();
-      }
-    };
-    listener();
-    currentSelectionDS.addListener('changed', listener);
-    return () => {
-      currentSelectionDS.removeListener('changed', listener);
-    };
-  }, [currentSelectionDS]);
-
-  //very initial state of columns
-  const initialColumnVisibility = useMemo(
-    () => {
-      return allProperties.map((col: any) => ({
-        field: col.name,
-        isHidden: (col.hidden as boolean) || false,
-        pinned: null as 'left' | 'right' | null,
-      }));
-    },
-    [allProperties]
-  );
-
-  // initialize columnVisibility when initialColumnVisibility becomes available
-  useEffect(() => {
-    if (initialColumnVisibility && initialColumnVisibility.length > 0 && columnVisibility.length === 0) {
-      setColumnVisibility(initialColumnVisibility);
-    }
-  }, [initialColumnVisibility]);
-
-  const colDefs: ColDef[] = useMemo(() => {
-    return allProperties.map((col: any) => {
-      const colState = columnVisibility.find((c) => c.field === col.name) || { isHidden: false, pinned: null };
-      const dataType = col.type || col.dataType;
-      return {
-        field: col.name,
-        hide: colState.isHidden,
-        pinned: colState.pinned,
-        cellRendererParams: {
-          format: col.format,
-          dataType,
-        },
-        lockPosition: false,
-        sortable: dataType !== 'image' && dataType !== 'object',
-        resizable: true,
-        width: undefined,
-        flex: undefined,
-        filter:
-          dataType === 'text' || dataType === 'string'
-            ? 'agTextColumnFilter'
-            : dataType === 'long' || dataType === 'number'
-              ? 'agNumberColumnFilter'
-              : dataType === 'date'
-                ? 'agDateColumnFilter'
-                : false,
-        filterParams: {
-          filterOptions:
-            dataType === 'text' || dataType === 'string'
-              ? ['contains', 'equals', 'notEqual', 'startsWith', 'endsWith']
-              : dataType === 'long' || dataType === 'number'
-                ? [
-                  'equals',
-                  'notEqual',
-                  'greaterThan',
-                  'greaterThanOrEqual',
-                  'lessThan',
-                  'lessThanOrEqual',
-                  'inRange',
-                ]
-                : dataType === 'date'
-                  ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
-                  : [],
-          defaultOption: 'equals',
-        },
-      } as ColDef;
-    });
-  }, [columnVisibility, allProperties]);
-
-
-  const defaultColDef = useMemo<ColDef>(() => {
-    return {
-      minWidth: 100,
-      sortingOrder: ['asc', 'desc'],
-      cellRenderer: CustomCell,
-    };
-  }, []);
-
-  const theme = themeQuartz.withParams({
-    spacing,
-    accentColor,
-    backgroundColor,
-    textColor,
-    fontSize,
-    oddRowBackgroundColor,
-    borderColor,
-    rowBorder,
-    columnBorder,
-    wrapperBorderRadius,
-    headerBackgroundColor,
-    headerTextColor,
-    headerColumnBorder,
-    headerVerticalPaddingScale,
-    headerFontSize,
-    headerFontWeight,
-    cellHorizontalPaddingScale,
-    rowVerticalPaddingScale,
-    iconSize,
-    foregroundColor: textColor,
-    borderRadius: wrapperBorderRadius,
-    rangeSelectionBorderColor: !enableCellFocus ? 'transparent' : undefined,
-  });
-
-  const { updateCurrentDsValue } = useDsChangeHandler({
-    source: ds,
-    currentDs: currentElement,
-    selected,
-    setSelected,
-    scrollIndex: scrollIndex,
-    setScrollIndex,
-    setCount,
-    fetchIndex,
-    onDsChange: ({ length, selected }) => {
-      if (!gridRef.current) return;
-      gridRef.current.api?.refreshInfiniteCache();
-      if (selected >= 0) {
-        updateCurrentDsValue({
-          index: selected < length ? selected : 0,
-          forceUpdate: true,
-        });
-      }
-    },
-    onCurrentDsChange: (selected) => {
-      if (!gridRef.current) return;
-      const rowNode = gridRef.current.api?.getRowNode(selected.toString());
-      gridRef.current.api?.ensureIndexVisible(selected);
-      rowNode?.setSelected(true);
-      entitySubject.next({
-        action: EntityActions.UPDATE,
-        payload: {
-          nodeID,
-          rowIndex: selected,
-        },
-      });
-    },
-  });
-
   useEffect(() => {
     if (!ds) return;
     const processedEntities = new Set(); // Set to track processed entities and prevent duplicates
@@ -377,26 +208,232 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
     setAllProperties([...combinedProperties, ...formattedProperties]); // add the processed properties too
   }, []);
 
+  //normalize allProperties as columns in AgGrid.render.tsx
+  const normalizedColumns = useMemo(() => {
+    return allProperties
+      .filter(prop => prop.name)
+      .map(prop => ({
+        title: prop.name,
+        kind: prop.kind,
+        source: prop.name,
+        hidden: false,
+        locked: false,
+        sorting: true,
+        filtering: true,
+        sizing: true,
+        width: 150,
+        flex: 1,
+        format: null,
+        dataType:
+          prop.type === "long" || prop.type === "number"
+            ? "number"
+            : prop.type === "date"
+              ? "date"
+              : "text",
+      }));
+  }, [allProperties]);
+
+
+  // Load saved views from localStorage/stateDS on init
   useEffect(() => {
-    if (!allProperties.length) return;
+    if (saveLocalStorage) {
+      const stored = localStorage.getItem(`savedViews_${nodeID}`);
+      if (stored) {
+        setSavedViews(JSON.parse(stored));
+      }
+    } else if (stateDS) {
+      // Load from stateDS the saved views
+      stateDS.getValue().then((data: any) => {
+        if (data && data.savedViews) {
+          setSavedViews(data.savedViews);
+        }
+      })
+    }
+  }, []);
+
+  //to deselct if current selection ds value is cleared from outside 
+  useEffect(() => {
+    if (!currentSelectionDS) return;
+
+    const listener = async (/* event */) => {
+      const value = await currentSelectionDS.getValue();
+      if (value.length === 0) {
+        gridRef.current?.api?.deselectAll();
+      }
+    };
+    listener();
+    currentSelectionDS.addListener('changed', listener);
+    return () => {
+      currentSelectionDS.removeListener('changed', listener);
+    };
+  }, [currentSelectionDS]);
+
+  //very initial state of columns
+  const initialColumnVisibility = useMemo(
+    () => {
+      return normalizedColumns.map((col: any) => ({
+        field: col.title,
+        isHidden: (col.hidden as boolean) || false,
+        pinned: null as 'left' | 'right' | null,
+      }));
+    },
+    [normalizedColumns]
+  );
+
+  // initialize columnVisibility when initialColumnVisibility becomes available
+  useEffect(() => {
+    if (initialColumnVisibility && initialColumnVisibility.length > 0 && columnVisibility.length === 0) {
+      setColumnVisibility(initialColumnVisibility);
+    }
+  }, [initialColumnVisibility]);
+
+  const colDefs: ColDef[] = useMemo(() => {
+    return normalizedColumns.map((col: any) => {
+      const colState = columnVisibility.find((c) => c.field === col.title) || { isHidden: false, pinned: null };
+      const dataType = col.type || col.dataType;
+      return {
+        field: col.title,
+        hide: colState.isHidden,
+        pinned: colState.pinned,
+        cellRendererParams: {
+          format: col.format,
+          dataType,
+        },
+        lockPosition: false,
+        sortable: dataType !== 'image' && dataType !== 'object',
+        resizable: true,
+        width: undefined,
+        flex: undefined,
+        filter:
+          dataType === 'text' || dataType === 'string'
+            ? 'agTextColumnFilter'
+            : dataType === 'long' || dataType === 'number'
+              ? 'agNumberColumnFilter'
+              : dataType === 'date'
+                ? 'agDateColumnFilter'
+                : false,
+        filterParams: {
+          filterOptions:
+            dataType === 'text' || dataType === 'string'
+              ? ['contains', 'equals', 'notEqual', 'startsWith', 'endsWith']
+              : dataType === 'long' || dataType === 'number'
+                ? [
+                  'equals',
+                  'notEqual',
+                  'greaterThan',
+                  'greaterThanOrEqual',
+                  'lessThan',
+                  'lessThanOrEqual',
+                  'inRange',
+                ]
+                : dataType === 'date'
+                  ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
+                  : [],
+          defaultOption: 'equals',
+        },
+      } as ColDef;
+    });
+  }, [normalizedColumns, columnVisibility]);
+
+
+  const defaultColDef = useMemo<ColDef>(() => {
+    return {
+      minWidth: 100,
+      sortingOrder: ['asc', 'desc'],
+      cellRenderer: CustomCell,
+    };
+  }, []);
+
+  const theme = themeQuartz.withParams({
+    spacing,
+    accentColor,
+    backgroundColor,
+    textColor,
+    fontSize,
+    oddRowBackgroundColor,
+    borderColor,
+    rowBorder,
+    columnBorder,
+    wrapperBorderRadius,
+    headerBackgroundColor,
+    headerTextColor,
+    headerColumnBorder,
+    headerVerticalPaddingScale,
+    headerFontSize,
+    headerFontWeight,
+    cellHorizontalPaddingScale,
+    rowVerticalPaddingScale,
+    iconSize,
+    foregroundColor: textColor,
+    borderRadius: wrapperBorderRadius,
+    rangeSelectionBorderColor: !enableCellFocus ? 'transparent' : undefined,
+  });
+
+  const { updateCurrentDsValue } = useDsChangeHandler({
+    source: ds,
+    currentDs: currentElement,
+    selected,
+    setSelected,
+    scrollIndex: scrollIndex,
+    setScrollIndex,
+    setCount,
+    fetchIndex,
+    onDsChange: ({ length, selected }) => {
+      if (!gridRef.current) return;
+      gridRef.current.api?.refreshInfiniteCache();
+      if (selected >= 0) {
+        updateCurrentDsValue({
+          index: selected < length ? selected : 0,
+          forceUpdate: true,
+        });
+      }
+    },
+    onCurrentDsChange: (selected) => {
+      if (!gridRef.current) return;
+      const rowNode = gridRef.current.api?.getRowNode(selected.toString());
+      gridRef.current.api?.ensureIndexVisible(selected);
+      rowNode?.setSelected(true);
+      entitySubject.next({
+        action: EntityActions.UPDATE,
+        payload: {
+          nodeID,
+          rowIndex: selected,
+        },
+      });
+    },
+  });
+
+  // useEffect(() => {
+  //   console.log({ allProperties })
+  // }, [allProperties]);
+
+  // useEffect(() => {
+  //   console.log({ normalizedColumns })
+  // }, [normalizedColumns]);
+
+
+  useEffect(() => {
+    if (!normalizedColumns.length) return;
     // Get storage attributes
-    const topLevelStorageColumns = allProperties.filter(
-      (col) => col.kind === 'storage' && !col.name.includes('.')
+    const topLevelStorageColumns = normalizedColumns.filter(
+      (col) => col.kind === 'storage' && !col.title.includes('.')
     );
     // Get related entity columns (with dots)
-    const relatedColumns = allProperties.filter((col) => col.name.includes('.'));
+    const relatedColumns = normalizedColumns.filter((col) => col.title.includes('.'));
     // Combine: top-level first, then related
     const orderedProperties = [...topLevelStorageColumns, ...relatedColumns];
     // First 10 are visible, rest are hidden
-    const firstTenNames = new Set(orderedProperties.slice(0, 10).map((col) => col.name));
-    setColumnVisibility(
-      allProperties.map((col) => ({
-        field: col.name,
-        isHidden: !firstTenNames.has(col.name),
-        pinned: null,
-      }))
-    );
-  }, [allProperties]);
+    const firstTenNames = new Set(orderedProperties.slice(0, 10).map((col) => col.title));
+    const initialColumnState = normalizedColumns.map((col) => ({
+      field: col.title,
+      isHidden: !firstTenNames.has(col.title),
+      pinned: null,
+    }))
+    setColumnVisibility(initialColumnState);
+    setInitialColumnState(initialColumnState);
+  }, [normalizedColumns,]);
+
+
 
   const onRowClicked = useCallback(async (event: any) => {
     if (!ds || multiSelection) return;
@@ -595,22 +632,10 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
     if (params.sortModel.length > 0 && !isEqual(params.sortModel, prevSortModelRef.current)) {
       prevSortModelRef.current = params.sortModel;
       const sortingString = params.sortModel
-        .map((sort) => `${props.find((c) => c.name === sort.colId)?.name} ${sort.sort}`)
+        .map((sort) => `${props.find((c) => c.title === sort.colId)?.source} ${sort.sort}`)
         .join(', ');
       await ds.orderBy(sortingString);
     }
-  }, []);
-
-  const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
-    const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
-    const rowData = entities.map((data: any) => {
-      const row: any = {};
-      allProperties.forEach((col) => {
-        row[col.title] = data[col.name];
-      });
-      return row;
-    });
-    return { entities, rowData };
   }, []);
 
   const getSelectedRow = useCallback(async (api: GridApi) => {
@@ -656,40 +681,65 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
     }
   }, []);
 
+  // Ref to hold the fetchData function=>force it to be updated when dependencies change
+  const fetchDataRef = useRef<(
+    params: IGetRowsParams,
+    loaderFn: (start: number, count: number) => Promise<any[]>
+  ) => Promise<{ entities: any[], rowData: any[] }>>(
+    async () => ({ entities: [], rowData: [] })
+  );
+
+
+  useEffect(() => {
+    if (!normalizedColumns.length) return;
+
+    fetchDataRef.current = async (params: IGetRowsParams) => {
+      // your existing fetchData logic
+      let entities = await fetchPage(params.startRow, params.endRow - params.startRow);
+      const rowData = entities.map((data: any) => {
+        const row: any = {};
+        normalizedColumns.forEach((col) => {
+          row[col.title] = data[col.source];
+        });
+        return row;
+      });
+      return { entities, rowData };
+    };
+  }, [normalizedColumns]);
+
   const onGridReady = useCallback((params: GridReadyEvent) => {
     // save initial column state on first load
     setInitialColumnState(params.api.getColumnState());
     params.api.setGridOption('datasource', {
       getRows: async (rowParams: IGetRowsParams) => {
-        let entities = null;
-        let length = 0;
+        let entities: any[] = [];
         let rowData: any[] = [];
+        let length = 0;
         if (!isEqual(rowParams.filterModel, {})) {
-          const filterQueries = buildFilterQueries(rowParams.filterModel, allProperties);
+          const filterQueries = buildFilterQueries(rowParams.filterModel, normalizedColumns);
           const queryStr = filterQueries.filter(Boolean).join(' AND ');
-
           const { entitysel } = searchDs as any;
           const dataSetName = entitysel?.getServerRef();
           (searchDs as any).entitysel = searchDs.dataclass.query(queryStr, {
             dataSetName,
             filterAttributes: searchDs.filterAttributesText || searchDs._private.filterAttributes,
           });
-
-          await applySorting(rowParams, allProperties, searchDs);
-
-          const result = await fetchData(fetchClone, rowParams);
-          entities = result.entities;
-          rowData = result.rowData;
-          length = searchDs.entitysel._private.selLength;
+          await applySorting(rowParams, normalizedColumns, searchDs);
+          if (fetchDataRef.current) {
+            const result = await fetchDataRef.current(rowParams, fetchClone);
+            entities = result.entities;
+            rowData = result.rowData;
+            length = searchDs.entitysel._private.selLength;
+          }
         } else {
-          await applySorting(rowParams, allProperties, ds);
-
-          const result = await fetchData(fetchPage, rowParams);
-          entities = result.entities;
-          rowData = result.rowData;
-          length = (ds as any).entitysel._private.selLength;
+          await applySorting(rowParams, normalizedColumns, ds);
+          if (fetchDataRef.current) {
+            const result = await fetchDataRef.current(rowParams, fetchPage);
+            entities = result.entities;
+            rowData = result.rowData;
+            length = (ds as any).entitysel._private.selLength;
+          }
         }
-
         if (Array.isArray(entities)) {
           rowParams.successCallback(rowData, length);
         } else {
@@ -708,14 +758,21 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
   };
 
   const resetColumnview = () => {
-    setColumnVisibility(initialColumnVisibility);
+    if (!gridRef.current) return;
+    // Restore the first 10 visible columns logic
+    setColumnVisibility(initialColumnState);
+    gridRef.current.api.applyColumnState({
+      state: initialColumnState.map((col: any) => ({
+        colId: col.field,
+        hide: col.isHidden,
+        pinned: col.pinned ?? null,
+      })),
+      applyOrder: true,
+    });
+    //Clear all filters
+    gridRef.current.api.setFilterModel(null);
     setSelectedView('');
-    if (initialColumnState && gridRef.current?.api) {
-      gridRef.current.api.applyColumnState({ state: initialColumnState, applyOrder: true });
-      // Clear all filters
-      gridRef.current.api.setFilterModel(null);
-    }
-  }
+  };
 
   const handlePinChange = (colField: string, value: string) => {
     setColumnVisibility(prev =>
@@ -730,7 +787,6 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
       })
     );
   };
-
 
   // views actions
   const saveNewView = () => {
@@ -897,27 +953,20 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
                     Close
                   </button>
                 </div>
-                {allProperties.length === 0 ? (
+                {normalizedColumns.length === 0 ? (
                   <li>No properties found.</li>
                 ) : (() => {
                   // Get top-level storage columns (no dots in name)
                   const topLevelStorageColumns = columnVisibility.filter((column) => {
-                    const propMeta = allProperties.find((p) => p.name === column.field);
+                    const propMeta = normalizedColumns.find((p) => p.title === column.field);
                     return propMeta?.kind === 'storage' && !column.field.includes('.');
                   });
-
                   // Get related entity columns (with dots)
                   const relatedColumns = columnVisibility.filter((column) => {
-                    // const propMeta = allProperties.find((p) => p.name === column.field);
                     return column.field.includes('.');
                   });
-
                   // Combine: top-level first, then related
                   const toDisplay = [...topLevelStorageColumns, ...relatedColumns];
-
-                  // First 10 should be selected by default, rest unselected
-                  // const firstTenNames = new Set(toDisplay.slice(0, 10).map((c) => c.field));
-
                   return toDisplay.map((column, idx) => {
                     if (column.field === "ag-Grid-SelectionColumn") return null;
                     // const isInFirstTen = firstTenNames.has(column.field);
@@ -932,7 +981,6 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
                           onChange={() => handleColumnToggle(column.field)}
                         />
                         <span>{column.field}</span>
-
                         <select
                           value={column.pinned || "unpinned"}
                           className="ml-auto border border-gray-300 rounded-md p-1"
