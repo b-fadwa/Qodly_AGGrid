@@ -31,6 +31,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import CustomCell from '../AgGrid/CustomCell';
 import { IFullAgGridProps } from './FullAgGrid.config';
+import { DataclassAttributeInfo, getDataclassAttributeInfo } from './utils';
 
 ModuleRegistry.registerModules([ColumnHoverModule]);
 
@@ -137,8 +138,8 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
 
   useEffect(() => {
     if (!ds) return;
-    const processedEntities = new Set(); // Set to track processed entities and prevent duplicates
-    const formattedProperties = Object.values(ds.dataclass.getAllAttributes()).map((item: any) => ({
+    const { combined, formatted } = getDataclassAttributeInfo(ds.dataclass);
+    const toProperty = (item: DataclassAttributeInfo) => ({
       name: item.name,
       kind: item.kind,
       type: item.type,
@@ -149,73 +150,9 @@ const FullAgGrid: FC<IFullAgGridProps> = ({
       isBoolean: item.type === 'bool',
       isDuration: item.type === 'duration',
       isRelated: item.kind === 'relatedEntities' || item.kind === 'relatedEntity',
-    }));
-
-    const combinedProperties: any[] = [];
-
-    // Recursively process related entities and their attributes
-    const processAttributes = (attributes: any[], dataClassName: string, depth: number = 0) => {
-      attributes.forEach((item: any) => {
-        const uniquePath = dataClassName + item.name;
-        if (
-          (item.kind === 'relatedEntities' ||
-            item.kind === 'relatedEntity' ||
-            (item.kind === 'calculated' && item.behavior === 'relatedEntities')) &&
-          depth == 0
-        ) {
-          const dataType = item.type.includes('Selection')
-            ? item.type.replace('Selection', '')
-            : item.type;
-          if (processedEntities.has(uniquePath)) return;
-          processedEntities.add(uniquePath);
-          // Get related entity attributes
-          const relatedEntityAttributes = Object.values(
-            (ds.dataclass._private.datastore as any)[dataType].getAllAttributes(),
-          );
-          relatedEntityAttributes.forEach((attr: any) => {
-            if (attr.kind === 'storage' && !processedEntities.has(uniquePath + '.' + attr.name)) {
-              combinedProperties.push({
-                name: uniquePath + '.' + attr.name,
-                kind: attr.kind,
-                type: attr.type,
-                isDate: attr.type === 'date',
-                isImage: attr.type === 'image',
-                isString: attr.type === 'string',
-                isNumber: attr.type === 'long',
-                isBoolean: attr.type === 'bool',
-                isDuration: attr.type === 'duration',
-                isRelated: attr.kind === 'relatedEntities' || attr.kind === 'relatedEntity',
-              });
-              processedEntities.add(uniquePath + '.' + attr.name); // Mark this attribute as processed
-            }
-          });
-          // Recurse on the related entity attributes to find deeper related entities
-          processAttributes(relatedEntityAttributes, uniquePath + '.', depth + 1);
-        } else if (item.kind === 'storage' && !processedEntities.has(uniquePath)) {
-          // Handle non-related entities (storage)
-          combinedProperties.push({
-            name: uniquePath,
-            kind: item.kind,
-            type: item.type,
-            isDate: item.type === 'date',
-            isImage: item.type === 'image',
-            isString: item.type === 'string',
-            isNumber: item.type === 'long',
-            isBoolean: item.type === 'bool',
-            isDuration: item.type === 'duration',
-            isRelated: item.kind === 'relatedEntities' || item.kind === 'relatedEntity',
-          });
-          processedEntities.add(uniquePath);
-        }
-      });
-    };
-    const topLevelAttributes = Object.values(ds.dataclass.getAllAttributes()).filter(
-      (item) =>
-        item.kind === 'relatedEntities' ||
-        item.kind === 'relatedEntity' ||
-        (item.kind === 'calculated' && item.behavior === 'relatedEntities'),
-    );
-    processAttributes(topLevelAttributes, '');
+    });
+    const combinedProperties = combined.map(toProperty);
+    const formattedProperties = formatted.map(toProperty);
     setAllProperties([...combinedProperties, ...formattedProperties]); // add the processed properties too
   }, []);
 
