@@ -267,6 +267,7 @@ export interface IAgGridProps extends webforms.ComponentProps {
   iconSize: string;
   enableCellFocus?: boolean;
   enableColumnHover?: boolean;
+  showColumnActions?: boolean;
 }
 
 export interface IColumn {
