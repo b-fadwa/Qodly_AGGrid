@@ -98,6 +98,12 @@ const dataAccessSettings: TSetting[] = [
     defaultValue: false,
   },
   {
+    label: 'Show AgGrid column actions',
+    defaultValue: false,
+    type: ESetting.CHECKBOX,
+    key: 'showColumnActions',
+  },
+  {
     key: 'state',
     label: 'State Source',
     type: ESetting.DS_AUTO_SUGGEST,
