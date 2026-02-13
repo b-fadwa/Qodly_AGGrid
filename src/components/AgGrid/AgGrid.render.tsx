@@ -260,9 +260,13 @@ const AgGrid: FC<IAgGridProps> = ({
     setScrollIndex,
     setCount,
     fetchIndex,
+
     onDsChange: ({ length, selected }) => {
       if (!gridRef.current) return;
       gridRef.current.api?.refreshInfiniteCache();
+      if (multiSelection && gridRef.current.api.getSelectedNodes().length > 0) {
+        gridRef.current.api.deselectAll();
+      }
       if (selected >= 0) {
         updateCurrentDsValue({
           index: selected < length ? selected : 0,
@@ -354,12 +358,34 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onSelectionChanged = useCallback(async (event: any) => {
-    if (currentElement || !multiSelection) return; // handled by onRowClicked
-    if (!currentSelectionDS) return;
+    const api = event.api;
+    const selectedNodes = api.getSelectedNodes();
 
-    const selectedRows = event.api.getSelectedRows();
-    await currentSelectionDS.setValue(null, selectedRows);
+    if (multiSelection) {
+      if (currentSelectionDS) {
+        await currentSelectionDS.setValue(null, selectedNodes.map((n: any) => n.data));
+      }
+      // Sync currentElement to first selected
+      if (selectedNodes.length > 0) {
+        console.log(selectedNodes[0], selectedNodes[0].data, selectedNodes[0].data[columns[0].source], columns[0])
+
+        await updateCurrentDsValue({
+          index: selectedNodes[0].data[columns[0].title],
+          forceUpdate: true,
+        });
+      }
+    }
   }, []);
+
+
+  useEffect(() => {
+    console.log("ds changed");
+  }, [ds])
+
+
+  useEffect(() => {
+    console.log("current element changed");
+  }, [currentElement])
 
   const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
     if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
@@ -492,7 +518,9 @@ const AgGrid: FC<IAgGridProps> = ({
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
     const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
     const rowData = entities.map((data: any) => {
-      const row: any = {};
+      const row: any = {
+        __entity: data,
+      };
       columns.forEach((col) => {
         row[col.title] = data[col.source];
       });
@@ -503,6 +531,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const getSelectedRow = useCallback(async (api: GridApi) => {
     // select current element
+    console.log(1)
     if (multiSelection) return;
     if (currentElement && selected === -1) {
       try {
@@ -514,6 +543,7 @@ const AgGrid: FC<IAgGridProps> = ({
             const ownerSel = entity.getSelection();
             const sel = (ds as any)?.getSelection();
             if (sel && sel !== ownerSel) {
+              console.log('fixes qs#461', { sel, ownerSel })
               // fixes qs#461
               sel.findEntityPosition(entity).then((posInSel: number) => {
                 if (posInSel === pos) {
@@ -545,6 +575,7 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onGridReady = useCallback((params: GridReadyEvent) => {
+    console.log(2)
     // save initial column state on first load
     setInitialColumnState(params.api.getColumnState());
     params.api.setGridOption('datasource', {
@@ -828,6 +859,10 @@ const AgGrid: FC<IAgGridProps> = ({
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
             onRowClicked={onRowClicked}
+            // getRowId={(params) => {
+            //   console.log(params)
+            //   return params.data.__entity?.getKey();
+            // }}
             onSelectionChanged={onSelectionChanged}
             onRowDoubleClicked={onRowDoubleClicked}
             onGridReady={onGridReady}
