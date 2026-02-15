@@ -176,6 +176,9 @@ const AgGrid: FC<IAgGridProps> = ({
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map(col => {
       const colState = columnVisibility.find(c => c.field === col.title) || { isHidden: false, pinned: null };
+      const isBooleanColumn =
+        col.dataType === 'bool' ||
+        (col.dataType === 'number' && ['checkbox', 'icon', 'boolean'].includes(col.format));
       return {
         field: col.title,
         hide: colState.isHidden,
@@ -190,17 +193,36 @@ const AgGrid: FC<IAgGridProps> = ({
         width: col.width,
         flex: col.flex,
         filter:
-          col.filtering &&
-          (col.dataType === 'text' || col.dataType === 'string'
+          !col.filtering
+            ? false
+            : isBooleanColumn
+              ? 'agNumberColumnFilter'
+              : col.dataType === 'text' || col.dataType === 'string'
             ? 'agTextColumnFilter'
             : col.dataType === 'long' || col.dataType === 'number'
               ? 'agNumberColumnFilter'
               : col.dataType === 'date'
                 ? 'agDateColumnFilter'
-                : false),
+                : false,
         filterParams: {
-          filterOptions:
-            col.dataType === 'text' || col.dataType === 'string'
+          filterOptions: isBooleanColumn
+            ? [
+              {
+                displayKey: 'isTrue',
+                displayName: 'true',
+                predicate: (_: any[], cellValue: any) => cellValue === true,
+                numberOfInputs: 0,
+              },
+              {
+                displayKey: 'isFalse',
+                displayName: 'false',
+                predicate: (_: any[], cellValue: any) => cellValue === false,
+                numberOfInputs: 0,
+              },
+              'blank',
+              'notBlank',
+            ]
+            : col.dataType === 'text' || col.dataType === 'string'
               ? ['contains', 'equals', 'notEqual', 'startsWith', 'endsWith']
               : col.dataType === 'long' || col.dataType === 'number'
                 ? [
@@ -215,7 +237,8 @@ const AgGrid: FC<IAgGridProps> = ({
                 : col.dataType === 'date'
                   ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
                   : [],
-          defaultOption: 'equals',
+          defaultOption: isBooleanColumn ? 'isTrue' : 'equals',
+          maxNumConditions: isBooleanColumn ? 1 : 2,
         },
       };
     });
@@ -445,6 +468,14 @@ const AgGrid: FC<IAgGridProps> = ({
         }
       case 'number':
         switch (filter.type) {
+          case 'isTrue':
+            return `${source} == true`;
+          case 'isFalse':
+            return `${source} == false`;
+          case 'blank':
+            return `${source} == null`;
+          case 'notBlank':
+            return `${source} != null`;
           case 'equals':
             return `${source} == ${filterValue}`;
           case 'notEqual':
