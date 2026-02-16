@@ -207,6 +207,7 @@ const AgGrid: FC<IAgGridProps> = ({
         filterParams: {
           filterOptions: isBooleanColumn
             ? [
+              'empty',
               {
                 displayKey: 'isTrue',
                 displayName: 'true',
@@ -237,7 +238,7 @@ const AgGrid: FC<IAgGridProps> = ({
                 : col.dataType === 'date'
                   ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
                   : [],
-          defaultOption: isBooleanColumn ? 'isTrue' : 'equals',
+          defaultOption: isBooleanColumn ? 'empty' : 'equals',
           maxNumConditions: isBooleanColumn ? 1 : 2,
         },
       };
@@ -468,6 +469,8 @@ const AgGrid: FC<IAgGridProps> = ({
         }
       case 'number':
         switch (filter.type) {
+          case 'empty':
+            return '';
           case 'isTrue':
             return `${source} == true`;
           case 'isFalse':
