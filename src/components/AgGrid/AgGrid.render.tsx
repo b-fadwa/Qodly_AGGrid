@@ -812,7 +812,7 @@ const setFilteredColumnsVisible = (visible: boolean) => {
           {showColumnActions && (
             <>
               {/* AGGrid header actions */}
-              <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
+              <div className="grid-header items-stretch flex gap-2 items-center cursor-pointer flex-wrap ">
                 {/* actions section */}
                 <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                   <span className="actions-title font-semibold">Actions:</span>
