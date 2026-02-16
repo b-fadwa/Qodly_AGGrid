@@ -1,4 +1,4 @@
-import { ESetting, TSetting } from '@ws-ui/webform-editor';
+import { DEFAULT_ITERATOR, ESetting, ETextFieldModifier, TSetting } from '@ws-ui/webform-editor';
 import { validateServerSide } from '@ws-ui/shared';
 
 const commonSettings: TSetting[] = [
@@ -85,6 +85,13 @@ const dataAccessSettings: TSetting[] = [
     key: 'currentElement',
     label: 'Selected Element',
     type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'iterator',
+    label: 'Iterate with',
+    type: ESetting.TEXT_FIELD,
+    modifier: ETextFieldModifier.ITERATOR,
+    placeholder: DEFAULT_ITERATOR,
   },
   {
     key: 'currentSelection',

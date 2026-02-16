@@ -121,6 +121,10 @@ const AgGrid: FC<IAgGridProps> = ({
   const [savedViews, setSavedViews] = useState<{ name: string, columnState?: any }[]>([]);
   const [selectedView, setSelectedView] = useState<string>('');
 
+  // dialog
+  const [propertySearch, setPropertySearch] = useState("");
+  const [showVisibleOnly, setShowVisibleOnly] = useState(false);
+
   // Load saved views from localStorage/stateDS on init
   useEffect(() => {
     if (saveLocalStorage) {
@@ -172,6 +176,9 @@ const AgGrid: FC<IAgGridProps> = ({
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map(col => {
       const colState = columnVisibility.find(c => c.field === col.title) || { isHidden: false, pinned: null };
+      const isBooleanColumn =
+        col.dataType === 'bool' ||
+        (col.dataType === 'number' && ['checkbox', 'icon', 'boolean'].includes(col.format));
       return {
         field: col.title,
         hide: colState.isHidden,
@@ -186,17 +193,37 @@ const AgGrid: FC<IAgGridProps> = ({
         width: col.width,
         flex: col.flex,
         filter:
-          col.filtering &&
-          (col.dataType === 'text' || col.dataType === 'string'
+          !col.filtering
+            ? false
+            : isBooleanColumn
+              ? 'agNumberColumnFilter'
+              : col.dataType === 'text' || col.dataType === 'string'
             ? 'agTextColumnFilter'
             : col.dataType === 'long' || col.dataType === 'number'
               ? 'agNumberColumnFilter'
               : col.dataType === 'date'
                 ? 'agDateColumnFilter'
-                : false),
+                : false,
         filterParams: {
-          filterOptions:
-            col.dataType === 'text' || col.dataType === 'string'
+          filterOptions: isBooleanColumn
+            ? [
+              'empty',
+              {
+                displayKey: 'isTrue',
+                displayName: 'true',
+                predicate: (_: any[], cellValue: any) => cellValue === true,
+                numberOfInputs: 0,
+              },
+              {
+                displayKey: 'isFalse',
+                displayName: 'false',
+                predicate: (_: any[], cellValue: any) => cellValue === false,
+                numberOfInputs: 0,
+              },
+              'blank',
+              'notBlank',
+            ]
+            : col.dataType === 'text' || col.dataType === 'string'
               ? ['contains', 'equals', 'notEqual', 'startsWith', 'endsWith']
               : col.dataType === 'long' || col.dataType === 'number'
                 ? [
@@ -211,7 +238,8 @@ const AgGrid: FC<IAgGridProps> = ({
                 : col.dataType === 'date'
                   ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
                   : [],
-          defaultOption: 'equals',
+          defaultOption: isBooleanColumn ? 'empty' : 'equals',
+          maxNumConditions: isBooleanColumn ? 1 : 2,
         },
       };
     });
@@ -260,9 +288,13 @@ const AgGrid: FC<IAgGridProps> = ({
     setScrollIndex,
     setCount,
     fetchIndex,
+
     onDsChange: ({ length, selected }) => {
       if (!gridRef.current) return;
       gridRef.current.api?.refreshInfiniteCache();
+      if (multiSelection && gridRef.current.api.getSelectedNodes().length > 0) {
+        gridRef.current.api.deselectAll();
+      }
       if (selected >= 0) {
         updateCurrentDsValue({
           index: selected < length ? selected : 0,
@@ -286,21 +318,34 @@ const AgGrid: FC<IAgGridProps> = ({
   });
 
   const onRowClicked = useCallback(async (event: any) => {
-    if (!ds || multiSelection) return;
+    if (!ds) return;
+    if (multiSelection) {
+      event.node?.setSelected(true, false);
+      emit('onrowclick');
+      return;
+    }
     await updateCurrentDsValue({
       index: event.rowIndex,
     });
     emit('onrowclick');
-  }, []);
+  }, [ds, multiSelection, updateCurrentDsValue, emit]);
 
   const onRowDoubleClicked = useCallback(async (event: any) => {
     if (!ds) return;
+    if (multiSelection) {
+      const api = event.api ?? gridRef.current?.api;
+      api?.deselectAll();
+      event.node?.setSelected(true, false);
+      if (currentSelectionDS) {
+        await currentSelectionDS.setValue(null, event.data ? [event.data] : []);
+      }
+    }
     await updateCurrentDsValue({
       index: event.rowIndex,
+      forceUpdate: true,
     });
     emit('onrowdblclick');
-    gridRef.current?.api?.deselectAll();
-  }, []);
+  }, [ds, multiSelection, currentSelectionDS, updateCurrentDsValue, emit]);
 
   const onCellClicked = useCallback((event: any) => {
     if (!ds) return;
@@ -354,12 +399,15 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onSelectionChanged = useCallback(async (event: any) => {
-    if (currentElement || !multiSelection) return; // handled by onRowClicked
-    if (!currentSelectionDS) return;
+    const api = event.api;
+    const selectedNodes = api.getSelectedNodes();
 
-    const selectedRows = event.api.getSelectedRows();
-    await currentSelectionDS.setValue(null, selectedRows);
-  }, []);
+    if (multiSelection) {
+      if (currentSelectionDS) {
+        await currentSelectionDS.setValue(null, selectedNodes.map((n: any) => n.data));
+      }
+    }
+  }, [multiSelection, currentSelectionDS]);
 
   const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
     if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
@@ -421,6 +469,16 @@ const AgGrid: FC<IAgGridProps> = ({
         }
       case 'number':
         switch (filter.type) {
+          case 'empty':
+            return '';
+          case 'isTrue':
+            return `${source} == true`;
+          case 'isFalse':
+            return `${source} == false`;
+          case 'blank':
+            return `${source} == null`;
+          case 'notBlank':
+            return `${source} != null`;
           case 'equals':
             return `${source} == ${filterValue}`;
           case 'notEqual':
@@ -492,7 +550,9 @@ const AgGrid: FC<IAgGridProps> = ({
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
     const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
     const rowData = entities.map((data: any) => {
-      const row: any = {};
+      const row: any = {
+        __entity: data,
+      };
       columns.forEach((col) => {
         row[col.title] = data[col.source];
       });
@@ -700,6 +760,51 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }
 
+const normalizedColumns = useMemo(
+  () =>
+    columnVisibility.filter(
+      (column) => column.field !== "ag-Grid-SelectionColumn",
+    ),
+  [columnVisibility],
+);
+
+const filteredColumns = useMemo(() => {
+  const rawSearch = propertySearch.trim().toLowerCase();
+  const compactSearch = rawSearch.replace(/[_\s]+/g, "");
+
+  return [...normalizedColumns]
+    .sort((a, b) => {
+      const aVisible = !a.isHidden;
+      const bVisible = !b.isHidden;
+      if (aVisible !== bVisible) return aVisible ? -1 : 1;
+      return a.field.localeCompare(b.field);
+    })
+    .filter((column) => {
+      const isVisible = !column.isHidden;
+      if (showVisibleOnly && !isVisible) return false;
+      if (!rawSearch) return true;
+
+      const field = column.field.toLowerCase();
+      const compactField = field.replace(/[_\s]+/g, "");
+      return field.includes(rawSearch) || compactField.includes(compactSearch);
+    });
+}, [normalizedColumns, propertySearch, showVisibleOnly]);
+
+const visibleCount = useMemo(
+  () => normalizedColumns.filter((column) => !column.isHidden).length,
+  [normalizedColumns],
+);
+
+const setFilteredColumnsVisible = (visible: boolean) => {
+  filteredColumns.forEach((column) => {
+    const isVisible = !column.isHidden;
+    if (isVisible !== visible) {
+      handleColumnToggle(column.field);
+    }
+  });
+};
+
+
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
       {datasource ? (
@@ -764,77 +869,142 @@ const AgGrid: FC<IAgGridProps> = ({
               {/* columns customizer dialog */}
               {showPropertiesDialog && (
                 <div
-                  className="customizer-dialog fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-[1000]"
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
                   onClick={() => setShowPropertiesDialog(false)}
                 >
                   <div
-                    className="bg-white rounded-lg overflow-y-auto shadow-[0_2px_16px_rgba(0,0,0,0.2)]"
-                    style={{
-                      maxHeight: '80vh',
-                      minWidth: '50%'
-                    }}
+                    className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="flex justify-between items-center mb-4 bg-gray-100 p-4 bottom-px">
-                      <div className='flex flex-col'>
-                        <h1 className="text-lg font-bold">COLUMN STATE</h1>
-                        <span>Show or hide columns for this grid view</span>
+                    <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 rounded-t-xl">
+                      <div>
+                        <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">
+                          Column State
+                        </h1>
+                        <span className="mt-1 block text-xs text-slate-600">
+                          Show or hide columns for this grid view
+                        </span>
                       </div>
                       <button
                         type="button"
-                        className="rounded-md border border-gray-300 bg-gray-300 text-gray-700 p-2"
-                        onClick={() => setShowPropertiesDialog(false)}           >
+                        className="rounded-md border border-slate-300 bg-slate-100 px-3 py-1.5 text-slate-700 hover:border-slate-400"
+                        onClick={() => setShowPropertiesDialog(false)}
+                      >
                         Close
                       </button>
                     </div>
-                    {columns.length === 0 ? (
-                      <li>No properties found.</li>
-                    ) : (
-                      columnVisibility.map((column, idx) => {
-                        if (column.field === "ag-Grid-SelectionColumn") return null;
 
-                        return (
-                          <div
-                            key={idx}
-                            className="w-full bg-white rounded-md shadow-sm flex items-center gap-2 px-4 py-2 mb-2 text-gray-800"
-                          >
+                    <div className="px-5 py-4">
+                      <div className="sticky top-0 z-10 bg-white pb-3">
+                        <div className="flex flex-row gap-2 md:flex-row md:items-center">
+                          <input
+                            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                            placeholder="Search field..."
+                            value={propertySearch}
+                            onChange={(e) => setPropertySearch(e.target.value)}
+                          />
+
+                          <label className="inline-flex items-center gap-2 whitespace-nowrap text-xs text-slate-700">
                             <input
                               type="checkbox"
-                              checked={!column.isHidden}
-                              onChange={() => handleColumnToggle(column.field)}
+                              checked={showVisibleOnly}
+                              onChange={(e) => setShowVisibleOnly(e.target.checked)}
                             />
-                            <span>{column.field}</span>
+                            <span>Visible only</span>
+                          </label>
 
-                            <select
-                              value={column.pinned || "unpinned"}
-                              className="ml-auto border border-gray-300 rounded-md p-1"
-                              onChange={(e) => handlePinChange(column.field, e.target.value)}
-                            >
-                              <option value="unpinned">Unpinned</option>
-                              <option value="left">Left</option>
-                              <option value="right">Right</option>
-                            </select>
+                          <button
+                            type="button"
+                            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={() => setFilteredColumnsVisible(true)}
+                            disabled={filteredColumns.length === 0}
+                          >
+                            Select all
+                          </button>
+
+                          <button
+                            type="button"
+                            className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={() => setFilteredColumnsVisible(false)}
+                            disabled={filteredColumns.length === 0}
+                          >
+                            Clear all
+                          </button>
+                        </div>
+                      </div>
+                      <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
+                        <div>
+                          Visible: {visibleCount} / {normalizedColumns.length}
+                        </div>
+                        <div>Showing: {filteredColumns.length}</div>
+                      </div>
+
+                      <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+                        {filteredColumns.length === 0 ? (
+                          <div className="px-3 py-8 text-center text-sm text-slate-500">
+                            No fields match your filter.
                           </div>
-                        );
-                      })
-                    )}
+                        ) : (
+                          filteredColumns.map((column) => {
+                            const isVisible = !column.isHidden;
+
+                            return (
+                              <div
+                                key={column.field}
+                                className="flex flex-row items-center gap-2 rounded-md px-2 py-2 hover:bg-slate-100"
+                              >
+                                <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={isVisible}
+                                    onChange={() => handleColumnToggle(column.field)}
+                                  />
+                                  <span
+                                    className={`truncate ${
+                                      isVisible ? "text-slate-800" : "text-slate-400"
+                                    }`}
+                                  >
+                                    {column.field}
+                                  </span>
+                                </label>
+
+                                <select
+                                  value={column.pinned || "unpinned"}
+                                  className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                  onChange={(e) => handlePinChange(column.field, e.target.value)}
+                                >
+                                  <option value="unpinned">No pin</option>
+                                  <option value="left">Pin left</option>
+                                  <option value="right">Pin right</option>
+                                </select>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
-            </>
+              </>
           )}
           <AgGridReact
             ref={gridRef}
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
             onRowClicked={onRowClicked}
+            // getRowId={(params) => {
+            //   console.log(params)
+            //   return params.data.__entity?.getKey();
+            // }}
             onSelectionChanged={onSelectionChanged}
             onRowDoubleClicked={onRowDoubleClicked}
             onGridReady={onGridReady}
             rowModelType="infinite"
             rowSelection={{
               mode: multiSelection ? 'multiRow' : 'singleRow',
-              enableClickSelection: !multiSelection,
+              enableClickSelection: true,
+              enableSelectionWithoutKeys: multiSelection,
               checkboxes: multiSelection,
             }}
             cacheBlockSize={100}
