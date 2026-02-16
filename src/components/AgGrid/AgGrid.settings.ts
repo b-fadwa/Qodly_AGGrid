@@ -1,5 +1,13 @@
-import { DEFAULT_ITERATOR, ESetting, ETextFieldModifier, TSetting } from '@ws-ui/webform-editor';
+import {
+  DEFAULT_ITERATOR,
+  ESetting,
+  ETextFieldModifier,
+  getStaticFeaturesExperimentalFlag,
+  TSetting,
+} from '@ws-ui/webform-editor';
 import { validateServerSide } from '@ws-ui/shared';
+
+const isI18nEnabled = getStaticFeaturesExperimentalFlag('i18n');
 
 const commonSettings: TSetting[] = [
   {
@@ -11,8 +19,9 @@ const commonSettings: TSetting[] = [
       {
         label: 'Title',
         defaultValue: '',
-        type: ESetting.TEXT_FIELD,
+        // type: ESetting.TEXT_FIELD,
         key: 'title',
+        type: isI18nEnabled ? ESetting.I18NFIELD : ESetting.TEXT_FIELD,
       },
       {
         label: 'Source',
