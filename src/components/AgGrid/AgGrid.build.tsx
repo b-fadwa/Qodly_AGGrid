@@ -91,7 +91,17 @@ const AgGrid: FC<IAgGridProps> = ({
               <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
                 {/* actions section */}
                 <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="actions-title font-semibold">Actions:</span>
+                  <Element
+                    id="aggrid-actions"
+                    is={resolver.Text}
+                    classNames={['actions-title font-semibold']}
+                    doc={[
+                      {
+                        type: 'paragraph',
+                        children: [{ text: 'Actions' }],
+                      },
+                    ]}
+                  />
                   <div className="flex gap-2">
                     <Element
                       id="agGridActions"
@@ -102,39 +112,90 @@ const AgGrid: FC<IAgGridProps> = ({
                 </div>
                 {/* columns customizer button */}
                 <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="customizer-title font-semibold">View:</span>
+                  <Element
+                    id="aggrid-customizer-title"
+                    is={resolver.Text}
+                    classNames={['customizer-title font-semibold']}
+                    doc={[
+                      {
+                        type: 'paragraph',
+                        children: [{ text: 'View' }],
+                      },
+                    ]}
+                  />
                   <div className="flex gap-2">
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
-                    >
-                      Customize columns
-                    </button>
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
-                    >
-                      Reset default view
-                    </button>
+                    <Element
+                      id="aggrid-header-button1"
+                      is={resolver.Button}
+                      text="Customize columns"
+                      classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                    />
+                    <Element
+                      id="aggrid-header-button2"
+                      is={resolver.Button}
+                      text="Reset default view"
+                      classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                    />
                   </div>
                 </div>
                 {/* new view section */}
                 <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="view-title font-semibold">Save view:</span>
+                  <Element
+                    id="aggrid-view-title"
+                    is={resolver.Text}
+                    classNames={['view-title font-semibold']}
+                    doc={[
+                      {
+                        type: 'paragraph',
+                        children: [{ text: 'Save view' }],
+                      },
+                    ]}
+                  />
                   <div className="flex gap-2">
                     <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" />
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800'>Save new</button>
+                    <Element
+                      id="aggrid-header-button3"
+                      is={resolver.Button}
+                      text="Save new"
+                      classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                    />
                   </div>
                 </div>
                 {/* saved views section */}
                 <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="views-title font-semibold">Saved views:</span>
+                  <Element
+                    id="aggrid-views-title"
+                    is={resolver.Text}
+                    classNames={['views-title font-semibold']}
+                    doc={[
+                      {
+                        type: 'paragraph',
+                        children: [{ text: 'Saved views' }],
+                      },
+                    ]}
+                  />
                   <div className="flex gap-2">
                     <select className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" >
                       <option value="">Select view</option>
                     </select>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >Load</button>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >Overwrite</button>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >Delete</button>
-
+                    <Element
+                      id="aggrid-header-button4"
+                      is={resolver.Button}
+                      text="Load"
+                      classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                    />
+                    <Element
+                      id="aggrid-header-button5"
+                      is={resolver.Button}
+                      text="Overwrite"
+                      classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                    />
+                    <Element
+                      id="aggrid-header-button6"
+                      is={resolver.Button}
+                      text="Delete"
+                      classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                    />
                   </div>
                 </div>
               </div>)}

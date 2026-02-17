@@ -198,12 +198,12 @@ const AgGrid: FC<IAgGridProps> = ({
             : isBooleanColumn
               ? 'agNumberColumnFilter'
               : col.dataType === 'text' || col.dataType === 'string'
-            ? 'agTextColumnFilter'
-            : col.dataType === 'long' || col.dataType === 'number'
-              ? 'agNumberColumnFilter'
-              : col.dataType === 'date'
-                ? 'agDateColumnFilter'
-                : false,
+                ? 'agTextColumnFilter'
+                : col.dataType === 'long' || col.dataType === 'number'
+                  ? 'agNumberColumnFilter'
+                  : col.dataType === 'date'
+                    ? 'agDateColumnFilter'
+                    : false,
         filterParams: {
           filterOptions: isBooleanColumn
             ? [
@@ -760,49 +760,49 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }
 
-const normalizedColumns = useMemo(
-  () =>
-    columnVisibility.filter(
-      (column) => column.field !== "ag-Grid-SelectionColumn",
-    ),
-  [columnVisibility],
-);
+  const normalizedColumns = useMemo(
+    () =>
+      columnVisibility.filter(
+        (column) => column.field !== "ag-Grid-SelectionColumn",
+      ),
+    [columnVisibility],
+  );
 
-const filteredColumns = useMemo(() => {
-  const rawSearch = propertySearch.trim().toLowerCase();
-  const compactSearch = rawSearch.replace(/[_\s]+/g, "");
+  const filteredColumns = useMemo(() => {
+    const rawSearch = propertySearch.trim().toLowerCase();
+    const compactSearch = rawSearch.replace(/[_\s]+/g, "");
 
-  return [...normalizedColumns]
-    .sort((a, b) => {
-      const aVisible = !a.isHidden;
-      const bVisible = !b.isHidden;
-      if (aVisible !== bVisible) return aVisible ? -1 : 1;
-      return a.field.localeCompare(b.field);
-    })
-    .filter((column) => {
+    return [...normalizedColumns]
+      .sort((a, b) => {
+        const aVisible = !a.isHidden;
+        const bVisible = !b.isHidden;
+        if (aVisible !== bVisible) return aVisible ? -1 : 1;
+        return a.field.localeCompare(b.field);
+      })
+      .filter((column) => {
+        const isVisible = !column.isHidden;
+        if (showVisibleOnly && !isVisible) return false;
+        if (!rawSearch) return true;
+
+        const field = column.field.toLowerCase();
+        const compactField = field.replace(/[_\s]+/g, "");
+        return field.includes(rawSearch) || compactField.includes(compactSearch);
+      });
+  }, [normalizedColumns, propertySearch, showVisibleOnly]);
+
+  const visibleCount = useMemo(
+    () => normalizedColumns.filter((column) => !column.isHidden).length,
+    [normalizedColumns],
+  );
+
+  const setFilteredColumnsVisible = (visible: boolean) => {
+    filteredColumns.forEach((column) => {
       const isVisible = !column.isHidden;
-      if (showVisibleOnly && !isVisible) return false;
-      if (!rawSearch) return true;
-
-      const field = column.field.toLowerCase();
-      const compactField = field.replace(/[_\s]+/g, "");
-      return field.includes(rawSearch) || compactField.includes(compactSearch);
+      if (isVisible !== visible) {
+        handleColumnToggle(column.field);
+      }
     });
-}, [normalizedColumns, propertySearch, showVisibleOnly]);
-
-const visibleCount = useMemo(
-  () => normalizedColumns.filter((column) => !column.isHidden).length,
-  [normalizedColumns],
-);
-
-const setFilteredColumnsVisible = (visible: boolean) => {
-  filteredColumns.forEach((column) => {
-    const isVisible = !column.isHidden;
-    if (isVisible !== visible) {
-      handleColumnToggle(column.field);
-    }
-  });
-};
+  };
 
 
   return (
@@ -815,40 +815,93 @@ const setFilteredColumnsVisible = (visible: boolean) => {
               <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
                 {/* actions section */}
                 <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="actions-title font-semibold">Actions:</span>
+                  <Element
+                    id="aggrid-actions"
+                    is={resolver.Text}
+                    classNames={['actions-title font-semibold']}
+                    doc={[
+                      {
+                        type: 'paragraph',
+                        children: [{ text: 'Actions' }],
+                      },
+                    ]}
+                  />
                   <div className="flex gap-2">
                     <Element id="agGridActions" is={resolver.StyleBox} canvas />
                   </div>
                 </div>
                 {/* columns customizer button */}
                 <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="customizer-title font-semibold">View:</span>
+                  <Element
+                    id="aggrid-customizer-title"
+                    is={resolver.Text}
+                    classNames={['customizer-title font-semibold']}
+                    doc={[
+                      {
+                        type: 'paragraph',
+                        children: [{ text: 'View' }],
+                      },
+                    ]}
+                  />
                   <div className="flex gap-2">
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
-                      onClick={() => setShowPropertiesDialog(true)}
-                    >
-                      Customize columns
-                    </button>
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
-                      onClick={resetColumnview}
-                    >
-                      Reset default view
-                    </button>
+                    <div onClick={() => setShowPropertiesDialog(true)}>
+                      <Element
+                        id="aggrid-header-button1"
+                        is={resolver.Button}
+                        text="Customize columns"
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                      />
+                    </div>
+                    <div onClick={() => resetColumnview()}>
+                      <Element
+                        id="aggrid-header-button2"
+                        is={resolver.Button}
+                        text="Reset default view"
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                      />
+                    </div>
                   </div>
                 </div>
                 {/* new view section */}
                 <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="view-title font-semibold">Save view:</span>
+                  <Element
+                    id="aggrid-view-title"
+                    is={resolver.Text}
+                    classNames={['view-title font-semibold']}
+                    doc={[
+                      {
+                        type: 'paragraph',
+                        children: [{ text: 'Save view' }],
+                      },
+                    ]}
+                  />
                   <div className="flex gap-2">
                     <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={saveNewView}>Save new</button>
+                    <div>
+                      <div onClick={() => saveNewView()}>
+                        <Element
+                          id="aggrid-header-button3"
+                          is={resolver.Button}
+                          text="Save new"
+                          classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
                 {/* saved views section */}
                 <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="views-title font-semibold">Saved views:</span>
+                  <Element
+                    id="aggrid-views-title"
+                    is={resolver.Text}
+                    classNames={['views-title font-semibold']}
+                    doc={[
+                      {
+                        type: 'paragraph',
+                        children: [{ text: 'Saved views' }],
+                      },
+                    ]}
+                  />
                   <div className="flex gap-2">
                     <select
                       value={selectedView}
@@ -859,10 +912,32 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                         <option value={view.name}>{view.name}</option>
                       ))}
                     </select>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={loadView}>Load</button>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={updateView}>Overwrite</button>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={deleteView}>Delete</button>
-
+                    {/* <div> */}
+                    <div onClick={() => loadView()}>
+                      <Element
+                        id="aggrid-header-button4"
+                        is={resolver.Button}
+                        text="Load"
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                      />
+                    </div>
+                    {/* </div> */}
+                    <div onClick={() => updateView()}>
+                      <Element
+                        id="aggrid-header-button5"
+                        is={resolver.Button}
+                        text="Overwrite"
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                      />
+                    </div>
+                    <div onClick={() => deleteView()}>
+                      <Element
+                        id="aggrid-header-button6"
+                        is={resolver.Button}
+                        text="Delete"
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -885,13 +960,14 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                           Show or hide columns for this grid view
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-300 bg-slate-100 px-3 py-1.5 text-slate-700 hover:border-slate-400"
-                        onClick={() => setShowPropertiesDialog(false)}
-                      >
-                        Close
-                      </button>
+                      <div onClick={() => setShowPropertiesDialog(false)}>
+                        <Element
+                          id="aggrid-header-button7"
+                          is={resolver.Button}
+                          text="Close"
+                          classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                        />
+                      </div>
                     </div>
 
                     <div className="px-5 py-4">
@@ -913,23 +989,24 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                             <span>Visible only</span>
                           </label>
 
-                          <button
-                            type="button"
-                            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => setFilteredColumnsVisible(true)}
-                            disabled={filteredColumns.length === 0}
-                          >
-                            Select all
-                          </button>
-
-                          <button
-                            type="button"
-                            className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => setFilteredColumnsVisible(false)}
-                            disabled={filteredColumns.length === 0}
-                          >
-                            Clear all
-                          </button>
+                          <div onClick={() => setFilteredColumnsVisible(true)} >
+                            <Element
+                              id="aggrid-header-button8"
+                              disabled={filteredColumns.length === 0}
+                              is={resolver.Button}
+                              text="Select all"
+                              classNames={["rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50 !important"]}
+                            />
+                          </div>
+                          <div onClick={() => setFilteredColumnsVisible(false)} >
+                            <Element
+                              id="aggrid-header-button9"
+                              disabled={filteredColumns.length === 0}
+                              is={resolver.Button}
+                              text="Clear all"
+                              classNames={["rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50 !important"]}
+                            />
+                          </div>
                         </div>
                       </div>
                       <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
@@ -960,9 +1037,8 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                                     onChange={() => handleColumnToggle(column.field)}
                                   />
                                   <span
-                                    className={`truncate ${
-                                      isVisible ? "text-slate-800" : "text-slate-400"
-                                    }`}
+                                    className={`truncate ${isVisible ? "text-slate-800" : "text-slate-400"
+                                      }`}
                                   >
                                     {column.field}
                                   </span>
@@ -986,7 +1062,7 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                   </div>
                 </div>
               )}
-              </>
+            </>
           )}
           <AgGridReact
             ref={gridRef}
