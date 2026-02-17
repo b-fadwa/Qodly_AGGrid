@@ -825,13 +825,13 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                   <span className="customizer-title font-semibold">View:</span>
                   <div className="flex gap-2">
                     <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                       onClick={() => setShowPropertiesDialog(true)}
                     >
                       Customize columns
                     </button>
                     <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                       onClick={resetColumnview}
                     >
                       Reset default view
@@ -842,8 +842,8 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                 <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                   <span className="view-title font-semibold">Save view:</span>
                   <div className="flex gap-2">
-                    <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={saveNewView}>Save new</button>
+                    <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
+                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800' onClick={saveNewView}>Save new</button>
                   </div>
                 </div>
                 {/* saved views section */}
@@ -852,16 +852,16 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                   <div className="flex gap-2">
                     <select
                       value={selectedView}
-                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800"
+                      className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
                       onChange={(e: any) => { setSelectedView(e.target.value) }}>
                       <option value="">Select view</option>
                       {savedViews.map((view, _) => (
                         <option value={view.name}>{view.name}</option>
                       ))}
                     </select>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={loadView}>Load</button>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={updateView}>Overwrite</button>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' onClick={deleteView}>Delete</button>
+                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800' onClick={loadView}>Load</button>
+                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800' onClick={updateView}>Overwrite</button>
+                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800' onClick={deleteView}>Delete</button>
 
                   </div>
                 </div>
@@ -881,13 +881,13 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                         <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">
                           Column State
                         </h1>
-                        <span className="mt-1 block text-xs text-slate-600">
+                        <span className="mt-1 block text-sm text-slate-600">
                           Show or hide columns for this grid view
                         </span>
                       </div>
                       <button
                         type="button"
-                        className="rounded-md border border-slate-300 bg-slate-100 px-3 py-1.5 text-slate-700 hover:border-slate-400"
+                        className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-slate-700 hover:border-slate-400"
                         onClick={() => setShowPropertiesDialog(false)}
                       >
                         Close
@@ -898,13 +898,13 @@ const setFilteredColumnsVisible = (visible: boolean) => {
                       <div className="sticky top-0 z-10 bg-white pb-3">
                         <div className="flex flex-row gap-2 md:flex-row md:items-center">
                           <input
-                            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                            className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
                             placeholder="Search field..."
                             value={propertySearch}
                             onChange={(e) => setPropertySearch(e.target.value)}
                           />
 
-                          <label className="inline-flex items-center gap-2 whitespace-nowrap text-xs text-slate-700">
+                          <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
                             <input
                               type="checkbox"
                               checked={showVisibleOnly}
@@ -915,7 +915,7 @@ const setFilteredColumnsVisible = (visible: boolean) => {
 
                           <button
                             type="button"
-                            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => setFilteredColumnsVisible(true)}
                             disabled={filteredColumns.length === 0}
                           >
@@ -924,7 +924,7 @@ const setFilteredColumnsVisible = (visible: boolean) => {
 
                           <button
                             type="button"
-                            className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => setFilteredColumnsVisible(false)}
                             disabled={filteredColumns.length === 0}
                           >
