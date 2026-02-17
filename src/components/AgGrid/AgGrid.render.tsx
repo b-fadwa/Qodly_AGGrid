@@ -812,7 +812,7 @@ const AgGrid: FC<IAgGridProps> = ({
           {showColumnActions && (
             <>
               {/* AGGrid header actions */}
-              <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
+              <div className="grid-header items-stretch flex gap-2 items-center cursor-pointer flex-wrap ">
                 {/* actions section */}
                 <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                   <Element
@@ -849,7 +849,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         id="aggrid-header-button1"
                         is={resolver.Button}
                         text="Customize columns"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 !important"]}
                       />
                     </div>
                     <div onClick={() => resetColumnview()}>
@@ -857,7 +857,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         id="aggrid-header-button2"
                         is={resolver.Button}
                         text="Reset default view"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 !important"]}
                       />
                     </div>
                   </div>
@@ -876,14 +876,14 @@ const AgGrid: FC<IAgGridProps> = ({
                     ]}
                   />
                   <div className="flex gap-2">
-                    <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
+                    <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
                     <div>
                       <div onClick={() => saveNewView()}>
                         <Element
                           id="aggrid-header-button3"
                           is={resolver.Button}
                           text="Save new"
-                          classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                          classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 !important"]}
                         />
                       </div>
                     </div>
@@ -905,7 +905,7 @@ const AgGrid: FC<IAgGridProps> = ({
                   <div className="flex gap-2">
                     <select
                       value={selectedView}
-                      className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800"
+                      className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
                       onChange={(e: any) => { setSelectedView(e.target.value) }}>
                       <option value="">Select view</option>
                       {savedViews.map((view, _) => (
@@ -918,7 +918,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         id="aggrid-header-button4"
                         is={resolver.Button}
                         text="Load"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 !important"]}
                       />
                     </div>
                     {/* </div> */}
@@ -927,7 +927,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         id="aggrid-header-button5"
                         is={resolver.Button}
                         text="Overwrite"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 !important"]}
                       />
                     </div>
                     <div onClick={() => deleteView()}>
@@ -935,7 +935,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         id="aggrid-header-button6"
                         is={resolver.Button}
                         text="Delete"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 !important"]}
                       />
                     </div>
                   </div>
@@ -956,7 +956,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">
                           Column State
                         </h1>
-                        <span className="mt-1 block text-xs text-slate-600">
+                        <span className="mt-1 block text-sm text-slate-600">
                           Show or hide columns for this grid view
                         </span>
                       </div>
@@ -965,7 +965,7 @@ const AgGrid: FC<IAgGridProps> = ({
                           id="aggrid-header-button7"
                           is={resolver.Button}
                           text="Close"
-                          classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
+                          classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 !important"]}
                         />
                       </div>
                     </div>
@@ -974,13 +974,13 @@ const AgGrid: FC<IAgGridProps> = ({
                       <div className="sticky top-0 z-10 bg-white pb-3">
                         <div className="flex flex-row gap-2 md:flex-row md:items-center">
                           <input
-                            className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                            className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
                             placeholder="Search field..."
                             value={propertySearch}
                             onChange={(e) => setPropertySearch(e.target.value)}
                           />
 
-                          <label className="inline-flex items-center gap-2 whitespace-nowrap text-xs text-slate-700">
+                          <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
                             <input
                               type="checkbox"
                               checked={showVisibleOnly}
@@ -988,14 +988,28 @@ const AgGrid: FC<IAgGridProps> = ({
                             />
                             <span>Visible only</span>
                           </label>
+                          {/* <button
+                            type="button"
+                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={() => setFilteredColumnsVisible(true)}
+                            disabled={filteredColumns.length === 0}
+                          >
+                            Select all
+                          </button>
 
+                          <button
+                            type="button"
+                            className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={() => setFilteredColumnsVisible(false)}
+                            disabled={filteredColumns.length === 0}
+                          ></button> */}
                           <div onClick={() => setFilteredColumnsVisible(true)} >
                             <Element
                               id="aggrid-header-button8"
                               disabled={filteredColumns.length === 0}
                               is={resolver.Button}
                               text="Select all"
-                              classNames={["rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50 !important"]}
+                              classNames={["rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50 !important"]}
                             />
                           </div>
                           <div onClick={() => setFilteredColumnsVisible(false)} >
@@ -1004,7 +1018,7 @@ const AgGrid: FC<IAgGridProps> = ({
                               disabled={filteredColumns.length === 0}
                               is={resolver.Button}
                               text="Clear all"
-                              classNames={["rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50 !important"]}
+                              classNames={["rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50 !important"]}
                             />
                           </div>
                         </div>
@@ -1028,7 +1042,7 @@ const AgGrid: FC<IAgGridProps> = ({
                             return (
                               <div
                                 key={column.field}
-                                className="flex flex-row items-center gap-2 rounded-md px-2 py-2 hover:bg-slate-100"
+                                className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
                               >
                                 <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
                                   <input
