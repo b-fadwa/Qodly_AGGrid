@@ -953,12 +953,28 @@ const AgGrid: FC<IAgGridProps> = ({
                   >
                     <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 rounded-t-xl">
                       <div>
-                        <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">
-                          Column State
-                        </h1>
-                        <span className="mt-1 block text-sm text-slate-600">
-                          Show or hide columns for this grid view
-                        </span>
+                        <Element
+                          id="aggrid-header-text-1"
+                          is={resolver.Text}
+                          doc={[
+                            {
+                              type: 'paragraph',
+                              children: [{ text: 'Column State' }],
+                            },
+                          ]}
+                          classNames={['text-sm font-bold uppercase tracking-wide text-slate-800 !important']}
+                        />
+                        <Element
+                          id="aggrid-header-text-2"
+                          is={resolver.Text}
+                          doc={[
+                            {
+                              type: 'paragraph',
+                              children: [{ text: 'Show or hide columns for this grid view' }],
+                            },
+                          ]}
+                          classNames={['mt-1 block text-sm text-slate-600 !important']}
+                        />
                       </div>
                       <div onClick={() => setShowPropertiesDialog(false)}>
                         <Element
@@ -969,7 +985,6 @@ const AgGrid: FC<IAgGridProps> = ({
                         />
                       </div>
                     </div>
-
                     <div className="px-5 py-4">
                       <div className="sticky top-0 z-10 bg-white pb-3">
                         <div className="flex flex-row gap-2 md:flex-row md:items-center">
@@ -986,23 +1001,18 @@ const AgGrid: FC<IAgGridProps> = ({
                               checked={showVisibleOnly}
                               onChange={(e) => setShowVisibleOnly(e.target.checked)}
                             />
-                            <span>Visible only</span>
+                            <Element
+                              id="aggrid-header-text-3"
+                              is={resolver.Text}
+                              doc={[
+                                {
+                                  type: 'paragraph',
+                                  children: [{ text: 'Visible only' }],
+                                },
+                              ]}
+                              classNames={[]}
+                            />
                           </label>
-                          {/* <button
-                            type="button"
-                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => setFilteredColumnsVisible(true)}
-                            disabled={filteredColumns.length === 0}
-                          >
-                            Select all
-                          </button>
-
-                          <button
-                            type="button"
-                            className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => setFilteredColumnsVisible(false)}
-                            disabled={filteredColumns.length === 0}
-                          ></button> */}
                           <div onClick={() => setFilteredColumnsVisible(true)} >
                             <Element
                               id="aggrid-header-button8"
@@ -1025,20 +1035,47 @@ const AgGrid: FC<IAgGridProps> = ({
                       </div>
                       <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
                         <div>
-                          Visible: {visibleCount} / {normalizedColumns.length}
+                          <Element
+                            id="aggrid-header-text-4"
+                            is={resolver.Text}
+                            doc={[
+                              {
+                                type: 'paragraph',
+                                children: [{ text: 'Visible: ' }],
+                              },
+                            ]}
+                          />
+                          {visibleCount} / {normalizedColumns.length}
                         </div>
-                        <div>Showing: {filteredColumns.length}</div>
+                        <div><Element
+                          id="aggrid-header-text-5"
+                          is={resolver.Text}
+                          doc={[
+                            {
+                              type: 'paragraph',
+                              children: [{ text: 'Showing:' }],
+                            },
+                          ]}
+                        />{filteredColumns.length}
+                        </div>
                       </div>
 
                       <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
                         {filteredColumns.length === 0 ? (
-                          <div className="px-3 py-8 text-center text-sm text-slate-500">
-                            No fields match your filter.
-                          </div>
+                          <Element
+                            id="aggrid-header-text-4"
+                            is={resolver.Text}
+                            doc={[
+                              {
+                                type: 'paragraph',
+                                children: [{ text: 'No fields match your filter' }],
+                              },
+                            ]}
+                            classNames={["px-3 py-8 text-center text-sm text-slate-500 !important"]}
+                          />
                         ) : (
                           filteredColumns.map((column) => {
                             const isVisible = !column.isHidden;
-
                             return (
                               <div
                                 key={column.field}
