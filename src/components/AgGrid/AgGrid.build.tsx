@@ -1,4 +1,4 @@
-import { selectResolver, useDatasourceSub, useEnhancedEditor, useEnhancedNode } from '@ws-ui/webform-editor';
+import { selectResolver, useDatasourceSub, useEnhancedEditor, useEnhancedNode, useI18n, useLocalization } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { FC, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
@@ -81,6 +81,22 @@ const AgGrid: FC<IAgGridProps> = ({
 
   useDatasourceSub();
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
+  const { i18n } = useI18n();
+  const { selected: lang } = useLocalization();
+  const translation = (key: string): string => {
+    const entry = i18n?.keys?.[key]?.[lang] ?? i18n?.keys?.[key]?.default;
+    return entry ?? key;
+  };
+
+  // const translation = (key: string) => get(i18n, `keys.${key}.${lang}`, get(i18n, `keys.${key}.default`, key));
+
+  const [filteredColumns] = useState(() => [
+    { field: 'column 1', isHidden: false, pinned: null },
+    { field: 'column 2', isHidden: false, pinned: 'left' },
+    { field: 'column 3', isHidden: true, pinned: null },
+    { field: 'column 4', isHidden: false, pinned: 'right' },
+  ]);
+
 
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
@@ -154,7 +170,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       ]}
                     />
                     <div className="flex gap-2">
-                      <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" />
+                      <input type="text" placeholder={translation("View name")} className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" />
                       <Element
                         id="aggrid-header-button3"
                         is={resolver.Button}
@@ -178,7 +194,7 @@ const AgGrid: FC<IAgGridProps> = ({
                     />
                     <div className="flex gap-2">
                       <select className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" >
-                        <option value="">Select view</option>
+                        <option value="">{translation("Select view")}</option>
                       </select>
                       <Element
                         id="aggrid-header-button4"
@@ -309,6 +325,53 @@ const AgGrid: FC<IAgGridProps> = ({
                         />
                         </div>
                       </div>
+                      <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+                        {filteredColumns.length === 0 ? (
+                          <Element
+                            id="aggrid-header-text-4"
+                            is={resolver.Text}
+                            doc={[
+                              {
+                                type: 'paragraph',
+                                children: [{ text: 'No fields match your filter' }],
+                              },
+                            ]}
+                            classNames={["px-3 py-8 text-center text-sm text-slate-500 !important"]}
+                          />
+                        ) : (
+                          filteredColumns.map((column) => {
+                            const isVisible = !column.isHidden;
+                            return (
+                              <div
+                                key={column.field}
+                                className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
+                              >
+                                <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={isVisible}
+                                  />
+                                  <span
+                                    className={`truncate ${isVisible ? "text-slate-800" : "text-slate-400"
+                                      }`}
+                                  >
+                                    {column.field}
+                                  </span>
+                                </label>
+
+                                <select
+                                  value={column.pinned || "unpinned"}
+                                  className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                >
+                                  <option value="unpinned">{translation("No pin")}</option>
+                                  <option value="left">{translation("Pin left")} </option>
+                                  <option value="right">{translation("Pin right")}</option>
+                                </select>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
 
                       <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
                         <Element
@@ -354,3 +417,4 @@ const AgGrid: FC<IAgGridProps> = ({
 };
 
 export default AgGrid;
+

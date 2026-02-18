@@ -8,6 +8,8 @@ import {
   useEnhancedNode,
   useWebformPath,
   useEnhancedEditor,
+  useI18n,
+  useLocalization,
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,6 +32,7 @@ import CustomCell from './CustomCell';
 import { format } from 'date-fns';
 import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
+import { get } from 'lodash';
 
 ModuleRegistry.registerModules([ColumnHoverModule]);
 
@@ -89,6 +92,11 @@ const AgGrid: FC<IAgGridProps> = ({
   const { id: nodeID } = useEnhancedNode();
   const prevSortModelRef = useRef<SortModelItem[]>([]);
   const gridRef = useRef<AgGridReact>(null);
+
+  const { i18n } = useI18n();
+  const { selected: lang } = useLocalization();
+  const translation = (key: string) => get(i18n, `keys.${key}.${lang}`, get(i18n, `keys.${key}.default`, key));
+
   const searchDs = useMemo(() => {
     if (ds) {
       const clone: any = cloneDeep(ds);
@@ -876,7 +884,7 @@ const AgGrid: FC<IAgGridProps> = ({
                     ]}
                   />
                   <div className="flex gap-2">
-                    <input type="text" placeholder="View name" className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
+                    <input type="text" placeholder={translation("View name")} className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
                     <div>
                       <div onClick={() => saveNewView()}>
                         <Element
@@ -907,7 +915,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       value={selectedView}
                       className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
                       onChange={(e: any) => { setSelectedView(e.target.value) }}>
-                      <option value="">Select view</option>
+                      <option value="">{translation("Select view")}</option>
                       {savedViews.map((view, _) => (
                         <option value={view.name}>{view.name}</option>
                       ))}
@@ -990,7 +998,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         <div className="flex flex-row gap-2 md:flex-row md:items-center">
                           <input
                             className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
-                            placeholder="Search field..."
+                            placeholder={translation("Search field...")}
                             value={propertySearch}
                             onChange={(e) => setPropertySearch(e.target.value)}
                           />
@@ -1047,16 +1055,17 @@ const AgGrid: FC<IAgGridProps> = ({
                           />
                           {visibleCount} / {normalizedColumns.length}
                         </div>
-                        <div><Element
-                          id="aggrid-header-text-5"
-                          is={resolver.Text}
-                          doc={[
-                            {
-                              type: 'paragraph',
-                              children: [{ text: 'Showing:' }],
-                            },
-                          ]}
-                        />{filteredColumns.length}
+                        <div>
+                          <Element
+                            id="aggrid-header-text-5"
+                            is={resolver.Text}
+                            doc={[
+                              {
+                                type: 'paragraph',
+                                children: [{ text: 'Showing:' }],
+                              },
+                            ]}
+                          />{filteredColumns.length}
                         </div>
                       </div>
 
@@ -1100,9 +1109,9 @@ const AgGrid: FC<IAgGridProps> = ({
                                   className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
                                   onChange={(e) => handlePinChange(column.field, e.target.value)}
                                 >
-                                  <option value="unpinned">No pin</option>
-                                  <option value="left">Pin left</option>
-                                  <option value="right">Pin right</option>
+                                  <option value="unpinned">{translation("No pin")}</option>
+                                  <option value="left">{translation("Pin left")}</option>
+                                  <option value="right">{translation("Pin right")}</option>
                                 </select>
                               </div>
                             );
