@@ -109,17 +109,7 @@ const AgGrid: FC<IAgGridProps> = ({
                 <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
                   {/* actions section */}
                   <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                    <Element
-                      id="aggrid-actions"
-                      is={resolver.Text}
-                      classNames={['actions-title font-semibold']}
-                      doc={[
-                        {
-                          type: 'paragraph',
-                          children: [{ text: 'Actions' }],
-                        },
-                      ]}
-                    />
+                    <span className="actions-title font-semibold">{translation("Actions")}:</span>
                     <div className="flex gap-2">
                       <Element
                         id="agGridActions"
@@ -130,90 +120,39 @@ const AgGrid: FC<IAgGridProps> = ({
                   </div>
                   {/* columns customizer button */}
                   <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                    <Element
-                      id="aggrid-customizer-title"
-                      is={resolver.Text}
-                      classNames={['customizer-title font-semibold']}
-                      doc={[
-                        {
-                          type: 'paragraph',
-                          children: [{ text: 'View' }],
-                        },
-                      ]}
-                    />
-                    <div className="flex gap-2" onClick={() => setShowPropertiesDialog(true)}>
-                      <Element
-                        id="aggrid-header-button1"
-                        is={resolver.Button}
-                        text="Customize columns"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
-                      />
-                      <Element
-                        id="aggrid-header-button2"
-                        is={resolver.Button}
-                        text="Reset default view"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
-                      />
+                    <span className="customizer-title font-semibold">{translation("View")}:</span>
+                    <div className="flex gap-2">
+                      <button
+                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                        onClick={() => setShowPropertiesDialog(true)}
+                      >
+                        {translation("Customize columns")}
+                      </button>
+                      <button
+                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
+                      >
+                        {translation("Reset default view")}
+                      </button>
                     </div>
                   </div>
                   {/* new view section */}
                   <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                    <Element
-                      id="aggrid-view-title"
-                      is={resolver.Text}
-                      classNames={['view-title font-semibold']}
-                      doc={[
-                        {
-                          type: 'paragraph',
-                          children: [{ text: 'Save view' }],
-                        },
-                      ]}
-                    />
+                    <span className="view-title font-semibold">{translation("Save view")}:</span>
                     <div className="flex gap-2">
                       <input type="text" placeholder={translation("View name")} className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" />
-                      <Element
-                        id="aggrid-header-button3"
-                        is={resolver.Button}
-                        text="Save new"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
-                      />
+                      <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800'>{translation("Save new")}</button>
                     </div>
                   </div>
                   {/* saved views section */}
                   <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                    <Element
-                      id="aggrid-views-title"
-                      is={resolver.Text}
-                      classNames={['views-title font-semibold']}
-                      doc={[
-                        {
-                          type: 'paragraph',
-                          children: [{ text: 'Saved views' }],
-                        },
-                      ]}
-                    />
+                    <span className="views-title font-semibold">{translation("Saved views")}:</span>
                     <div className="flex gap-2">
                       <select className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" >
                         <option value="">{translation("Select view")}</option>
                       </select>
-                      <Element
-                        id="aggrid-header-button4"
-                        is={resolver.Button}
-                        text="Load"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
-                      />
-                      <Element
-                        id="aggrid-header-button5"
-                        is={resolver.Button}
-                        text="Overwrite"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
-                      />
-                      <Element
-                        id="aggrid-header-button6"
-                        is={resolver.Button}
-                        text="Delete"
-                        classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 !important"]}
-                      />
+                      <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >{translation("Load")}</button>
+                      <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >{translation("Overwrite")}</button>
+                      <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >{translation("Delete")}</button>
                     </div>
                   </div>
                 </div>
@@ -227,37 +166,15 @@ const AgGrid: FC<IAgGridProps> = ({
                     >
                       <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 rounded-t-xl">
                         <div>
-                          <Element
-                            id="aggrid-header-text-1"
-                            is={resolver.Text}
-                            doc={[
-                              {
-                                type: 'paragraph',
-                                children: [{ text: 'Column State' }],
-                              },
-                            ]}
-                            classNames={['text-sm font-bold uppercase tracking-wide text-slate-800 !important']}
-                          />
-                          <Element
-                            id="aggrid-header-text-2"
-                            is={resolver.Text}
-                            doc={[
-                              {
-                                type: 'paragraph',
-                                children: [{ text: 'Show or hide columns for this grid view' }],
-                              },
-                            ]}
-                            classNames={['mt-1 block text-sm text-slate-600 !important']}
-                          />
+                          <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">{translation("COLUMN STATE")}</h1>
+                          <span className='mt-1 block text-sm text-slate-600'>{translation("Show or hide columns for this grid view")}</span>
                         </div>
-                        <div onClick={() => setShowPropertiesDialog(false)}>
-                          <Element
-                            id="aggrid-header-button7"
-                            is={resolver.Button}
-                            text="Close"
-                            classNames={["header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 !important"]}
-                          />
-                        </div>
+                        <button
+                          type="button"
+                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                          onClick={() => setShowPropertiesDialog(false)}           >
+                          {translation("Close")}
+                        </button>
                       </div>
                       <div className="px-5 py-4">
                         <div className="sticky top-0 z-10 bg-white pb-3">
@@ -271,73 +188,34 @@ const AgGrid: FC<IAgGridProps> = ({
                               <input
                                 type="checkbox"
                               />
-                              <Element
-                                id="aggrid-header-text-3"
-                                is={resolver.Text}
-                                doc={[
-                                  {
-                                    type: 'paragraph',
-                                    children: [{ text: 'Visible only' }],
-                                  },
-                                ]}
-                                classNames={[]}
-                              />
+                              <span>{translation("Visible only")}</span>
                             </label>
-                            <div >
-                              <Element
-                                id="aggrid-header-button8"
-                                is={resolver.Button}
-                                text="Select all"
-                                classNames={["rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50 !important"]}
-                              />
-                            </div>
-                            <Element
-                              id="aggrid-header-button9"
-                              is={resolver.Button}
-                              text="Clear all"
-                              classNames={["rounded-md border border-slate-300 bg-white px-3 py-1 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50 !important"]}
-                            />
+                            <button
+                              type="button"
+                              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {translation("Select all")}
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {translation("Clear all")}
+                            </button>
                           </div>
                         </div>
                       </div>
                       <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
                         <div>
-                          <Element
-                            id="aggrid-header-text-4"
-                            is={resolver.Text}
-                            doc={[
-                              {
-                                type: 'paragraph',
-                                children: [{ text: 'Visible: ' }],
-                              },
-                            ]}
-                          />
+                          {translation("Visible:")}
                         </div>
-                        <div><Element
-                          id="aggrid-header-text-5"
-                          is={resolver.Text}
-                          doc={[
-                            {
-                              type: 'paragraph',
-                              children: [{ text: 'Showing:' }],
-                            },
-                          ]}
-                        />
-                        </div>
+                        <div>{translation("Showing:")} </div>
                       </div>
                       <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
                         {filteredColumns.length === 0 ? (
-                          <Element
-                            id="aggrid-header-text-4"
-                            is={resolver.Text}
-                            doc={[
-                              {
-                                type: 'paragraph',
-                                children: [{ text: 'No fields match your filter' }],
-                              },
-                            ]}
-                            classNames={["px-3 py-8 text-center text-sm text-slate-500 !important"]}
-                          />
+                          <div className="px-3 py-8 text-center text-sm text-slate-500">
+                            {translation("No fields match your filter.")}
+                          </div>
                         ) : (
                           filteredColumns.map((column) => {
                             const isVisible = !column.isHidden;
@@ -371,20 +249,6 @@ const AgGrid: FC<IAgGridProps> = ({
                             );
                           })
                         )}
-                      </div>
-
-                      <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
-                        <Element
-                          id="aggrid-header-text-4"
-                          is={resolver.Text}
-                          doc={[
-                            {
-                              type: 'paragraph',
-                              children: [{ text: 'No fields match your filter' }],
-                            },
-                          ]}
-                          classNames={["px-3 py-8 text-center text-sm text-slate-500 !important"]}
-                        />
                       </div>
                     </div>
                   </div>
