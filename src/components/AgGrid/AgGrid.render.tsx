@@ -311,9 +311,16 @@ const AgGrid: FC<IAgGridProps> = ({
       if (!gridRef.current) return;
       //resetting aggrid after external events 
       gridRef.current.api.setFilterModel(null);
+      if (initialColumnState) {
+        gridRef.current.api.applyColumnState({
+          state: initialColumnState,
+          applyOrder: true,
+        });
+      }
+      setColumnVisibility(initialColumnVisibility);
+      setSelectedView('');
       gridRef.current.api.deselectAll();
       gridRef.current.api.refreshInfiniteCache();
-      setSelectedView('');
       if (multiSelection && gridRef.current.api.getSelectedNodes().length > 0) {
         gridRef.current.api.deselectAll();
       }
