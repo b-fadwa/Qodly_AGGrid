@@ -309,7 +309,18 @@ const AgGrid: FC<IAgGridProps> = ({
 
     onDsChange: ({ length, selected }) => {
       if (!gridRef.current) return;
-      gridRef.current.api?.refreshInfiniteCache();
+      //resetting aggrid after external events 
+      gridRef.current.api.setFilterModel(null);
+      if (initialColumnState) {
+        gridRef.current.api.applyColumnState({
+          state: initialColumnState,
+          applyOrder: true,
+        });
+      }
+      setColumnVisibility(initialColumnVisibility);
+      setSelectedView('');
+      gridRef.current.api.deselectAll();
+      gridRef.current.api.refreshInfiniteCache();
       if (multiSelection && gridRef.current.api.getSelectedNodes().length > 0) {
         gridRef.current.api.deselectAll();
       }
@@ -355,7 +366,7 @@ const AgGrid: FC<IAgGridProps> = ({
       api?.deselectAll();
       event.node?.setSelected(true, false);
       if (currentSelectionDS) {
-        await currentSelectionDS.setValue(null, event.data ? [event.data] : []);
+        await currentSelectionDS.setValue(null, event.data ? [sanitizeRow(event.data)] : []);
       }
     }
     await updateCurrentDsValue({
@@ -422,7 +433,8 @@ const AgGrid: FC<IAgGridProps> = ({
 
     if (multiSelection) {
       if (currentSelectionDS) {
-        await currentSelectionDS.setValue(null, selectedNodes.map((n: any) => n.data));
+        const sanitized = selectedNodes.map((n: any) => sanitizeRow(n.data || {}));
+        await currentSelectionDS.setValue(null, sanitized);
       }
     }
   }, [multiSelection, currentSelectionDS]);
@@ -564,6 +576,42 @@ const AgGrid: FC<IAgGridProps> = ({
       await ds.orderBy(sortingString);
     }
   }, []);
+
+
+  // (fix bug when calling 4d function on aggrid that displayes related values)
+  // sanitize values to plain JSON-safe primitives/objects to avoid circular refs 
+  const sanitizeValue = (v: any): any => {
+    if (v == null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      return v;
+    }
+    if (v instanceof Date) return v.toISOString();
+
+    if (Array.isArray(v)) return v.map(sanitizeValue);
+
+    if (typeof v === 'object') {
+      // Entity-like object: return key or minimal id if available
+      // shallow copy of primitive props only
+      const out: any = {};
+      Object.keys(v).forEach((k) => {
+        const val = v[k];
+        if (val === null || val === undefined) out[k] = val;
+        else if (['string', 'number', 'boolean'].includes(typeof val)) out[k] = val;
+        else if (val instanceof Date) out[k] = val.toISOString();
+      });
+      return out;
+    }
+    return String(v);
+  };
+
+  const sanitizeRow = (row: any) => {
+    const result: any = {};
+    (columns || []).forEach((col: any) => {
+      const key = col.source ?? col.title;
+      const raw = row?.[col.title] ?? row?.__entity?.[col.source];
+      result[key] = sanitizeValue(raw);
+    });
+    return result;
+  };
 
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
     const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
