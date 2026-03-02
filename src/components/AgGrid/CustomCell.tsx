@@ -1,39 +1,73 @@
-import { formatValue } from '@ws-ui/webform-editor';
+import { formatValue, useI18n, useLocalization } from '@ws-ui/webform-editor';
 import { MdCheck, MdClose } from 'react-icons/md';
 import { DataType, getStyle } from '@ws-ui/formatter';
 
-const CustomCell = ({ format, dataType, value }: { format: any; dataType: string; value: any }) => {
+const CustomCell = ({
+  format,
+  dataType,
+  value,
+  colDef,
+}: {
+  format: any;
+  dataType: string;
+  value: any;
+  colDef?: { field?: string; headerName?: string };
+}) => {
+  const { i18n } = useI18n();
+  const { selected: lang } = useLocalization();
+
+  const translateFromHeader = (input: any): any => {
+    const headerKey = colDef?.headerName ?? colDef?.field ?? '';
+    const match = typeof headerKey === 'string' ? headerKey.match(/_r_(16\d{3})/i) : null;
+    if (!match || input === undefined || input === null || input === '') {
+      return input;
+    }
+
+    const resourceId = match[1];
+    const translationKey = `${resourceId}${input}`;
+
+    const entry = i18n?.keys?.[translationKey];
+
+    return entry?.[lang] ?? entry?.default ?? input;
+  };
+
+  const translatedValue = translateFromHeader(value);
+
   switch (true) {
-    case value && typeof value === 'object' && !(value instanceof Date):
+    case translatedValue &&
+      typeof translatedValue === 'object' &&
+      !(translatedValue instanceof Date):
       return (
         <>
-          {value?.__deferred?.image ? (
-            <img className="image h-full" src={value?.__deferred?.uri} alt="" />
+          {(translatedValue as any)?.__deferred?.image ? (
+            <img className="image h-full" src={(translatedValue as any)?.__deferred?.uri} alt="" />
           ) : (
-            JSON.stringify(value)
+            JSON.stringify(translatedValue)
           )}
         </>
       );
-    case dataType === 'number' && typeof value === 'boolean' && format === 'checkbox':
-      return <input className="checkbox" type="checkbox" checked={value} disabled />;
-    case dataType === 'number' && typeof value === 'boolean' && format === 'icon':
+    case dataType === 'number' && typeof translatedValue === 'boolean' && format === 'checkbox':
+      return <input className="checkbox" type="checkbox" checked={translatedValue} disabled />;
+    case dataType === 'number' && typeof translatedValue === 'boolean' && format === 'icon':
       return (
-        <div className={"icon h-full flex items-center icon-"+value}>{value ? <MdCheck /> : <MdClose />}</div>
+        <div className={'icon h-full flex items-center icon-' + translatedValue}>
+          {translatedValue ? <MdCheck /> : <MdClose />}
+        </div>
       );
-    case dataType === 'number' && typeof value === 'number' && format === 'slider':
-      return <input className="slider" type="range" value={value} disabled />;
-    case dataType === 'bool' && typeof value === 'boolean' && format === 'boolean':
-      return <div className="cell">{value.toString()}</div>;
+    case dataType === 'number' && typeof translatedValue === 'number' && format === 'slider':
+      return <input className="slider" type="range" value={translatedValue} disabled />;
+    case dataType === 'bool' && typeof translatedValue === 'boolean' && format === 'boolean':
+      return <div className="cell">{translatedValue.toString()}</div>;
     default:
       const customValue =
-        value !== undefined && value !== null
+        translatedValue !== undefined && translatedValue !== null
           ? format
-            ? formatValue(value, dataType, format)
-            : value.toString()
-          : value;
+            ? formatValue(translatedValue, dataType, format)
+            : translatedValue.toString()
+          : translatedValue;
       const customStyle =
         format && format !== 'icon' && format !== 'checkbox'
-          ? getStyle(dataType as DataType, format, value)
+          ? getStyle(dataType as DataType, format, translatedValue)
           : {};
 
       return (
