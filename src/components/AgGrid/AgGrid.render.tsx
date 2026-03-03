@@ -12,9 +12,27 @@ import {
   useLocalization,
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
-import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FC,
+  KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { IAgGridProps } from './AgGrid.config';
+import {
+  buildFocusedCellClipboardText,
+  buildManualSelectedCellsClipboardText,
+  buildSelectedCellRangesClipboardText,
+  buildSelectedRowsClipboardText,
+  isEditableTarget,
+  isCopyShortcut,
+  type TManualSelectedCell,
+  writeTextToClipboard,
+} from './AgGrid.clipboard';
 import {
   ColDef,
   GridApi,
@@ -24,6 +42,8 @@ import {
   StateUpdatedEvent,
   ModuleRegistry,
   ColumnHoverModule,
+  CellStyleModule,
+  RenderApiModule,
   themeQuartz,
 } from 'ag-grid-community';
 import isEqual from 'lodash/isEqual';
@@ -34,7 +54,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
 
-ModuleRegistry.registerModules([ColumnHoverModule]);
+ModuleRegistry.registerModules([ColumnHoverModule, CellStyleModule, RenderApiModule]);
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -98,14 +118,13 @@ const AgGrid: FC<IAgGridProps> = ({
 
   //add key aggrid_
   const translation = (key: string): string => {
-    const formattedKey = key.replace(/\s+/g, "_");
+    const formattedKey = key.replace(/\s+/g, '_');
     return get(
       i18n,
       `keys.aggrid_${formattedKey}.${lang}`,
-      get(i18n, `keys.aggrid_${formattedKey}.default`, key)
+      get(i18n, `keys.aggrid_${formattedKey}.default`, key),
     );
   };
-
 
   const searchDs = useMemo(() => {
     if (ds) {
@@ -132,16 +151,57 @@ const AgGrid: FC<IAgGridProps> = ({
   const [selected, setSelected] = useState(-1);
   const [scrollIndex, setScrollIndex] = useState(0);
   const [_count, setCount] = useState(0);
+  const [copyMode, setCopyMode] = useState<'cells' | 'rows'>('cells');
+  const [manualSelectedCells, setManualSelectedCells] = useState<TManualSelectedCell[]>([]);
+  const [isCellSelectionAvailable, setIsCellSelectionAvailable] = useState(false);
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   // views management
   const [viewName, setViewName] = useState<string>('');
   // view = name + columnState
-  const [savedViews, setSavedViews] = useState<{ name: string, columnState?: any }[]>([]);
+  const [savedViews, setSavedViews] = useState<{ name: string; columnState?: any }[]>([]);
   const [selectedView, setSelectedView] = useState<string>('');
 
   // dialog
-  const [propertySearch, setPropertySearch] = useState("");
+  const [propertySearch, setPropertySearch] = useState('');
   const [showVisibleOnly, setShowVisibleOnly] = useState(false);
+
+  const manualSelectedCellKeySet = useMemo(
+    () => new Set(manualSelectedCells.map((cell) => `${cell.rowIndex}::${cell.colId}`)),
+    [manualSelectedCells],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const registerEnterpriseCellSelection = async () => {
+      try {
+        const enterpriseModuleName = 'ag-grid-' + 'enterprise';
+        const enterprise: any = await import(/* @vite-ignore */ enterpriseModuleName);
+        const cellSelectionModule = enterprise?.CellSelectionModule;
+        if (cellSelectionModule) {
+          ModuleRegistry.registerModules([cellSelectionModule]);
+          if (!cancelled) setIsCellSelectionAvailable(true);
+        }
+      } catch (_) {
+        if (!cancelled) setIsCellSelectionAvailable(false);
+      }
+    };
+
+    registerEnterpriseCellSelection();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (copyMode !== 'cells') {
+      setManualSelectedCells([]);
+    }
+  }, [copyMode]);
+
+  useEffect(() => {
+    if (copyMode !== 'cells' || isCellSelectionAvailable) return;
+    gridRef.current?.api?.refreshCells({ force: true });
+  }, [copyMode, isCellSelectionAvailable, manualSelectedCells]);
 
   // Load saved views from localStorage/stateDS on init
   useEffect(() => {
@@ -156,11 +216,11 @@ const AgGrid: FC<IAgGridProps> = ({
         if (data && data.savedViews) {
           setSavedViews(data.savedViews);
         }
-      })
+      });
     }
   }, []);
 
-  //to deselct if current selection ds value is cleared from outside 
+  //to deselct if current selection ds value is cleared from outside
   useEffect(() => {
     if (!currentSelectionDS) return;
 
@@ -180,20 +240,23 @@ const AgGrid: FC<IAgGridProps> = ({
   //very initial state of columns
   const initialColumnVisibility = useMemo(
     () =>
-      columns.map(col => ({
+      columns.map((col) => ({
         field: col.title,
         isHidden: col.hidden || false, // use col.hidden directly from properties
         pinned: null as 'left' | 'right' | null,
       })),
-    [columns]
+    [columns],
   );
 
   const [columnVisibility, setColumnVisibility] = useState<any[]>(initialColumnVisibility);
   const [initialColumnState, setInitialColumnState] = useState<any>(null); // Store the initial AG Grid column state
 
   const colDefs: ColDef[] = useMemo(() => {
-    return columns.map(col => {
-      const colState = columnVisibility.find(c => c.field === col.title) || { isHidden: false, pinned: null };
+    return columns.map((col) => {
+      const colState = columnVisibility.find((c) => c.field === col.title) || {
+        isHidden: false,
+        pinned: null,
+      };
       const isBooleanColumn =
         col.dataType === 'bool' ||
         (col.dataType === 'number' && ['checkbox', 'icon', 'boolean'].includes(col.format));
@@ -205,54 +268,71 @@ const AgGrid: FC<IAgGridProps> = ({
           format: col.format,
           dataType: col.dataType,
         },
+        cellStyle: (params: any) => {
+          if (isCellSelectionAvailable) return undefined;
+          const resetStyle = {
+            border: '',
+            boxSizing: '',
+            backgroundColor: '',
+          };
+          if (copyMode !== 'cells') return resetStyle;
+          const rowIndex = params?.node?.rowIndex;
+          if (typeof rowIndex !== 'number') return resetStyle;
+          const key = `${rowIndex}::${params.column.getColId()}`;
+          if (!manualSelectedCellKeySet.has(key)) return resetStyle;
+          return {
+            border: '2px dashed #1d4ed8',
+            boxSizing: 'border-box',
+            backgroundColor: 'rgba(29, 78, 216, 0.08)',
+          };
+        },
         lockPosition: col.locked,
         sortable: col.dataType !== 'image' && col.dataType !== 'object' && col.sorting,
         resizable: col.sizing,
         width: col.width,
         flex: col.flex,
-        filter:
-          !col.filtering
-            ? false
-            : isBooleanColumn
-              ? 'agNumberColumnFilter'
-              : col.dataType === 'text' || col.dataType === 'string'
-                ? 'agTextColumnFilter'
-                : col.dataType === 'long' || col.dataType === 'number'
-                  ? 'agNumberColumnFilter'
-                  : col.dataType === 'date'
-                    ? 'agDateColumnFilter'
-                    : false,
+        filter: !col.filtering
+          ? false
+          : isBooleanColumn
+            ? 'agNumberColumnFilter'
+            : col.dataType === 'text' || col.dataType === 'string'
+              ? 'agTextColumnFilter'
+              : col.dataType === 'long' || col.dataType === 'number'
+                ? 'agNumberColumnFilter'
+                : col.dataType === 'date'
+                  ? 'agDateColumnFilter'
+                  : false,
         filterParams: {
           filterOptions: isBooleanColumn
             ? [
-              'empty',
-              {
-                displayKey: 'isTrue',
-                displayName: 'true',
-                predicate: (_: any[], cellValue: any) => cellValue === true,
-                numberOfInputs: 0,
-              },
-              {
-                displayKey: 'isFalse',
-                displayName: 'false',
-                predicate: (_: any[], cellValue: any) => cellValue === false,
-                numberOfInputs: 0,
-              },
-              'blank',
-              'notBlank',
-            ]
+                'empty',
+                {
+                  displayKey: 'isTrue',
+                  displayName: 'true',
+                  predicate: (_: any[], cellValue: any) => cellValue === true,
+                  numberOfInputs: 0,
+                },
+                {
+                  displayKey: 'isFalse',
+                  displayName: 'false',
+                  predicate: (_: any[], cellValue: any) => cellValue === false,
+                  numberOfInputs: 0,
+                },
+                'blank',
+                'notBlank',
+              ]
             : col.dataType === 'text' || col.dataType === 'string'
               ? ['contains', 'equals', 'notEqual', 'startsWith', 'endsWith']
               : col.dataType === 'long' || col.dataType === 'number'
                 ? [
-                  'equals',
-                  'notEqual',
-                  'greaterThan',
-                  'greaterThanOrEqual',
-                  'lessThan',
-                  'lessThanOrEqual',
-                  'inRange',
-                ]
+                    'equals',
+                    'notEqual',
+                    'greaterThan',
+                    'greaterThanOrEqual',
+                    'lessThan',
+                    'lessThanOrEqual',
+                    'inRange',
+                  ]
                 : col.dataType === 'date'
                   ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
                   : [],
@@ -261,8 +341,7 @@ const AgGrid: FC<IAgGridProps> = ({
         },
       };
     });
-  }, [columns, columnVisibility]);
-
+  }, [columns, columnVisibility, copyMode, isCellSelectionAvailable, manualSelectedCellKeySet]);
 
   const defaultColDef = useMemo<ColDef>(() => {
     return {
@@ -309,7 +388,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
     onDsChange: ({ length, selected }) => {
       if (!gridRef.current) return;
-      //resetting aggrid after external events 
+      //resetting aggrid after external events
       gridRef.current.api.setFilterModel(null);
       if (initialColumnState) {
         gridRef.current.api.applyColumnState({
@@ -319,6 +398,7 @@ const AgGrid: FC<IAgGridProps> = ({
       }
       setColumnVisibility(initialColumnVisibility);
       setSelectedView('');
+      setManualSelectedCells([]);
       gridRef.current.api.deselectAll();
       gridRef.current.api.refreshInfiniteCache();
       if (multiSelection && gridRef.current.api.getSelectedNodes().length > 0) {
@@ -346,43 +426,81 @@ const AgGrid: FC<IAgGridProps> = ({
     },
   });
 
-  const onRowClicked = useCallback(async (event: any) => {
-    if (!ds) return;
-    if (multiSelection) {
-      event.node?.setSelected(true, false);
-      emit('onrowclick');
-      return;
-    }
-    await updateCurrentDsValue({
-      index: event.rowIndex,
-    });
-    emit('onrowclick');
-  }, [ds, multiSelection, updateCurrentDsValue, emit]);
+  const focusRowForCopy = useCallback(
+    (api: GridApi | undefined, rowIndex: number) => {
+      if (!api || copyMode !== 'rows' || rowIndex < 0) return;
+      const firstColumn = api.getAllDisplayedColumns()?.[0];
+      if (!firstColumn) return;
+      api.setFocusedCell(rowIndex, firstColumn);
+    },
+    [copyMode],
+  );
 
-  const onRowDoubleClicked = useCallback(async (event: any) => {
-    if (!ds) return;
-    if (multiSelection) {
-      const api = event.api ?? gridRef.current?.api;
-      api?.deselectAll();
-      event.node?.setSelected(true, false);
-      if (currentSelectionDS) {
-        await currentSelectionDS.setValue(null, event.data ? [sanitizeRow(event.data)] : []);
+  const onRowClicked = useCallback(
+    async (event: any) => {
+      if (!ds) return;
+      if (multiSelection) {
+        event.node?.setSelected(true, false);
+        focusRowForCopy(event.api ?? gridRef.current?.api, event.rowIndex);
+        emit('onrowclick');
+        return;
       }
-    }
-    await updateCurrentDsValue({
-      index: event.rowIndex,
-      forceUpdate: true,
-    });
-    emit('onrowdblclick');
-  }, [ds, multiSelection, currentSelectionDS, updateCurrentDsValue, emit]);
+      await updateCurrentDsValue({
+        index: event.rowIndex,
+      });
+      focusRowForCopy(event.api ?? gridRef.current?.api, event.rowIndex);
+      emit('onrowclick');
+    },
+    [ds, multiSelection, updateCurrentDsValue, emit, focusRowForCopy],
+  );
 
-  const onCellClicked = useCallback((event: any) => {
-    if (!ds) return;
-    emit('oncellclick', {
-      column: event.column.getColId(),
-      value: event.value,
-    });
-  }, []);
+  const onRowDoubleClicked = useCallback(
+    async (event: any) => {
+      if (!ds) return;
+      if (multiSelection) {
+        const api = event.api ?? gridRef.current?.api;
+        api?.deselectAll();
+        event.node?.setSelected(true, false);
+        if (currentSelectionDS) {
+          await currentSelectionDS.setValue(null, event.data ? [sanitizeRow(event.data)] : []);
+        }
+      }
+      await updateCurrentDsValue({
+        index: event.rowIndex,
+        forceUpdate: true,
+      });
+      emit('onrowdblclick');
+    },
+    [ds, multiSelection, currentSelectionDS, updateCurrentDsValue, emit],
+  );
+
+  const onCellClicked = useCallback(
+    (event: any) => {
+      if (!ds) return;
+
+      if (copyMode === 'cells' && !isCellSelectionAvailable) {
+        const rowIndex = event?.node?.rowIndex;
+        const colId = event?.column?.getColId?.();
+        if (typeof rowIndex === 'number' && colId) {
+          const headerName = String(event?.colDef?.headerName ?? colId);
+          setManualSelectedCells((prev) => {
+            const key = `${rowIndex}::${colId}`;
+            const exists = prev.some((cell) => `${cell.rowIndex}::${cell.colId}` === key);
+            if (exists) {
+              return prev.filter((cell) => `${cell.rowIndex}::${cell.colId}` !== key);
+            }
+            return [...prev, { rowIndex, colId, headerName, value: event?.value }];
+          });
+        }
+      }
+
+      emit('oncellclick', {
+        column: event.column.getColId(),
+        value: event.value,
+      });
+    },
+    [ds, copyMode, isCellSelectionAvailable],
+  );
 
   const onCellDoubleClicked = useCallback((event: any) => {
     if (!ds) return;
@@ -419,25 +537,75 @@ const AgGrid: FC<IAgGridProps> = ({
     });
   }, []);
 
-  const onCellKeyDown = useCallback((event: any) => {
-    emit('oncellkeydown', {
-      column: event.column.getColId(),
-      value: event.value,
-      key: event.event.key,
-    });
-  }, []);
+  const handleCopyShortcut = useCallback(
+    (event: any, api: GridApi): boolean => {
+      if (!isCopyShortcut(event)) return false;
 
-  const onSelectionChanged = useCallback(async (event: any) => {
-    const api = event.api;
-    const selectedNodes = api.getSelectedNodes();
-
-    if (multiSelection) {
-      if (currentSelectionDS) {
-        const sanitized = selectedNodes.map((n: any) => sanitizeRow(n.data || {}));
-        await currentSelectionDS.setValue(null, sanitized);
+      if (copyMode === 'rows') {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        if (!multiSelection) return true;
+        const text = buildSelectedRowsClipboardText(api);
+        if (!text) return true;
+        void writeTextToClipboard(text);
+        return true;
       }
-    }
-  }, [multiSelection, currentSelectionDS]);
+
+      if (copyMode === 'cells') {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        let text = '';
+        if (isCellSelectionAvailable) {
+          text = buildSelectedCellRangesClipboardText(api);
+        }
+        if (!text && manualSelectedCells.length > 0) {
+          text = buildManualSelectedCellsClipboardText(manualSelectedCells, api);
+        }
+        if (!text) {
+          text = buildFocusedCellClipboardText(api);
+        }
+        if (!text) return true;
+        void writeTextToClipboard(text);
+        return true;
+      }
+
+      return false;
+    },
+    [copyMode, multiSelection, isCellSelectionAvailable, manualSelectedCells],
+  );
+
+  const onCellKeyDown = useCallback(
+    (event: any) => {
+      emit('oncellkeydown', {
+        column: event.column.getColId(),
+        value: event.value,
+        key: event.event.key,
+      });
+    },
+    [emit],
+  );
+
+  const onSelectionChanged = useCallback(
+    async (event: any) => {
+      const api = event.api;
+      const selectedNodes = api.getSelectedNodes();
+
+      if (copyMode === 'rows' && selectedNodes.length > 0) {
+        const rowIndex = selectedNodes[selectedNodes.length - 1]?.rowIndex;
+        if (typeof rowIndex === 'number') {
+          focusRowForCopy(api, rowIndex);
+        }
+      }
+
+      if (multiSelection) {
+        if (currentSelectionDS) {
+          const sanitized = selectedNodes.map((n: any) => sanitizeRow(n.data || {}));
+          await currentSelectionDS.setValue(null, sanitized);
+        }
+      }
+    },
+    [copyMode, focusRowForCopy, multiSelection, currentSelectionDS],
+  );
 
   const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
     if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
@@ -452,10 +620,10 @@ const AgGrid: FC<IAgGridProps> = ({
           const gridData = {
             ...currentData,
             columnState,
-            filterModel
+            filterModel,
           };
           stateDS.setValue(null, gridData);
-        })
+        });
       }
       emit('onsavestate', { columnState, filterModel });
     }
@@ -577,9 +745,8 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }, []);
 
-
   // (fix bug when calling 4d function on aggrid that displayes related values)
-  // sanitize values to plain JSON-safe primitives/objects to avoid circular refs 
+  // sanitize values to plain JSON-safe primitives/objects to avoid circular refs
   const sanitizeValue = (v: any): any => {
     if (v == null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
       return v;
@@ -612,6 +779,17 @@ const AgGrid: FC<IAgGridProps> = ({
     });
     return result;
   };
+
+  const onGridKeyDownCapture = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (isEditableTarget(event.target)) return;
+
+      const api = gridRef.current?.api;
+      if (!api) return;
+      handleCopyShortcut(event, api);
+    },
+    [handleCopyShortcut],
+  );
 
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
     const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
@@ -716,8 +894,8 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const handleColumnToggle = (colField: string) => {
-    setColumnVisibility(prev =>
-      prev.map(c => c.field === colField ? { ...c, isHidden: !c.isHidden } : c)
+    setColumnVisibility((prev) =>
+      prev.map((c) => (c.field === colField ? { ...c, isHidden: !c.isHidden } : c)),
     );
   };
 
@@ -729,11 +907,11 @@ const AgGrid: FC<IAgGridProps> = ({
       // Clear all filters
       gridRef.current.api.setFilterModel(null);
     }
-  }
+  };
 
   const handlePinChange = (colField: string, value: string) => {
-    setColumnVisibility(prev =>
-      prev.map(col => {
+    setColumnVisibility((prev) =>
+      prev.map((col) => {
         if (col.field !== colField) return col;
         //  pinnedValue : 'left' | 'right' | null
         const pinnedValue = value === 'unpinned' ? null : (value as 'left' | 'right');
@@ -741,10 +919,9 @@ const AgGrid: FC<IAgGridProps> = ({
           ...col,
           pinned: pinnedValue,
         };
-      })
+      }),
     );
   };
-
 
   // views actions
   const saveNewView = () => {
@@ -760,16 +937,16 @@ const AgGrid: FC<IAgGridProps> = ({
       stateDS.getValue().then((currentData: any) => {
         const gridData = {
           ...currentData,
-          savedViews: updatedViews
+          savedViews: updatedViews,
         };
         stateDS.setValue(null, gridData);
-      })
+      });
     }
     setViewName('');
-  }
+  };
 
   const loadView = () => {
-    const view: any = savedViews.find(view => view.name === selectedView);
+    const view: any = savedViews.find((view) => view.name === selectedView);
     if (!view) return;
     if (view.columnState && gridRef.current?.api) {
       gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
@@ -787,7 +964,7 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const deleteView = () => {
-    const updatedViews = savedViews.filter(view => view.name !== selectedView);
+    const updatedViews = savedViews.filter((view) => view.name !== selectedView);
     setSavedViews(updatedViews);
     if (saveLocalStorage) {
       localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
@@ -795,18 +972,18 @@ const AgGrid: FC<IAgGridProps> = ({
       stateDS.getValue().then((currentData: any) => {
         const gridData = {
           ...currentData,
-          savedViews: updatedViews
+          savedViews: updatedViews,
         };
         stateDS.setValue(null, gridData);
-      })
+      });
     }
-    resetColumnview()
-  }
+    resetColumnview();
+  };
 
   const updateView = () => {
     const columnState = gridRef.current?.api?.getColumnState();
     const filterModel = gridRef.current?.api?.getFilterModel();
-    const updatedViews = savedViews.map(view => {
+    const updatedViews = savedViews.map((view) => {
       if (view.name === selectedView) {
         return { ...view, columnState, filterModel };
       }
@@ -819,24 +996,21 @@ const AgGrid: FC<IAgGridProps> = ({
       stateDS.getValue().then((currentData: any) => {
         const gridData = {
           ...currentData,
-          savedViews: updatedViews
+          savedViews: updatedViews,
         };
         stateDS.setValue(null, gridData);
-      })
+      });
     }
-  }
+  };
 
   const normalizedColumns = useMemo(
-    () =>
-      columnVisibility.filter(
-        (column) => column.field !== "ag-Grid-SelectionColumn",
-      ),
+    () => columnVisibility.filter((column) => column.field !== 'ag-Grid-SelectionColumn'),
     [columnVisibility],
   );
 
   const filteredColumns = useMemo(() => {
     const rawSearch = propertySearch.trim().toLowerCase();
-    const compactSearch = rawSearch.replace(/[_\s]+/g, "");
+    const compactSearch = rawSearch.replace(/[_\s]+/g, '');
 
     return [...normalizedColumns]
       .sort((a, b) => {
@@ -851,7 +1025,7 @@ const AgGrid: FC<IAgGridProps> = ({
         if (!rawSearch) return true;
 
         const field = column.field.toLowerCase();
-        const compactField = field.replace(/[_\s]+/g, "");
+        const compactField = field.replace(/[_\s]+/g, '');
         return field.includes(rawSearch) || compactField.includes(compactSearch);
       });
   }, [normalizedColumns, propertySearch, showVisibleOnly]);
@@ -870,65 +1044,144 @@ const AgGrid: FC<IAgGridProps> = ({
     });
   };
 
-
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
       {datasource ? (
-        <div className="flex flex-col gap-2 h-full">
+        <div className="flex flex-col gap-2 h-full" onKeyDownCapture={onGridKeyDownCapture}>
+          <div className="flex items-center gap-2 text-sm text-gray-800">
+            <span className="font-semibold">{translation('Copy mode')}:</span>
+            <button
+              type="button"
+              className={cn(
+                'rounded border px-2 py-1',
+                copyMode === 'cells'
+                  ? 'border-slate-700 bg-slate-700 text-white'
+                  : 'border-gray-300 bg-white text-gray-800',
+              )}
+              onClick={() => {
+                setCopyMode('cells');
+              }}
+            >
+              {translation('Cells')}
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'rounded border px-2 py-1',
+                copyMode === 'rows'
+                  ? 'border-slate-700 bg-slate-700 text-white'
+                  : 'border-gray-300 bg-white text-gray-800',
+              )}
+              onClick={() => {
+                setCopyMode('rows');
+              }}
+            >
+              {translation('Rows')}
+            </button>
+            {copyMode === 'cells' && !isCellSelectionAvailable && (
+              <span className="text-xs text-slate-600">
+                {translation('Clicked cells')}: {manualSelectedCells.length}
+              </span>
+            )}
+            {copyMode === 'cells' &&
+              !isCellSelectionAvailable &&
+              manualSelectedCells.length > 0 && (
+                <button
+                  type="button"
+                  className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800"
+                  onClick={() => {
+                    setManualSelectedCells([]);
+                  }}
+                >
+                  {translation('Clear')}
+                </button>
+              )}
+          </div>
           {showColumnActions && (
             <>
               {/* AGGrid header actions */}
               <div className="grid-header items-stretch flex gap-2 items-center cursor-pointer flex-wrap ">
                 {/* actions section */}
                 <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="actions-title font-semibold">{translation("Actions")}:</span>
+                  <span className="actions-title font-semibold">{translation('Actions')}:</span>
                   <div className="flex gap-2">
                     <Element id="agGridActions" is={resolver.StyleBox} canvas />
                   </div>
                 </div>
                 {/* columns customizer button */}
                 <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="customizer-title font-semibold">{translation("View")}:</span>
+                  <span className="customizer-title font-semibold">{translation('View')}:</span>
                   <div className="flex gap-2">
                     <button
                       className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                       onClick={() => setShowPropertiesDialog(true)}
                     >
-                      {translation("Customize columns")}
+                      {translation('Customize columns')}
                     </button>
                     <button
                       className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                       onClick={() => resetColumnview()}
                     >
-                      {translation("Reset default view")}
+                      {translation('Reset default view')}
                     </button>
                   </div>
                 </div>
                 {/* new view section */}
                 <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="view-title font-semibold">{translation("Save view")}:</span>
+                  <span className="view-title font-semibold">{translation('Save view')}:</span>
                   <div className="flex gap-2">
-                    <input type="text" placeholder={translation("View name")} className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800" value={viewName} onChange={(e: any) => { setViewName(e.target.value) }} />
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800' onClick={() => saveNewView()}>{translation("Save new")}</button>
+                    <input
+                      type="text"
+                      placeholder={translation('View name')}
+                      className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                      value={viewName}
+                      onChange={(e: any) => {
+                        setViewName(e.target.value);
+                      }}
+                    />
+                    <button
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                      onClick={() => saveNewView()}
+                    >
+                      {translation('Save new')}
+                    </button>
                   </div>
                 </div>
                 {/* saved views section */}
                 <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="views-title font-semibold">{translation("Saved views")}:</span>
+                  <span className="views-title font-semibold">{translation('Saved views')}:</span>
 
                   <div className="flex gap-2">
                     <select
                       value={selectedView}
                       className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                      onChange={(e: any) => { setSelectedView(e.target.value) }}>
-                      <option value="">{translation("Select view")}</option>
+                      onChange={(e: any) => {
+                        setSelectedView(e.target.value);
+                      }}
+                    >
+                      <option value="">{translation('Select view')}</option>
                       {savedViews.map((view, _) => (
                         <option value={view.name}>{view.name}</option>
                       ))}
                     </select>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800' onClick={() => loadView()}>{translation("Load")}</button>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800' onClick={() => updateView()} >{translation("Overwrite")}</button>
-                    <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800' onClick={() => deleteView()}>{translation("Delete")}</button>
+                    <button
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                      onClick={() => loadView()}
+                    >
+                      {translation('Load')}
+                    </button>
+                    <button
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                      onClick={() => updateView()}
+                    >
+                      {translation('Overwrite')}
+                    </button>
+                    <button
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                      onClick={() => deleteView()}
+                    >
+                      {translation('Delete')}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -945,23 +1198,25 @@ const AgGrid: FC<IAgGridProps> = ({
                     <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 rounded-t-xl">
                       <div>
                         <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">
-                          {translation("COLUMN STATE")}
+                          {translation('COLUMN STATE')}
                         </h1>
                         <span className="mt-1 block text-sm text-slate-600">
-                          {translation("Show or hide columns for this grid view")}
+                          {translation('Show or hide columns for this grid view')}
                         </span>
                       </div>
                       <button
-                        className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800'
+                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                         onClick={() => setShowPropertiesDialog(false)}
-                      >{translation("Close")}</button>
+                      >
+                        {translation('Close')}
+                      </button>
                     </div>
                     <div className="px-5 py-4">
                       <div className="sticky top-0 z-10 bg-white pb-3">
                         <div className="flex flex-row gap-2 md:flex-row md:items-center">
                           <input
                             className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
-                            placeholder={translation("Search field")}
+                            placeholder={translation('Search field')}
                             value={propertySearch}
                             onChange={(e) => setPropertySearch(e.target.value)}
                           />
@@ -981,7 +1236,7 @@ const AgGrid: FC<IAgGridProps> = ({
                               onClick={() => setFilteredColumnsVisible(true)}
                               disabled={filteredColumns.length === 0}
                             >
-                              {translation("Select all")}
+                              {translation('Select all')}
                             </button>
                           </div>
                           <button
@@ -989,22 +1244,26 @@ const AgGrid: FC<IAgGridProps> = ({
                             className="rounded-md border border-slate-300 bg-slate-100 px-2 py-1 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => setFilteredColumnsVisible(false)}
                             disabled={filteredColumns.length === 0}
-                          >{translation("Clear all")}</button>
+                          >
+                            {translation('Clear all')}
+                          </button>
                         </div>
                       </div>
                       <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
                         <div>
-                          {translation("Visible")} : {visibleCount} / {normalizedColumns.length}
+                          {translation('Visible')} : {visibleCount} / {normalizedColumns.length}
                         </div>
                         <div>
-                          <div>{translation("Showing")}: {filteredColumns.length}</div>
+                          <div>
+                            {translation('Showing')}: {filteredColumns.length}
+                          </div>
                         </div>
                       </div>
 
                       <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
                         {filteredColumns.length === 0 ? (
                           <div className="px-3 py-8 text-center text-sm text-slate-500">
-                            {translation("No fields match your filter")}.
+                            {translation('No fields match your filter')}.
                           </div>
                         ) : (
                           filteredColumns.map((column) => {
@@ -1021,21 +1280,22 @@ const AgGrid: FC<IAgGridProps> = ({
                                     onChange={() => handleColumnToggle(column.field)}
                                   />
                                   <span
-                                    className={`truncate ${isVisible ? "text-slate-800" : "text-slate-400"
-                                      }`}
+                                    className={`truncate ${
+                                      isVisible ? 'text-slate-800' : 'text-slate-400'
+                                    }`}
                                   >
                                     {column.field}
                                   </span>
                                 </label>
 
                                 <select
-                                  value={column.pinned || "unpinned"}
+                                  value={column.pinned || 'unpinned'}
                                   className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
                                   onChange={(e) => handlePinChange(column.field, e.target.value)}
                                 >
-                                  <option value="unpinned">{translation("No pin")}</option>
-                                  <option value="left">{translation("Pin left")}</option>
-                                  <option value="right">{translation("Pin right")}</option>
+                                  <option value="unpinned">{translation('No pin')}</option>
+                                  <option value="left">{translation('Pin left')}</option>
+                                  <option value="right">{translation('Pin right')}</option>
                                 </select>
                               </div>
                             );
@@ -1053,10 +1313,6 @@ const AgGrid: FC<IAgGridProps> = ({
             columnDefs={colDefs}
             defaultColDef={defaultColDef}
             onRowClicked={onRowClicked}
-            // getRowId={(params) => {
-            //   console.log(params)
-            //   return params.data.__entity?.getKey();
-            // }}
             onSelectionChanged={onSelectionChanged}
             onRowDoubleClicked={onRowDoubleClicked}
             onGridReady={onGridReady}
@@ -1066,7 +1322,10 @@ const AgGrid: FC<IAgGridProps> = ({
               enableClickSelection: true,
               enableSelectionWithoutKeys: multiSelection,
               checkboxes: multiSelection,
+              copySelectedRows: copyMode === 'rows' && multiSelection,
             }}
+            cellSelection={copyMode === 'cells' && isCellSelectionAvailable}
+            copyHeadersToClipboard={true}
             cacheBlockSize={100}
             maxBlocksInCache={10}
             cacheOverflowSize={2}
