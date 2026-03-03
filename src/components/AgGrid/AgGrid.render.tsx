@@ -34,6 +34,12 @@ import {
   writeTextToClipboard,
 } from './AgGrid.clipboard';
 import {
+  buildFilterQueries,
+  getColumnFilterParams,
+  getColumnFilterType,
+  isBooleanLikeColumn,
+} from './AgGrid.filtering';
+import {
   ColDef,
   GridApi,
   GridReadyEvent,
@@ -44,17 +50,26 @@ import {
   ColumnHoverModule,
   CellStyleModule,
   RenderApiModule,
+  TextFilterModule,
+  NumberFilterModule,
+  DateFilterModule,
   themeQuartz,
 } from 'ag-grid-community';
 import isEqual from 'lodash/isEqual';
 import cloneDeep from 'lodash/cloneDeep';
 import CustomCell from './CustomCell';
-import { format } from 'date-fns';
 import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
 
-ModuleRegistry.registerModules([ColumnHoverModule, CellStyleModule, RenderApiModule]);
+ModuleRegistry.registerModules([
+  ColumnHoverModule,
+  CellStyleModule,
+  RenderApiModule,
+  TextFilterModule,
+  NumberFilterModule,
+  DateFilterModule,
+]);
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -257,9 +272,7 @@ const AgGrid: FC<IAgGridProps> = ({
         isHidden: false,
         pinned: null,
       };
-      const isBooleanColumn =
-        col.dataType === 'bool' ||
-        (col.dataType === 'number' && ['checkbox', 'icon', 'boolean'].includes(col.format));
+      const isBooleanColumn = isBooleanLikeColumn(col);
       return {
         field: col.title,
         hide: colState.isHidden,
@@ -291,54 +304,8 @@ const AgGrid: FC<IAgGridProps> = ({
         resizable: col.sizing,
         width: col.width,
         flex: col.flex,
-        filter: !col.filtering
-          ? false
-          : isBooleanColumn
-            ? 'agNumberColumnFilter'
-            : col.dataType === 'text' || col.dataType === 'string'
-              ? 'agTextColumnFilter'
-              : col.dataType === 'long' || col.dataType === 'number'
-                ? 'agNumberColumnFilter'
-                : col.dataType === 'date'
-                  ? 'agDateColumnFilter'
-                  : false,
-        filterParams: {
-          filterOptions: isBooleanColumn
-            ? [
-                'empty',
-                {
-                  displayKey: 'isTrue',
-                  displayName: 'true',
-                  predicate: (_: any[], cellValue: any) => cellValue === true,
-                  numberOfInputs: 0,
-                },
-                {
-                  displayKey: 'isFalse',
-                  displayName: 'false',
-                  predicate: (_: any[], cellValue: any) => cellValue === false,
-                  numberOfInputs: 0,
-                },
-                'blank',
-                'notBlank',
-              ]
-            : col.dataType === 'text' || col.dataType === 'string'
-              ? ['contains', 'equals', 'notEqual', 'startsWith', 'endsWith']
-              : col.dataType === 'long' || col.dataType === 'number'
-                ? [
-                    'equals',
-                    'notEqual',
-                    'greaterThan',
-                    'greaterThanOrEqual',
-                    'lessThan',
-                    'lessThanOrEqual',
-                    'inRange',
-                  ]
-                : col.dataType === 'date'
-                  ? ['equals', 'notEqual', 'greaterThan', 'lessThan', 'inRange']
-                  : [],
-          defaultOption: isBooleanColumn ? 'empty' : 'equals',
-          maxNumConditions: isBooleanColumn ? 1 : 2,
-        },
+        filter: getColumnFilterType(col, isBooleanColumn),
+        filterParams: getColumnFilterParams(col, isBooleanColumn),
       };
     });
   }, [columns, columnVisibility, copyMode, isCellSelectionAvailable, manualSelectedCellKeySet]);
@@ -388,16 +355,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
     onDsChange: ({ length, selected }) => {
       if (!gridRef.current) return;
-      //resetting aggrid after external events
-      gridRef.current.api.setFilterModel(null);
-      if (initialColumnState) {
-        gridRef.current.api.applyColumnState({
-          state: initialColumnState,
-          applyOrder: true,
-        });
-      }
-      setColumnVisibility(initialColumnVisibility);
-      setSelectedView('');
+      // Keep user view/sort/filter state when datasource changes (e.g. sort requests).
       setManualSelectedCells([]);
       gridRef.current.api.deselectAll();
       gridRef.current.api.refreshInfiniteCache();
@@ -633,7 +591,13 @@ const AgGrid: FC<IAgGridProps> = ({
     if (saveLocalStorage) {
       const storedState = localStorage.getItem(`gridState_${nodeID}`);
       if (storedState) {
-        params.api.applyColumnState({ state: JSON.parse(storedState), applyOrder: true });
+        const parsedState = JSON.parse(storedState);
+        if (parsedState?.columnState) {
+          params.api.applyColumnState({ state: parsedState.columnState, applyOrder: true });
+        }
+        if (parsedState?.filterModel) {
+          params.api.setFilterModel(parsedState.filterModel);
+        }
       }
     } else if (stateDS) {
       const dsValue = await stateDS?.getValue();
@@ -646,103 +610,26 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }, []);
 
-  const buildFilterQuery = useCallback((filter: any, source: string): string => {
-    const filterType = filter.filterType;
-    const filterValue = filter.filter;
-    switch (filterType) {
-      case 'text':
-        switch (filter.type) {
-          case 'contains':
-            return `${source} == "@${filterValue}@"`;
-          case 'equals':
-            return `${source} == "${filterValue}"`;
-          case 'notEqual':
-            return `${source} != "${filterValue}"`;
-          case 'startsWith':
-            return `${source} begin "${filterValue}"`;
-          case 'endsWith':
-            return `${source} == "@${filterValue}"`;
-          default:
-            return '';
-        }
-      case 'number':
-        switch (filter.type) {
-          case 'empty':
-            return '';
-          case 'isTrue':
-            return `${source} == true`;
-          case 'isFalse':
-            return `${source} == false`;
-          case 'blank':
-            return `${source} == null`;
-          case 'notBlank':
-            return `${source} != null`;
-          case 'equals':
-            return `${source} == ${filterValue}`;
-          case 'notEqual':
-            return `${source} != ${filterValue}`;
-          case 'greaterThan':
-            return `${source} > ${filterValue}`;
-          case 'greaterThanOrEqual':
-            return `${source} >= ${filterValue}`;
-          case 'lessThan':
-            return `${source} < ${filterValue}`;
-          case 'lessThanOrEqual':
-            return `${source} <= ${filterValue}`;
-          case 'inRange':
-            return `${source} >= ${filter.filter} AND ${source} <= ${filter.filterTo}`;
-          default:
-            return '';
-        }
-      case 'date':
-        const dateFrom = new Date(filter.dateFrom);
-        switch (filter.type) {
-          case 'equals':
-            return `${source} == ${format(dateFrom, 'yyyy-MM-dd')}`;
-          case 'notEqual':
-            return `${source} != ${format(dateFrom, 'yyyy-MM-dd')}`;
-          case 'lessThan':
-            return `${source} < ${format(dateFrom, 'yyyy-MM-dd')}`;
-          case 'greaterThan':
-            return `${source} > ${format(dateFrom, 'yyyy-MM-dd')}`;
-          case 'inRange':
-            return `${source} > ${format(dateFrom, 'yyyy-MM-dd')} AND ${source} < ${format(new Date(filter.dateTo), 'yyyy-MM-dd')}`;
-          default:
-            return '';
-        }
-      default:
-        return '';
-    }
-  }, []);
-
-  const buildFilterQueries = useCallback(
-    (filterModel: any, columns: any[]): string[] => {
-      return Object.keys(filterModel).map((key) => {
-        const filter = filterModel[key];
-        const column = columns.find((col) => col.title === key);
-        if (!column) return '';
-        const source = column.source;
-        if (filter.operator && filter.conditions) {
-          const conditionQueries = filter.conditions.map((condition: any) =>
-            buildFilterQuery(condition, source),
-          );
-          return `(${conditionQueries.join(` ${filter.operator} `)})`;
-        } else {
-          return buildFilterQuery(filter, source);
-        }
-      });
-    },
-    [buildFilterQuery],
-  );
-
   const applySorting = useCallback(async (params: IGetRowsParams, columns: any[], ds: any) => {
-    if (params.sortModel.length > 0 && !isEqual(params.sortModel, prevSortModelRef.current)) {
-      prevSortModelRef.current = params.sortModel;
-      const sortingString = params.sortModel
-        .map((sort) => `${columns.find((c) => c.title === sort.colId)?.source} ${sort.sort}`)
-        .join(', ');
-      await ds.orderBy(sortingString);
+    if (params.sortModel.length === 0) {
+      prevSortModelRef.current = [];
+      return;
     }
+    if (isEqual(params.sortModel, prevSortModelRef.current)) return;
+
+    const sortInstructions = params.sortModel
+      .map((sort) => {
+        const matchedColumn = columns.find(
+          (column) => column.title === sort.colId || column.source === sort.colId,
+        );
+        if (!matchedColumn?.source || !sort.sort) return '';
+        return `${matchedColumn.source} ${sort.sort}`;
+      })
+      .filter(Boolean);
+
+    if (!sortInstructions.length) return;
+    prevSortModelRef.current = params.sortModel;
+    await ds.orderBy(sortInstructions.join(', '));
   }, []);
 
   // (fix bug when calling 4d function on aggrid that displayes related values)
