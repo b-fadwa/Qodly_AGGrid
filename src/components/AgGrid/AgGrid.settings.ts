@@ -120,6 +120,12 @@ const dataAccessSettings: TSetting[] = [
     key: 'showColumnActions',
   },
   {
+    label: 'Show AgGrid copy actions',
+    defaultValue: false,
+    type: ESetting.CHECKBOX,
+    key: 'showCopyActions',
+  },
+  {
     key: 'state',
     label: 'State Source',
     type: ESetting.DS_AUTO_SUGGEST,

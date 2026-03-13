@@ -7,6 +7,9 @@ import { ColDef, themeQuartz } from 'ag-grid-community';
 import { BsFillInfoCircleFill } from 'react-icons/bs';
 import { Element } from '@ws-ui/craftjs-core';
 import { useState } from 'react';
+import { FaTableColumns } from "react-icons/fa6";
+import { FaClockRotateLeft } from "react-icons/fa6";
+import { GoTrash } from "react-icons/go";
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -102,14 +105,14 @@ const AgGrid: FC<IAgGridProps> = ({
     <div ref={connect} style={style} className={cn(className, classNames)}>
       {datasource ? (
         columns.length > 0 ? (
-          <div className="flex flex-col gap-2 h-full">
+          <div className="flex flex-col gap-2 h-full ">
             {/* AGGrid header actions */}
             {showColumnActions && (
               <>
-                <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
+                <div className="grid-header flex items-center justify-between cursor-pointer flex-wrap py-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
                   {/* actions section */}
-                  <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                    <span className="actions-title font-semibold">{translation("Actions")}:</span>
+                  <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg  bg-white px-4 py-2 text-sm text-gray-800">
+                    <span className="actions-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Actions")}</span>
                     <div className="flex gap-2">
                       <Element
                         id="agGridActions"
@@ -118,43 +121,105 @@ const AgGrid: FC<IAgGridProps> = ({
                       ></Element>
                     </div>
                   </div>
-                  {/* columns customizer button */}
-                  <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                    <span className="customizer-title font-semibold">{translation("View")}:</span>
-                    <div className="flex gap-2">
-                      <button
-                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                        onClick={() => setShowPropertiesDialog(true)}
-                      >
-                        {translation("Customize columns")}
-                      </button>
-                      <button
-                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800"
-                      >
-                        {translation("Reset default view")}
-                      </button>
+                  <div className='flex items-center gap-2 flex-wrap pr-4'>
+                    {/* columns customizer button */}
+                    <div className="customizer-section flex flex-col gap-2  rounded-lg  bg-white py-2 text-sm text-gray-800">
+                      <span className="customizer-title "
+                        style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
+                      >{translation("View")}</span>
+                      <div className="flex gap-2">
+                        <button
+                          className="header-button-customize-view inline-flex items-center justify-center border"
+                          style={{
+                            width: "31px",
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C"
+                          }}
+                          onClick={() => setShowPropertiesDialog(true)}
+                        >
+                          <FaTableColumns size={14} />
+                        </button>
+                        <button
+                          className="header-button-reload-view inline-flex items-center justify-center border"
+                          style={{
+                            width: "31px",
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C"
+                          }}
+                        >
+                          <FaClockRotateLeft size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    {/* new view section */}
+                    <div className="view-section flex flex-col gap-2  rounded-lg  bg-white  py-2 text-sm text-gray-800">
+                      <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Save view")}</span>
+                      <div className="flex gap-2">
+                        <input type="text" placeholder={translation("View name")} className="view-input border px-4 py-2 text-sm" style={{
+                          height: "31px",
+                          borderRadius: "6px",
+                          borderColor: "#0000001A",
+                          color: "#44444C",
+                        }} />
+                        <button className='header-button inline-flex gap-2 items-center  border  bg-white px-4 py-2 text-sm font-medium '
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}
+                        >{translation("Save new")}</button>
+                      </div>
+                    </div>
+                    {/* saved views section */}
+                    <div className="views-section flex flex-col gap-2  rounded-lg  bg-white  py-2 text-sm text-gray-800">
+                      <span className="views-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Saved views")}</span>
+                      <div className="flex gap-2">
+                        <select className="rounded-lg border px-4 py-2 text-sm "
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}
+                        >
+                          <option value="">{translation("Select view")}</option>
+                        </select>
+                        <button className='header-button inline-flex gap-2 items-center border  bg-white px-4 py-2 text-sm font-medium'
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}                        >
+                          {translation("Load")}</button>
+                        <button className='header-button inline-flex gap-2 items-center border bg-white px-4 py-2 text-sm font-medium '
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}
+                        >{translation("Overwrite")}</button>
+                        <button
+                          className="header-button inline-flex items-center justify-center border"
+                          style={{
+                            width: "31px",
+                            height: "31px",
+                            borderRadius: "6px",
+                            color: "#EC7B80",
+                            borderColor: "#EC7B80",
+                            backgroundColor: "#EC7B8033",
+                          }}>
+                          <GoTrash size={14} /></button>
+                      </div>
                     </div>
                   </div>
-                  {/* new view section */}
-                  <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                    <span className="view-title font-semibold">{translation("Save view")}:</span>
-                    <div className="flex gap-2">
-                      <input type="text" placeholder={translation("View name")} className="view-input rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" />
-                      <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800'>{translation("Save new")}</button>
-                    </div>
-                  </div>
-                  {/* saved views section */}
-                  <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                    <span className="views-title font-semibold">{translation("Saved views")}:</span>
-                    <div className="flex gap-2">
-                      <select className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-800" >
-                        <option value="">{translation("Select view")}</option>
-                      </select>
-                      <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >{translation("Load")}</button>
-                      <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >{translation("Overwrite")}</button>
-                      <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >{translation("Delete")}</button>
-                    </div>
-                  </div>
+
                 </div>
                 {/* columns customizer dialog */}
                 {showPropertiesDialog && (
@@ -164,7 +229,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 rounded-t-xl">
+                      <div className="flex items-start justify-between gap-3 border-b border-slate-200  px-5 py-4 rounded-t-xl" style={{ backgroundColor: "--var(--background-color)" }}>
                         <div>
                           <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">{translation("COLUMN STATE")}</h1>
                           <span className='mt-1 block text-sm text-slate-600'>{translation("Show or hide columns for this grid view")}</span>
@@ -256,13 +321,16 @@ const AgGrid: FC<IAgGridProps> = ({
               </>
 
             )}
-            <AgGridReact
-              rowData={rowData}
-              columnDefs={colDefs}
-              defaultColDef={defaultColDef}
-              theme={theme}
-              className={cn({ 'pointer-events-none opacity-40': disabled })}
-            />
+            <div className="records-count text-sm  flex justify-end gap-2  mt-2 mb-2 pr-4 " ><span style={{ color: "#0A0A0A", fontSize: "12px", fontWeight: 400 }}>0</span> <span style={{ color: "#717182", fontSize: "12px", fontWeight: 400 }}>{translation("records")}</span></div>
+            <div className='px-4 h-full'>
+              <AgGridReact
+                rowData={rowData}
+                columnDefs={colDefs}
+                defaultColDef={defaultColDef}
+                theme={theme}
+                className={cn({ 'pointer-events-none opacity-40  ': disabled })}
+              />
+            </div>
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">

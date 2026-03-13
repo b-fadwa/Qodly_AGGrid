@@ -61,6 +61,9 @@ import CustomCell from './CustomCell';
 import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
+import { FaTableColumns } from "react-icons/fa6";
+import { FaClockRotateLeft } from "react-icons/fa6";
+import { GoTrash } from "react-icons/go";
 
 ModuleRegistry.registerModules([
   ColumnHoverModule,
@@ -104,6 +107,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showColumnActions,
   className,
   classNames = [],
+  showCopyActions,
 }) => {
   const { connect, emit } = useRenderer({
     autoBindEvents: !disabled,
@@ -935,7 +939,7 @@ const AgGrid: FC<IAgGridProps> = ({
     <div ref={connect} style={style} className={cn(className, classNames)}>
       {datasource ? (
         <div className="flex flex-col gap-2 h-full" onKeyDownCapture={onGridKeyDownCapture}>
-          <div className="flex items-center gap-2 text-sm text-gray-800">
+          {showCopyActions && (<div className="flex items-center gap-2 text-sm text-gray-800">
             <span className="font-semibold">{translation('Copy mode')}:</span>
             <button
               type="button"
@@ -983,94 +987,150 @@ const AgGrid: FC<IAgGridProps> = ({
                   {translation('Clear')}
                 </button>
               )}
-          </div>
+          </div>)}
+
           {showColumnActions && (
             <>
               {/* AGGrid header actions */}
-              <div className="grid-header items-stretch flex gap-2 items-center cursor-pointer flex-wrap ">
+              <div className="grid-header items-stretch flex items-center justify-between cursor-pointer flex-wrap  py-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
                 {/* actions section */}
-                <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="actions-title font-semibold">{translation('Actions')}:</span>
+                <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg  bg-white px-4 py-2 text-sm text-gray-800">
+                  <span className="actions-title"
+                    style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
+
+                  >{translation('Actions')}</span>
                   <div className="flex gap-2">
                     <Element id="agGridActions" is={resolver.StyleBox} canvas />
                   </div>
                 </div>
-                {/* columns customizer button */}
-                <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="customizer-title font-semibold">{translation('View')}:</span>
-                  <div className="flex gap-2">
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => setShowPropertiesDialog(true)}
-                    >
-                      {translation('Customize columns')}
-                    </button>
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => resetColumnview()}
-                    >
-                      {translation('Reset default view')}
-                    </button>
+                <div className='flex items-center gap-2 flex-wrap pr-4'>
+                  {/* columns customizer button */}
+                  <div className="customizer-section flex flex-col gap-2  rounded-lg  bg-white py-2 text-sm text-gray-800">
+                    <span className="customizer-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('View')}</span>
+                    <div className="flex gap-2">
+                      <button
+                        className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
+                        style={{
+                          width: "31px",
+                          height: "31px",
+                          borderRadius: "8px",
+                          borderColor: "#0000001A",
+                          color: "#44444C"
+                        }}
+                        onClick={() => setShowPropertiesDialog(true)}
+                      >
+                        <FaTableColumns size={14} />
+                      </button>
+                      <button
+                        className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                        style={{
+                          width: "31px",
+                          height: "31px",
+                          borderRadius: "8px",
+                          borderColor: "#0000001A",
+                          color: "#44444C"
+                        }}
+                        onClick={() => resetColumnview()}
+                      >
+                        <FaClockRotateLeft size={14} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-                {/* new view section */}
-                <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="view-title font-semibold">{translation('Save view')}:</span>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder={translation('View name')}
-                      className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                      value={viewName}
-                      onChange={(e: any) => {
-                        setViewName(e.target.value);
-                      }}
-                    />
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => saveNewView()}
-                    >
-                      {translation('Save new')}
-                    </button>
+                  {/* new view section */}
+                  <div className="view-section flex flex-col gap-2 rounded-lg  bg-white  py-2 text-sm text-gray-800">
+                    <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder={translation('View name')}
+                        className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                        value={viewName}
+                        onChange={(e: any) => {
+                          setViewName(e.target.value);
+                        }}
+                        style={{
+                          height: "31px",
+                          borderRadius: "6px",
+                          borderColor: "#0000001A",
+                          color: "#44444C",
+                        }}
+                      />
+                      <button
+                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                        onClick={() => saveNewView()}
+                        style={{
+                          height: "31px",
+                          borderRadius: "6px",
+                          borderColor: "#0000001A",
+                          color: "#44444C",
+                        }}
+                      >
+                        {translation('Save new')}
+                      </button>
+                    </div>
                   </div>
-                </div>
-                {/* saved views section */}
-                <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="views-title font-semibold">{translation('Saved views')}:</span>
+                  {/* saved views section */}
+                  <div className="views-section flex flex-col gap-2 rounded-lg bg-white py-2 text-sm text-gray-800">
+                    <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Saved views')}</span>
 
-                  <div className="flex gap-2">
-                    <select
-                      value={selectedView}
-                      className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                      onChange={(e: any) => {
-                        setSelectedView(e.target.value);
-                      }}
-                    >
-                      <option value="">{translation('Select view')}</option>
-                      {savedViews.map((view, _) => (
-                        <option value={view.name}>{view.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => loadView()}
-                    >
-                      {translation('Load')}
-                    </button>
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => updateView()}
-                    >
-                      {translation('Overwrite')}
-                    </button>
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => deleteView()}
-                    >
-                      {translation('Delete')}
-                    </button>
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedView}
+                        className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                        onChange={(e: any) => {
+                          setSelectedView(e.target.value);
+                        }}
+                        style={{
+                          height: "31px",
+                          borderRadius: "6px",
+                          borderColor: "#0000001A",
+                          color: "#44444C",
+                        }}
+                      >
+                        <option value="">{translation('Select view')}</option>
+                        {savedViews.map((view, _) => (
+                          <option value={view.name}>{view.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                        onClick={() => loadView()}
+                        style={{
+                          height: "31px",
+                          borderRadius: "6px",
+                          borderColor: "#0000001A",
+                          color: "#44444C",
+                        }}                      >
+                        {translation('Load')}
+                      </button>
+                      <button
+                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                        onClick={() => updateView()}
+                        style={{
+                          height: "31px",
+                          borderRadius: "6px",
+                          borderColor: "#0000001A",
+                          color: "#44444C",
+                        }}                      >
+                        {translation('Overwrite')}
+                      </button>
+                      <button
+                        className="header-button inline-flex items-center justify-center rounded-lg border"
+                        style={{
+                          width: "31px",
+                          height: "31px",
+                          borderRadius: "8px",
+                          color: "#EC7B80",
+                          borderColor: "#EC7B80",
+                          backgroundColor: "#EC7B8033",
+                        }}
+                        onClick={() => deleteView()}
+                      >
+                        <GoTrash size={14} /></button>
+                    </div>
                   </div>
                 </div>
+
               </div>
               {/* columns customizer dialog */}
               {showPropertiesDialog && (
@@ -1167,9 +1227,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                     onChange={() => handleColumnToggle(column.field)}
                                   />
                                   <span
-                                    className={`truncate ${
-                                      isVisible ? 'text-slate-800' : 'text-slate-400'
-                                    }`}
+                                    className={`truncate ${isVisible ? 'text-slate-800' : 'text-slate-400'
+                                      }`}
                                   >
                                     {column.field}
                                   </span>
@@ -1195,48 +1254,52 @@ const AgGrid: FC<IAgGridProps> = ({
               )}
             </>
           )}
-          <AgGridReact
-            ref={gridRef}
-            columnDefs={colDefs}
-            defaultColDef={defaultColDef}
-            onRowClicked={onRowClicked}
-            onSelectionChanged={onSelectionChanged}
-            onRowDoubleClicked={onRowDoubleClicked}
-            onGridReady={onGridReady}
-            rowModelType="infinite"
-            rowSelection={{
-              mode: multiSelection ? 'multiRow' : 'singleRow',
-              enableClickSelection: true,
-              enableSelectionWithoutKeys: multiSelection,
-              checkboxes: multiSelection,
-              copySelectedRows: copyMode === 'rows' && multiSelection,
-            }}
-            cellSelection={copyMode === 'cells' && isCellSelectionAvailable}
-            copyHeadersToClipboard={true}
-            cacheBlockSize={100}
-            maxBlocksInCache={10}
-            cacheOverflowSize={2}
-            maxConcurrentDatasourceRequests={1}
-            rowBuffer={0}
-            onStateUpdated={onStateUpdated}
-            onCellClicked={onCellClicked}
-            onCellDoubleClicked={onCellDoubleClicked}
-            onColumnHeaderClicked={onHeaderClicked}
-            onCellMouseDown={onCellMouseDown}
-            onCellMouseOut={onCellMouseOut}
-            onCellMouseOver={onCellMouseOver}
-            onCellKeyDown={onCellKeyDown}
-            theme={theme}
-            className={cn({ 'pointer-events-none opacity-40': disabled })}
-            columnHoverHighlight={enableColumnHover}
-          />
+          <div className="records-count text-sm  flex justify-end gap-2 mt-2 mb-2 pr-4" ><span style={{ color: "#0A0A0A", fontSize: "12px", fontWeight: 400 }}>{_count}</span> <span style={{ color: "#717182", fontSize: "12px", fontWeight: 400 }}>{translation("records")}</span></div>
+          <div className='px-4 h-full'>
+            <AgGridReact
+              ref={gridRef}
+              columnDefs={colDefs}
+              defaultColDef={defaultColDef}
+              onRowClicked={onRowClicked}
+              onSelectionChanged={onSelectionChanged}
+              onRowDoubleClicked={onRowDoubleClicked}
+              onGridReady={onGridReady}
+              rowModelType="infinite"
+              rowSelection={{
+                mode: multiSelection ? 'multiRow' : 'singleRow',
+                enableClickSelection: true,
+                enableSelectionWithoutKeys: multiSelection,
+                checkboxes: multiSelection,
+                copySelectedRows: copyMode === 'rows' && multiSelection,
+              }}
+              cellSelection={copyMode === 'cells' && isCellSelectionAvailable}
+              copyHeadersToClipboard={true}
+              cacheBlockSize={100}
+              maxBlocksInCache={10}
+              cacheOverflowSize={2}
+              maxConcurrentDatasourceRequests={1}
+              rowBuffer={0}
+              onStateUpdated={onStateUpdated}
+              onCellClicked={onCellClicked}
+              onCellDoubleClicked={onCellDoubleClicked}
+              onColumnHeaderClicked={onHeaderClicked}
+              onCellMouseDown={onCellMouseDown}
+              onCellMouseOut={onCellMouseOut}
+              onCellMouseOver={onCellMouseOver}
+              onCellKeyDown={onCellKeyDown}
+              theme={theme}
+              className={cn({ 'pointer-events-none opacity-40': disabled })}
+              columnHoverHighlight={enableColumnHover}
+            />
+          </div>
         </div>
       ) : (
         <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
           <p>Error</p>
         </div>
-      )}
-    </div>
+      )
+      }
+    </div >
   );
 };
 
