@@ -81,6 +81,7 @@ Data types and filtering:
 - Enable per column using "Enable Sorting"
 - Multi-sort by holding Shift and clicking additional headers
 - Sorting order: asc → desc
+- If "Show AgGrid column actions" is enabled, you can also open the "Advanced sorting" dialog to define multi-level sort rules (column + asc/desc) and apply them in order
 
 ## Filtering
 
@@ -99,6 +100,7 @@ The grid persists column state (order, width, sort) when it changes:
   - Saves the state array into the bound source
   - On load, reads the array and applies it
 - State is emitted with the "On SaveState" event after it is updated
+- Persisted payload includes `columnState`, `filterModel`, and `sortModel`
 
 ## Events
 
@@ -121,7 +123,7 @@ The component exposes the following events. Payloads (where applicable) are sent
 - On Cell Mouse Down (`oncellmousedown`)
   - Payload: `{ column: string, value: any }`
 - On SaveState (`onsavestate`)
-  - Payload: `ColumnState[]` (AG Grid column state array)
+  - Payload: `{ columnState, filterModel, sortModel }`
 
 ## Properties (Styling & Behavior)
 

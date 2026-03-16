@@ -81,6 +81,8 @@ const AgGrid: FC<IAgGridProps> = ({
 
   useDatasourceSub();
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
+  const [showSortingDialog, setShowSortingDialog] = useState(false);
+  const [sortRules, setSortRules] = useState<{ field: string; sort: 'asc' | 'desc' }[]>([]);
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
   const translation = (key: string): string => {
@@ -96,6 +98,30 @@ const AgGrid: FC<IAgGridProps> = ({
     { field: 'column 3', isHidden: true, pinned: null },
     { field: 'column 4', isHidden: false, pinned: 'right' },
   ]);
+
+  const sortableColumns = useMemo(
+    () =>
+      columns
+        .filter((col) => col.dataType !== 'image' && col.dataType !== 'object' && col.sorting)
+        .map((col) => col.title),
+    [columns],
+  );
+
+  const openSortingDialog = () => {
+    if (sortableColumns.length === 0) {
+      setSortRules([]);
+    } else if (sortRules.length === 0) {
+      setSortRules([{ field: sortableColumns[0], sort: 'asc' }]);
+    }
+    setShowSortingDialog(true);
+  };
+
+  const addSortRule = () => {
+    if (sortableColumns.length === 0) return;
+    const nextField = sortableColumns.find((field) => !sortRules.some((rule) => rule.field === field))
+      || sortableColumns[0];
+    setSortRules((prev) => [...prev, { field: nextField, sort: 'asc' }]);
+  };
 
 
   return (
@@ -133,6 +159,21 @@ const AgGrid: FC<IAgGridProps> = ({
                       >
                         {translation("Reset default view")}
                       </button>
+                    </div>
+                  </div>
+                  <div className="sorting-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
+                    <span className="sorting-title font-semibold">{translation("Sorting")}:</span>
+                    <div className="flex gap-2 items-center">
+                      <button
+                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                        onClick={openSortingDialog}
+                        disabled={sortableColumns.length === 0}
+                      >
+                        {translation("Advanced sorting")}
+                      </button>
+                      <span className="text-xs text-slate-600">
+                        {translation("Levels")}: {sortRules.length}
+                      </span>
                     </div>
                   </div>
                   {/* new view section */}
@@ -253,6 +294,129 @@ const AgGrid: FC<IAgGridProps> = ({
                     </div>
                   </div>
                 )}
+                {showSortingDialog && (
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onClick={() => setShowSortingDialog(false)}
+                  >
+                    <div
+                      className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 rounded-t-xl">
+                        <div>
+                          <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">
+                            {translation("ADVANCED SORTING")}
+                          </h1>
+                          <span className="mt-1 block text-sm text-slate-600">
+                            {translation("Choose one or multiple columns and define sort direction for each level")}
+                          </span>
+                        </div>
+                        <button
+                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                          onClick={() => setShowSortingDialog(false)}
+                        >
+                          {translation("Close")}
+                        </button>
+                      </div>
+                      <div className="px-5 py-4">
+                        {sortableColumns.length === 0 ? (
+                          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                            {translation("No sortable columns are enabled in grid properties")}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="space-y-2 max-h-80 overflow-y-auto">
+                              {sortRules.map((rule, index) => (
+                                <div
+                                  key={`${rule.field}-${index}`}
+                                  className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2"
+                                >
+                                  <span className="w-14 text-xs font-semibold text-slate-700">
+                                    {translation("Level")} {index + 1}
+                                  </span>
+                                  <select
+                                    className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700"
+                                    value={rule.field}
+                                    onChange={(e) =>
+                                      setSortRules((prev) =>
+                                        prev.map((currentRule, currentIndex) =>
+                                          currentIndex === index
+                                            ? { ...currentRule, field: e.target.value }
+                                            : currentRule,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    {sortableColumns.map((column) => (
+                                      <option key={column} value={column}>
+                                        {column}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    className="w-28 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700"
+                                    value={rule.sort}
+                                    onChange={(e) =>
+                                      setSortRules((prev) =>
+                                        prev.map((currentRule, currentIndex) =>
+                                          currentIndex === index
+                                            ? { ...currentRule, sort: (e.target.value as 'asc' | 'desc') }
+                                            : currentRule,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    <option value="asc">{translation("Asc")}</option>
+                                    <option value="desc">{translation("Desc")}</option>
+                                  </select>
+                                  <button
+                                    type="button"
+                                    className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700"
+                                    onClick={() =>
+                                      setSortRules((prev) => prev.filter((_, currentIndex) => currentIndex !== index))
+                                    }
+                                  >
+                                    {translation("Remove")}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-3 flex items-center justify-between">
+                              <button
+                                type="button"
+                                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={addSortRule}
+                                disabled={sortableColumns.length === 0}
+                              >
+                                {translation("Add level")}
+                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                                  onClick={() => {
+                                    setSortRules([]);
+                                    setShowSortingDialog(false);
+                                  }}
+                                >
+                                  {translation("Clear")}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-slate-700 bg-slate-700 px-3 py-2 text-sm text-white"
+                                  onClick={() => setShowSortingDialog(false)}
+                                >
+                                  {translation("Apply sorting")}
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
 
             )}
@@ -281,4 +445,3 @@ const AgGrid: FC<IAgGridProps> = ({
 };
 
 export default AgGrid;
-
