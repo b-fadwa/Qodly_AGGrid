@@ -131,6 +131,12 @@ const dataAccessSettings: TSetting[] = [
     defaultValue: false,
   },
   {
+    key: 'rowCssField',
+    label: 'Row CSS Field',
+    type: ESetting.TEXT_FIELD,
+    placeholder: 'e.g. status',
+  },
+  {
     key: 'serverSideRef',
     label: 'Server Side',
     type: ESetting.TEXT_FIELD,

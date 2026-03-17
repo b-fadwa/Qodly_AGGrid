@@ -1,0 +1,42 @@
+import config, { ISimpleAgGridProps } from './SimpleAgGrid.config';
+import { T4DComponent, useEnhancedEditor } from '@ws-ui/webform-editor';
+import Build from './SimpleAgGrid.build';
+import Render from './SimpleAgGrid.render';
+import {
+  ClientSideRowModelModule,
+  ColumnApiModule,
+  RowApiModule,
+  ValidationModule,
+  CellStyleModule,
+  RowStyleModule,
+  PinnedRowModule,
+  ModuleRegistry,
+  RowDragModule,
+  TextEditorModule,
+} from 'ag-grid-community';
+
+ModuleRegistry.registerModules([
+  ClientSideRowModelModule,
+  RowApiModule,
+  ColumnApiModule,
+  ValidationModule,
+  CellStyleModule,
+  RowStyleModule,
+  PinnedRowModule,
+  RowDragModule,
+  TextEditorModule,
+]);
+
+const SimpleAgGrid: T4DComponent<ISimpleAgGridProps> = (props) => {
+  const { enabled } = useEnhancedEditor((state) => ({
+    enabled: state.options.enabled,
+  }));
+
+  return enabled ? <Build {...props} /> : <Render {...props} />;
+};
+
+SimpleAgGrid.craft = config.craft;
+SimpleAgGrid.info = config.info;
+SimpleAgGrid.defaultProps = config.defaultProps;
+
+export default SimpleAgGrid;

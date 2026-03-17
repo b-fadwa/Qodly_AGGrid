@@ -13,6 +13,7 @@ import {
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import {
+  CSSProperties,
   FC,
   KeyboardEvent as ReactKeyboardEvent,
   useCallback,
@@ -49,10 +50,12 @@ import {
   ModuleRegistry,
   ColumnHoverModule,
   CellStyleModule,
+  RowStyleModule,
   RenderApiModule,
   TextFilterModule,
   NumberFilterModule,
   DateFilterModule,
+  RowClassParams,
   themeQuartz,
 } from 'ag-grid-community';
 import isEqual from 'lodash/isEqual';
@@ -65,6 +68,7 @@ import { get } from 'lodash';
 ModuleRegistry.registerModules([
   ColumnHoverModule,
   CellStyleModule,
+  RowStyleModule,
   RenderApiModule,
   TextFilterModule,
   NumberFilterModule,
@@ -98,6 +102,7 @@ const AgGrid: FC<IAgGridProps> = ({
   enableCellFocus,
   enableColumnHover,
   multiSelection,
+  rowCssField,
   style,
   disabled = false,
   saveLocalStorage,
@@ -127,6 +132,21 @@ const AgGrid: FC<IAgGridProps> = ({
   const { id: nodeID } = useEnhancedNode();
   const prevSortModelRef = useRef<SortModelItem[]>([]);
   const gridRef = useRef<AgGridReact>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerHeight, setContainerHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height;
+        if (h > 0) setContainerHeight(h);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
@@ -424,6 +444,17 @@ const AgGrid: FC<IAgGridProps> = ({
     borderRadius: wrapperBorderRadius,
     rangeSelectionBorderColor: !enableCellFocus ? 'transparent' : undefined,
   });
+
+  const getRowClass = useCallback(
+    (params: RowClassParams) => {
+      if (!rowCssField || !params.data) return '';
+      const value = params.data.__entity?.[rowCssField];
+      if (value === undefined || value === null || value === '') return '';
+      const sanitized = String(value).replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      return `aggrid-row-${sanitized}`;
+    },
+    [rowCssField],
+  );
 
   const { updateCurrentDsValue } = useDsChangeHandler({
     source: ds,
@@ -1105,8 +1136,20 @@ const AgGrid: FC<IAgGridProps> = ({
     });
   };
 
+  const resolvedStyle = useMemo<CSSProperties>(() => {
+    const s = { ...style };
+    if (s.height === '100%' || s.height === 'auto' || s.height === 'inherit') {
+      if (containerHeight && containerHeight > 0) {
+        s.height = `${containerHeight}px`;
+      } else {
+        s.height = '600px';
+      }
+    }
+    return s;
+  }, [style, containerHeight]);
+
   return (
-    <div ref={connect} style={style} className={cn(className, classNames)}>
+    <div ref={(el) => { containerRef.current = el?.parentElement as HTMLDivElement; connect(el); }} style={resolvedStyle} className={cn(className, classNames)}>
       {datasource ? (
         <div className="flex flex-col gap-2 h-full" onKeyDownCapture={onGridKeyDownCapture}>
           <div className="flex items-center gap-2 text-sm text-gray-800">
@@ -1530,6 +1573,7 @@ const AgGrid: FC<IAgGridProps> = ({
             onCellMouseOut={onCellMouseOut}
             onCellMouseOver={onCellMouseOver}
             onCellKeyDown={onCellKeyDown}
+            getRowClass={getRowClass}
             theme={theme}
             className={cn({ 'pointer-events-none opacity-40': disabled })}
             columnHoverHighlight={enableColumnHover}
