@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { FaTableColumns } from "react-icons/fa6";
 import { FaClockRotateLeft } from "react-icons/fa6";
 import { GoTrash } from "react-icons/go";
+import { IoMdClose } from "react-icons/io";
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -229,54 +230,59 @@ const AgGrid: FC<IAgGridProps> = ({
                       className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="flex items-start justify-between gap-3 border-b border-slate-200  px-5 py-4 rounded-t-xl" style={{ backgroundColor: "--var(--background-color)" }}>
+                      <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl" >
                         <div>
-                          <h1 className="text-sm font-bold uppercase tracking-wide text-slate-800">{translation("COLUMN STATE")}</h1>
-                          <span className='mt-1 block text-sm text-slate-600'>{translation("Show or hide columns for this grid view")}</span>
+                          <h1 className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>{translation("COLUMN STATE")}</h1>
+                          <span className='mt-1 block text-sm ' style={{ color: "#6B7280", fontSize: "16px" }}>{translation("Show or hide columns for this grid view")}</span>
                         </div>
                         <button
-                          type="button"
-                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                          className=" inline-flex items-center justify-center"
+                          style={{
+                            color: "#0A0A0A"
+                          }}
                           onClick={() => setShowPropertiesDialog(false)}           >
-                          {translation("Close")}
+                          <IoMdClose />
                         </button>
                       </div>
                       <div className="px-5 py-4">
                         <div className="sticky top-0 z-10 bg-white pb-3">
                           <div className="flex flex-row gap-2 md:flex-row md:items-center">
                             <input
-                              className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
+                              className="min-w-0 flex-1 rounded-md border  px-2 py-1 text-sm outline-none focus:border-slate-500" style={{ height: "31px", borderColor: "#0000001A", borderRadius: "6px" }}
                               placeholder="Search field..."
                             />
 
-                            <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
+                            <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm" style={{ color: "#717182", fontSize: "12px", fontWeight: 500 }}>
                               <input
                                 type="checkbox"
+                                style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
                               />
                               <span>{translation("Visible only")}</span>
                             </label>
                             <button
                               type="button"
-                              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-md border  bg-white px-3 py-2 items-center flex disabled:cursor-not-allowed disabled:opacity-50"
+                              style={{ borderColor: "rgba(0, 0, 0, 0.1)", color: "#0A0A0A", height: "31px", fontSize: "12px", fontWeight: 500 }}
                             >
                               {translation("Select all")}
                             </button>
                             <button
                               type="button"
-                              className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-slate-700 hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-md border px-3 py-2 flex items-center disabled:cursor-not-allowed disabled:opacity-50"
+                              style={{ borderColor: "#6B8AD4", color: "#6B8AD4", height: "31px", fontSize: "12px", fontWeight: 500 }}
                             >
                               {translation("Clear all")}
                             </button>
                           </div>
                         </div>
                       </div>
-                      <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
+                      {/* <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
                         <div>
                           {translation("Visible:")}
                         </div>
                         <div>{translation("Showing:")} </div>
-                      </div>
-                      <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+                      </div> */}
+                      <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2 mr-5 ml-5 mb-2" style={{ backgroundColor: "#FAFAFA", borderColor: "#D1D5DC", borderRadius: "10px" }}>
                         {filteredColumns.length === 0 ? (
                           <div className="px-3 py-8 text-center text-sm text-slate-500">
                             {translation("No fields match your filter.")}
@@ -292,10 +298,11 @@ const AgGrid: FC<IAgGridProps> = ({
                                 <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
                                   <input
                                     type="checkbox"
+                                    style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
                                     checked={isVisible}
                                   />
                                   <span
-                                    className={`truncate ${isVisible ? "text-slate-800" : "text-slate-400"
+                                    className={`truncate ${isVisible ? "text-gray-700" : "text-slate-400"
                                       }`}
                                   >
                                     {column.field}
@@ -305,6 +312,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 <select
                                   value={column.pinned || "unpinned"}
                                   className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                  style={{ height: "31px" }}
                                 >
                                   <option value="unpinned">{translation("No pin")}</option>
                                   <option value="left">{translation("Pin left")} </option>
