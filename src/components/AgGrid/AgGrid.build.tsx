@@ -32,6 +32,11 @@ const AgGrid: FC<IAgGridProps> = ({
   iconSize,
   disabled,
   showColumnActions,
+  showToolbarActions = true,
+  showToolbarView = true,
+  showToolbarSorting = true,
+  showToolbarSaveView = true,
+  showToolbarSavedViews = true,
   style,
   className,
   classNames = [],
@@ -123,6 +128,12 @@ const AgGrid: FC<IAgGridProps> = ({
     setSortRules((prev) => [...prev, { field: nextField, sort: 'asc' }]);
   };
 
+  const showAnyToolbarSection =
+    showToolbarActions ||
+    showToolbarView ||
+    showToolbarSorting ||
+    showToolbarSaveView ||
+    showToolbarSavedViews;
 
   return (
     <div ref={connect} style={style} className={cn(className, classNames)}>
@@ -132,8 +143,9 @@ const AgGrid: FC<IAgGridProps> = ({
             {/* AGGrid header actions */}
             {showColumnActions && (
               <>
+                {showAnyToolbarSection && (
                 <div className="grid-header flex gap-2 items-center cursor-pointer flex-wrap">
-                  {/* actions section */}
+                  {showToolbarActions && (
                   <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                     <span className="actions-title font-semibold">{translation("Actions")}:</span>
                     <div className="flex gap-2">
@@ -144,7 +156,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       ></Element>
                     </div>
                   </div>
-                  {/* columns customizer button */}
+                  )}
+                  {showToolbarView && (
                   <div className="customizer-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                     <span className="customizer-title font-semibold">{translation("View")}:</span>
                     <div className="flex gap-2">
@@ -161,6 +174,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       </button>
                     </div>
                   </div>
+                  )}
+                  {showToolbarSorting && (
                   <div className="sorting-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                     <span className="sorting-title font-semibold">{translation("Sorting")}:</span>
                     <div className="flex gap-2 items-center">
@@ -176,7 +191,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       </span>
                     </div>
                   </div>
-                  {/* new view section */}
+                  )}
+                  {showToolbarSaveView && (
                   <div className="view-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                     <span className="view-title font-semibold">{translation("Save view")}:</span>
                     <div className="flex gap-2">
@@ -184,7 +200,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800'>{translation("Save new")}</button>
                     </div>
                   </div>
-                  {/* saved views section */}
+                  )}
+                  {showToolbarSavedViews && (
                   <div className="views-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
                     <span className="views-title font-semibold">{translation("Saved views")}:</span>
                     <div className="flex gap-2">
@@ -196,9 +213,11 @@ const AgGrid: FC<IAgGridProps> = ({
                       <button className='header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800' >{translation("Delete")}</button>
                     </div>
                   </div>
+                  )}
                 </div>
+                )}
                 {/* columns customizer dialog */}
-                {showPropertiesDialog && (
+                {showToolbarView && showPropertiesDialog && (
                   <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                     <div
@@ -294,7 +313,7 @@ const AgGrid: FC<IAgGridProps> = ({
                     </div>
                   </div>
                 )}
-                {showSortingDialog && (
+                {showToolbarSorting && showSortingDialog && (
                   <div
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
                     onClick={() => setShowSortingDialog(false)}

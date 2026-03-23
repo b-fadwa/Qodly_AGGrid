@@ -238,6 +238,11 @@ export default {
     rowVerticalPaddingScale: 1.2,
     iconSize: '16px',
     rowCssField: '',
+    showToolbarActions: true,
+    showToolbarView: true,
+    showToolbarSorting: true,
+    showToolbarSaveView: true,
+    showToolbarSavedViews: true,
   },
 } as T4DComponentConfig<IAgGridProps>;
 
@@ -269,6 +274,16 @@ export interface IAgGridProps extends webforms.ComponentProps {
   enableCellFocus?: boolean;
   enableColumnHover?: boolean;
   showColumnActions?: boolean;
+  /** Toolbar: Actions slot (agGridActions) */
+  showToolbarActions?: boolean;
+  /** Toolbar: View (customize columns, reset default view) */
+  showToolbarView?: boolean;
+  /** Toolbar: Advanced sorting */
+  showToolbarSorting?: boolean;
+  /** Toolbar: Save new view */
+  showToolbarSaveView?: boolean;
+  /** Toolbar: Load / overwrite / delete saved views */
+  showToolbarSavedViews?: boolean;
   rowCssField?: string;
 }
 

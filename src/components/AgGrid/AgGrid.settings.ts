@@ -120,6 +120,36 @@ const dataAccessSettings: TSetting[] = [
     key: 'showColumnActions',
   },
   {
+    label: 'Toolbar: Actions',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarActions',
+  },
+  {
+    label: 'Toolbar: View',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarView',
+  },
+  {
+    label: 'Toolbar: Sorting',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarSorting',
+  },
+  {
+    label: 'Toolbar: Save view',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarSaveView',
+  },
+  {
+    label: 'Toolbar: Saved views',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarSavedViews',
+  },
+  {
     key: 'state',
     label: 'State Source',
     type: ESetting.DS_AUTO_SUGGEST,
