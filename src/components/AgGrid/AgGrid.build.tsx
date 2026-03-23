@@ -207,7 +207,7 @@ const AgGrid: FC<IAgGridProps> = ({
                           }}
                         >{translation("Overwrite")}</button>
                         <button
-                          className="header-button inline-flex items-center justify-center border"
+                          className="header-button-trash inline-flex items-center justify-center border"
                           style={{
                             width: "31px",
                             height: "31px",

@@ -1116,7 +1116,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         {translation('Overwrite')}
                       </button>
                       <button
-                        className="header-button inline-flex items-center justify-center rounded-lg border"
+                        className="header-button-trash inline-flex items-center justify-center rounded-lg border"
                         style={{
                           width: "31px",
                           height: "31px",
@@ -1127,7 +1127,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         }}
                         onClick={() => deleteView()}
                       >
-                        <GoTrash size={14} /></button>
+                        <GoTrash  size={14} /></button>
                     </div>
                   </div>
                 </div>
