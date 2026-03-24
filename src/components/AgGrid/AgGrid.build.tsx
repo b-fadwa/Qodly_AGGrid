@@ -196,18 +196,24 @@ const AgGrid: FC<IAgGridProps> = ({
                       </div>
                     )}
                     {showToolbarSorting && (
-                      <div className="sorting-section flex flex-col gap-2 mr-4 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-800">
-                        <span className="sorting-title font-semibold">{translation("Sorting")}:</span>
+                      <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
+                        <span className="sorting-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Sorting')}:</span>
                         <div className="flex gap-2 items-center">
                           <button
                             className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                             onClick={openSortingDialog}
+                            style={{
+                              height: "31px",
+                              borderRadius: "6px",
+                              borderColor: "#0000001A",
+                              color: "#44444C",
+                            }}
                             disabled={sortableColumns.length === 0}
                           >
-                            {translation("Advanced sorting")}
+                            {translation('Advanced sorting')}
                           </button>
                           <span className="text-xs text-slate-600">
-                            {translation("Levels")}: {sortRules.length}
+                            {translation('Levels')}: {sortRules.length}
                           </span>
                         </div>
                       </div>
@@ -422,7 +428,7 @@ const AgGrid: FC<IAgGridProps> = ({
                             <div className="px-3 py-2 mb-4 " >
                               <div className="space-y-2 max-h-80 overflow-y-auto">
                                 <div
-                                  className="flex items-center gap-2 px-2 py-2"
+                                  className="flex items-center justify-between gap-2 px-2 py-2"
                                 >
                                   <span className="w-14" style={{ color: "#364153", fontSize: "14px" }}>
                                     {translation('Level')}
@@ -458,6 +464,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                     fontSize: "12px",
                                     fontWeight: 500
                                   }}
+                                  onClick={addSortRule}
                                   className="rounded-md border px-3 py-2 flex items-center justify-center"
                                   disabled={sortableColumns.length === 0}
                                 >

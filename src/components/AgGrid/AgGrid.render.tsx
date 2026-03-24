@@ -965,7 +965,6 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const openAdvancedSortingDialog = () => {
-    console.log(1);
     const sortModelFromGrid = buildSortModelFromColumnState(gridRef.current?.api?.getColumnState());
     const normalizedSortModel = normalizeSortModel(sortModelFromGrid);
     if (normalizedSortModel.length > 0) {
