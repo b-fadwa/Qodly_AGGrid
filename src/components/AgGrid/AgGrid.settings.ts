@@ -126,6 +126,36 @@ const dataAccessSettings: TSetting[] = [
     key: 'showCopyActions',
   },
   {
+    label: 'Toolbar: Actions',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarActions',
+  },
+  {
+    label: 'Toolbar: View',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarView',
+  },
+  {
+    label: 'Toolbar: Sorting',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarSorting',
+  },
+  {
+    label: 'Toolbar: Save view',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarSaveView',
+  },
+  {
+    label: 'Toolbar: Saved views',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarSavedViews',
+  },
+  {
     key: 'state',
     label: 'State Source',
     type: ESetting.DS_AUTO_SUGGEST,
@@ -135,6 +165,12 @@ const dataAccessSettings: TSetting[] = [
     label: 'Save In Local Storage',
     type: ESetting.CHECKBOX,
     defaultValue: false,
+  },
+  {
+    key: 'rowCssField',
+    label: 'Row CSS Field',
+    type: ESetting.TEXT_FIELD,
+    placeholder: 'e.g. status',
   },
   {
     key: 'serverSideRef',

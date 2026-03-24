@@ -13,6 +13,7 @@ import {
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import {
+  CSSProperties,
   FC,
   KeyboardEvent as ReactKeyboardEvent,
   useCallback,
@@ -49,10 +50,12 @@ import {
   ModuleRegistry,
   ColumnHoverModule,
   CellStyleModule,
+  RowStyleModule,
   RenderApiModule,
   TextFilterModule,
   NumberFilterModule,
   DateFilterModule,
+  RowClassParams,
   themeQuartz,
 } from 'ag-grid-community';
 import isEqual from 'lodash/isEqual';
@@ -69,6 +72,7 @@ import { IoMdClose } from 'react-icons/io';
 ModuleRegistry.registerModules([
   ColumnHoverModule,
   CellStyleModule,
+  RowStyleModule,
   RenderApiModule,
   TextFilterModule,
   NumberFilterModule,
@@ -102,10 +106,16 @@ const AgGrid: FC<IAgGridProps> = ({
   enableCellFocus,
   enableColumnHover,
   multiSelection,
+  rowCssField,
   style,
   disabled = false,
   saveLocalStorage,
   showColumnActions,
+  showToolbarActions = true,
+  showToolbarView = true,
+  showToolbarSorting = true,
+  showToolbarSaveView = true,
+  showToolbarSavedViews = true,
   className,
   classNames = [],
   showCopyActions,
@@ -132,6 +142,21 @@ const AgGrid: FC<IAgGridProps> = ({
   const { id: nodeID } = useEnhancedNode();
   const prevSortModelRef = useRef<SortModelItem[]>([]);
   const gridRef = useRef<AgGridReact>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerHeight, setContainerHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height;
+        if (h > 0) setContainerHeight(h);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
@@ -175,11 +200,16 @@ const AgGrid: FC<IAgGridProps> = ({
   const [manualSelectedCells, setManualSelectedCells] = useState<TManualSelectedCell[]>([]);
   const [isCellSelectionAvailable, setIsCellSelectionAvailable] = useState(false);
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
+  const [showSortingDialog, setShowSortingDialog] = useState(false);
   // views management
   const [viewName, setViewName] = useState<string>('');
-  // view = name + columnState
-  const [savedViews, setSavedViews] = useState<{ name: string; columnState?: any }[]>([]);
+  // view = name + columnState + filterModel + sortModel
+  const [savedViews, setSavedViews] = useState<
+    { name: string; columnState?: any; filterModel?: any; sortModel?: SortModelItem[] }[]
+  >([]);
   const [selectedView, setSelectedView] = useState<string>('');
+  const [advancedSortModel, setAdvancedSortModel] = useState<SortModelItem[]>([]);
+  const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
 
   // dialog
   const [propertySearch, setPropertySearch] = useState('');
@@ -323,6 +353,83 @@ const AgGrid: FC<IAgGridProps> = ({
     };
   }, []);
 
+  const sortableColumns = useMemo(
+    () =>
+      columns
+        .filter((col) => col.dataType !== 'image' && col.dataType !== 'object' && col.sorting)
+        .map((col) => ({
+          colId: col.title,
+          label: col.title,
+        })),
+    [columns],
+  );
+
+  const isSortDirection = useCallback((sort: any): sort is 'asc' | 'desc' => {
+    return sort === 'asc' || sort === 'desc';
+  }, []);
+
+  const normalizeSortModel = useCallback(
+    (sortModel: SortModelItem[] | undefined | null): SortModelItem[] => {
+      if (!Array.isArray(sortModel)) return [];
+      const seen = new Set<string>();
+      const allowedColumns = new Set(sortableColumns.map((column) => column.colId));
+      return sortModel
+        .filter(
+          (rule): rule is SortModelItem =>
+            !!rule?.colId && isSortDirection(rule.sort) && allowedColumns.has(rule.colId),
+        )
+        .filter((rule) => {
+          if (seen.has(rule.colId)) return false;
+          seen.add(rule.colId);
+          return true;
+        })
+        .map((rule) => ({ colId: rule.colId, sort: rule.sort }));
+    },
+    [isSortDirection, sortableColumns],
+  );
+
+  const buildSortModelFromColumnState = useCallback(
+    (columnState: any[] | undefined | null): SortModelItem[] => {
+      if (!Array.isArray(columnState)) return [];
+      return columnState
+        .filter((column) => isSortDirection(column?.sort))
+        .sort((a, b) => {
+          const aSortIndex = typeof a?.sortIndex === 'number' ? a.sortIndex : Number.MAX_SAFE_INTEGER;
+          const bSortIndex = typeof b?.sortIndex === 'number' ? b.sortIndex : Number.MAX_SAFE_INTEGER;
+          return aSortIndex - bSortIndex;
+        })
+        .map((column) => ({ colId: column.colId, sort: column.sort as 'asc' | 'desc' }));
+    },
+    [isSortDirection],
+  );
+
+  const applySortModelToGrid = useCallback(
+    (sortModel: SortModelItem[] | undefined | null, api?: GridApi) => {
+      const gridApi = api ?? gridRef.current?.api;
+      if (!gridApi) return;
+      const normalizedSortModel = normalizeSortModel(sortModel);
+      const sortIndexByColId = new Map(
+        normalizedSortModel.map((rule, index) => [rule.colId, { sort: rule.sort, sortIndex: index }]),
+      );
+      const updatedColumnState = gridApi.getColumnState().map((columnState) => {
+        const sortState = sortIndexByColId.get(columnState.colId);
+        if (!sortState) {
+          return { ...columnState, sort: null, sortIndex: null };
+        }
+        return {
+          ...columnState,
+          sort: sortState.sort,
+          sortIndex: sortState.sortIndex,
+        };
+      });
+      gridApi.applyColumnState({ state: updatedColumnState, applyOrder: false });
+      prevSortModelRef.current = normalizedSortModel;
+      setAdvancedSortModel(normalizedSortModel);
+      gridApi.refreshInfiniteCache();
+    },
+    [normalizeSortModel],
+  );
+
   const theme = themeQuartz.withParams({
     spacing,
     accentColor,
@@ -347,6 +454,17 @@ const AgGrid: FC<IAgGridProps> = ({
     borderRadius: wrapperBorderRadius,
     rangeSelectionBorderColor: !enableCellFocus ? 'transparent' : undefined,
   });
+
+  const getRowClass = useCallback(
+    (params: RowClassParams) => {
+      if (!rowCssField || !params.data) return '';
+      const value = params.data.__entity?.[rowCssField];
+      if (value === undefined || value === null || value === '') return '';
+      const sanitized = String(value).replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      return `aggrid-row-${sanitized}`;
+    },
+    [rowCssField],
+  );
 
   const { updateCurrentDsValue } = useDsChangeHandler({
     source: ds,
@@ -570,27 +688,39 @@ const AgGrid: FC<IAgGridProps> = ({
     [copyMode, focusRowForCopy, multiSelection, currentSelectionDS],
   );
 
-  const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
-    if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
-    if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
-      const columnState = params.api.getColumnState();
-      const filterModel = params.api.getFilterModel();
+  const persistGridState = useCallback(
+    (columnState: any[], filterModel: any, sortModel: SortModelItem[]) => {
       if (saveLocalStorage) {
-        localStorage.setItem(`gridState_${nodeID}`, JSON.stringify({ columnState, filterModel }));
+        localStorage.setItem(
+          `gridState_${nodeID}`,
+          JSON.stringify({ columnState, filterModel, sortModel }),
+        );
       } else if (stateDS) {
-        // Save combined data to stateDS
         stateDS.getValue().then((currentData: any) => {
           const gridData = {
             ...currentData,
             columnState,
             filterModel,
+            sortModel,
           };
           stateDS.setValue(null, gridData);
         });
       }
-      emit('onsavestate', { columnState, filterModel });
+      emit('onsavestate', { columnState, filterModel, sortModel });
+    },
+    [emit, nodeID, saveLocalStorage, stateDS],
+  );
+
+  const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
+    if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
+    if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
+      const columnState = params.api.getColumnState();
+      const filterModel = params.api.getFilterModel();
+      const sortModel = buildSortModelFromColumnState(columnState);
+      setAdvancedSortModel(sortModel);
+      persistGridState(columnState, filterModel, sortModel);
     }
-  }, []);
+  }, [buildSortModelFromColumnState, persistGridState]);
 
   const getState = useCallback(async (params: any) => {
     if (saveLocalStorage) {
@@ -603,6 +733,14 @@ const AgGrid: FC<IAgGridProps> = ({
         if (parsedState?.filterModel) {
           params.api.setFilterModel(parsedState.filterModel);
         }
+        const stateSortModel = parsedState?.sortModel
+          ? normalizeSortModel(parsedState.sortModel)
+          : buildSortModelFromColumnState(parsedState?.columnState);
+        setAdvancedSortModel(stateSortModel);
+        prevSortModelRef.current = stateSortModel;
+        if (parsedState?.sortModel && !parsedState?.columnState) {
+          applySortModelToGrid(parsedState.sortModel, params.api);
+        }
       }
     } else if (stateDS) {
       const dsValue = await stateDS?.getValue();
@@ -611,13 +749,21 @@ const AgGrid: FC<IAgGridProps> = ({
         if (dsValue.filterModel) {
           params.api.setFilterModel(dsValue.filterModel);
         }
+        const stateSortModel = dsValue.sortModel
+          ? normalizeSortModel(dsValue.sortModel)
+          : buildSortModelFromColumnState(dsValue.columnState);
+        setAdvancedSortModel(stateSortModel);
+        prevSortModelRef.current = stateSortModel;
+      } else if (dsValue?.sortModel) {
+        applySortModelToGrid(dsValue.sortModel, params.api);
       }
     }
-  }, []);
+  }, [applySortModelToGrid, buildSortModelFromColumnState, nodeID, normalizeSortModel, saveLocalStorage, stateDS]);
 
   const applySorting = useCallback(async (params: IGetRowsParams, columns: any[], ds: any) => {
     if (params.sortModel.length === 0) {
       prevSortModelRef.current = [];
+      setAdvancedSortModel([]);
       return;
     }
     if (isEqual(params.sortModel, prevSortModelRef.current)) return;
@@ -634,8 +780,9 @@ const AgGrid: FC<IAgGridProps> = ({
 
     if (!sortInstructions.length) return;
     prevSortModelRef.current = params.sortModel;
+    setAdvancedSortModel(normalizeSortModel(params.sortModel));
     await ds.orderBy(sortInstructions.join(', '));
-  }, []);
+  }, [normalizeSortModel]);
 
   // (fix bug when calling 4d function on aggrid that displayes related values)
   // sanitize values to plain JSON-safe primitives/objects to avoid circular refs
@@ -798,7 +945,9 @@ const AgGrid: FC<IAgGridProps> = ({
       gridRef.current.api.applyColumnState({ state: initialColumnState, applyOrder: true });
       // Clear all filters
       gridRef.current.api.setFilterModel(null);
+      applySortModelToGrid([], gridRef.current.api);
     }
+    setAdvancedSortModel([]);
   };
 
   const handlePinChange = (colField: string, value: string) => {
@@ -815,12 +964,64 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
+  const openAdvancedSortingDialog = () => {
+    console.log(1);
+    const sortModelFromGrid = buildSortModelFromColumnState(gridRef.current?.api?.getColumnState());
+    const normalizedSortModel = normalizeSortModel(sortModelFromGrid);
+    if (normalizedSortModel.length > 0) {
+      setSortDialogModel(normalizedSortModel);
+    } else if (sortableColumns.length > 0) {
+      setSortDialogModel([{ colId: sortableColumns[0].colId, sort: 'asc' }]);
+    } else {
+      setSortDialogModel([]);
+    }
+    setShowSortingDialog(true);
+  };
+
+  const addSortLevel = () => {
+    if (sortableColumns.length === 0) return;
+    setSortDialogModel((prev) => {
+      const usedColumns = new Set(prev.map((rule) => rule.colId));
+      const nextColumn = sortableColumns.find((column) => !usedColumns.has(column.colId));
+      const fallbackColumn = nextColumn ?? sortableColumns[0];
+      return [...prev, { colId: fallbackColumn.colId, sort: 'asc' }];
+    });
+  };
+
+  const removeSortLevel = (indexToDelete: number) => {
+    setSortDialogModel((prev) => prev.filter((_, index) => index !== indexToDelete));
+  };
+
+  const updateSortLevelColumn = (indexToUpdate: number, colId: string) => {
+    setSortDialogModel((prev) =>
+      prev.map((rule, index) => (index === indexToUpdate ? { ...rule, colId } : rule)),
+    );
+  };
+
+  const updateSortLevelDirection = (indexToUpdate: number, sort: 'asc' | 'desc') => {
+    setSortDialogModel((prev) =>
+      prev.map((rule, index) => (index === indexToUpdate ? { ...rule, sort } : rule)),
+    );
+  };
+
+  const applyAdvancedSorting = () => {
+    applySortModelToGrid(sortDialogModel);
+    setShowSortingDialog(false);
+  };
+
+  const clearAdvancedSorting = () => {
+    setSortDialogModel([]);
+    applySortModelToGrid([]);
+    setShowSortingDialog(false);
+  };
+
   // views actions
   const saveNewView = () => {
     if (!viewName.trim()) return;
     const columnState = gridRef.current?.api?.getColumnState();
     const filterModel = gridRef.current?.api?.getFilterModel();
-    const newView = { name: viewName, columnState, filterModel };
+    const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
+    const newView = { name: viewName, columnState, filterModel, sortModel };
     const updatedViews: any = [...savedViews, newView];
     setSavedViews(updatedViews);
     if (saveLocalStorage) {
@@ -840,18 +1041,27 @@ const AgGrid: FC<IAgGridProps> = ({
   const loadView = () => {
     const view: any = savedViews.find((view) => view.name === selectedView);
     if (!view) return;
-    if (view.columnState && gridRef.current?.api) {
-      gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
+    if (gridRef.current?.api) {
+      if (view.columnState) {
+        gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
+      }
       // Restore filter model of selected view
       if (view.filterModel) {
         gridRef.current.api.setFilterModel(view.filterModel);
       }
-      const updatedVisibility = view.columnState.map((col: any) => ({
-        field: col.colId,
-        isHidden: col.hide || false,
-        pinned: col.pinned || null,
-      }));
-      setColumnVisibility(updatedVisibility);
+      if (view.sortModel) {
+        applySortModelToGrid(view.sortModel, gridRef.current.api);
+      } else if (view.columnState) {
+        setAdvancedSortModel(normalizeSortModel(buildSortModelFromColumnState(view.columnState)));
+      }
+      if (view.columnState) {
+        const updatedVisibility = view.columnState.map((col: any) => ({
+          field: col.colId,
+          isHidden: col.hide || false,
+          pinned: col.pinned || null,
+        }));
+        setColumnVisibility(updatedVisibility);
+      }
     }
   };
 
@@ -875,9 +1085,10 @@ const AgGrid: FC<IAgGridProps> = ({
   const updateView = () => {
     const columnState = gridRef.current?.api?.getColumnState();
     const filterModel = gridRef.current?.api?.getFilterModel();
+    const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
     const updatedViews = savedViews.map((view) => {
       if (view.name === selectedView) {
-        return { ...view, columnState, filterModel };
+        return { ...view, columnState, filterModel, sortModel };
       }
       return view;
     });
@@ -936,8 +1147,27 @@ const AgGrid: FC<IAgGridProps> = ({
     });
   };
 
+  const resolvedStyle = useMemo<CSSProperties>(() => {
+    const s = { ...style };
+    if (s.height === '100%' || s.height === 'auto' || s.height === 'inherit') {
+      if (containerHeight && containerHeight > 0) {
+        s.height = `${containerHeight}px`;
+      } else {
+        s.height = '600px';
+      }
+    }
+    return s;
+  }, [style, containerHeight]);
+
+  const showAnyToolbarSection =
+    showToolbarActions ||
+    showToolbarView ||
+    showToolbarSorting ||
+    showToolbarSaveView ||
+    showToolbarSavedViews;
+
   return (
-    <div ref={connect} style={style} className={cn(className, classNames)}>
+    <div ref={(el) => { containerRef.current = el?.parentElement as HTMLDivElement; connect(el); }} style={resolvedStyle} className={cn(className, classNames)}>
       {datasource ? (
         <div className="flex flex-col gap-2 h-full" onKeyDownCapture={onGridKeyDownCapture}>
           {showCopyActions && (<div className="flex items-center gap-2 text-sm text-gray-800">
@@ -990,20 +1220,20 @@ const AgGrid: FC<IAgGridProps> = ({
               )}
           </div>)}
 
-          {showColumnActions && (
-            <>
+          {showAnyToolbarSection && (
+            < div className="grid-header items-stretch flex items-center justify-between cursor-pointer flex-wrap  py-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
               {/* AGGrid header actions */}
-              <div className="grid-header items-stretch flex items-center justify-between cursor-pointer flex-wrap  py-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
-                {/* actions section */}
+              {showToolbarActions && (
                 <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg  bg-white px-4 py-2 text-sm text-gray-800">
                   <span className="actions-title"
                     style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
-
                   >{translation('Actions')}</span>
                   <div className="flex gap-2">
                     <Element id="agGridActions" is={resolver.StyleBox} canvas />
                   </div>
                 </div>
+              )}
+              {showToolbarView && (
                 <div className='flex items-center gap-2 flex-wrap pr-4'>
                   {/* columns customizer button */}
                   <div className="customizer-section flex flex-col gap-2  rounded-lg  bg-white py-2 text-sm text-gray-800">
@@ -1037,170 +1267,196 @@ const AgGrid: FC<IAgGridProps> = ({
                       </button>
                     </div>
                   </div>
-                  {/* new view section */}
-                  <div className="view-section flex flex-col gap-2 rounded-lg  bg-white  py-2 text-sm text-gray-800">
-                    <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder={translation('View name')}
-                        className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                        value={viewName}
-                        onChange={(e: any) => {
-                          setViewName(e.target.value);
-                        }}
-                        style={{
-                          height: "31px",
-                          borderRadius: "6px",
-                          borderColor: "#0000001A",
-                          color: "#44444C",
-                        }}
-                      />
-                      <button
-                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                        onClick={() => saveNewView()}
-                        style={{
-                          height: "31px",
-                          borderRadius: "6px",
-                          borderColor: "#0000001A",
-                          color: "#44444C",
-                        }}
-                      >
-                        {translation('Save new')}
-                      </button>
-                    </div>
-                  </div>
-                  {/* saved views section */}
-                  <div className="views-section flex flex-col gap-2 rounded-lg bg-white py-2 text-sm text-gray-800">
-                    <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Saved views')}</span>
-
-                    <div className="flex gap-2">
-                      <select
-                        value={selectedView}
-                        className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                        onChange={(e: any) => {
-                          setSelectedView(e.target.value);
-                        }}
-                        style={{
-                          height: "31px",
-                          borderRadius: "6px",
-                          borderColor: "#0000001A",
-                          color: "#44444C",
-                        }}
-                      >
-                        <option value="">{translation('Select view')}</option>
-                        {savedViews.map((view, _) => (
-                          <option value={view.name}>{view.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                        onClick={() => loadView()}
-                        style={{
-                          height: "31px",
-                          borderRadius: "6px",
-                          borderColor: "#0000001A",
-                          color: "#44444C",
-                        }}                      >
-                        {translation('Load')}
-                      </button>
-                      <button
-                        className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                        onClick={() => updateView()}
-                        style={{
-                          height: "31px",
-                          borderRadius: "6px",
-                          borderColor: "#0000001A",
-                          color: "#44444C",
-                        }}                      >
-                        {translation('Overwrite')}
-                      </button>
-                      <button
-                        className="header-button-trash inline-flex items-center justify-center rounded-lg border"
-                        style={{
-                          width: "31px",
-                          height: "31px",
-                          borderRadius: "8px",
-                          color: "#EC7B80",
-                          borderColor: "#EC7B80",
-                          backgroundColor: "#EC7B8033",
-                        }}
-                        onClick={() => deleteView()}
-                      >
-                        <GoTrash  size={14} /></button>
-                    </div>
+                </div>
+              )}
+              {showToolbarSorting && (
+                <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
+                  <span className="sorting-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Sorting')}:</span>
+                  <div className="flex gap-2 items-center">
+                    <button
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                      onClick={openAdvancedSortingDialog}
+                      style={{
+                        height: "31px",
+                        borderRadius: "6px",
+                        borderColor: "#0000001A",
+                        color: "#44444C",
+                      }}
+                      disabled={sortableColumns.length === 0}
+                    >
+                      {translation('Advanced sorting')}
+                    </button>
+                    <span className="text-xs text-slate-600">
+                      {translation('Levels')}: {advancedSortModel.length}
+                    </span>
                   </div>
                 </div>
-
-              </div>
+              )}
+              {/* new view section */}
+              {showToolbarSaveView && (
+                < div className="view-section flex flex-col gap-2 rounded-lg  bg-white  py-2 text-sm text-gray-800">
+                  <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder={translation('View name')}
+                      className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                      value={viewName}
+                      onChange={(e: any) => {
+                        setViewName(e.target.value);
+                      }}
+                      style={{
+                        height: "31px",
+                        borderRadius: "6px",
+                        borderColor: "#0000001A",
+                        color: "#44444C",
+                      }}
+                    />
+                    <button
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                      onClick={() => saveNewView()}
+                      style={{
+                        height: "31px",
+                        borderRadius: "6px",
+                        borderColor: "#0000001A",
+                        color: "#44444C",
+                      }}
+                    >
+                      {translation('Save new')}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {/* saved views section */}
+              {showToolbarSavedViews && (
+                < div className="views-section flex flex-col gap-2 rounded-lg bg-white py-2 text-sm text-gray-800">
+                  <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Saved views')}</span>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedView}
+                      className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                      onChange={(e: any) => {
+                        setSelectedView(e.target.value);
+                      }}
+                      style={{
+                        height: "31px",
+                        borderRadius: "6px",
+                        borderColor: "#0000001A",
+                        color: "#44444C",
+                      }}
+                    >
+                      <option value="">{translation('Select view')}</option>
+                      {savedViews.map((view, _) => (
+                        <option value={view.name}>{view.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                      onClick={() => loadView()}
+                      style={{
+                        height: "31px",
+                        borderRadius: "6px",
+                        borderColor: "#0000001A",
+                        color: "#44444C",
+                      }}                      >
+                      {translation('Load')}
+                    </button>
+                    <button
+                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                      onClick={() => updateView()}
+                      style={{
+                        height: "31px",
+                        borderRadius: "6px",
+                        borderColor: "#0000001A",
+                        color: "#44444C",
+                      }}                      >
+                      {translation('Overwrite')}
+                    </button>
+                    <button
+                      className="header-button-trash inline-flex items-center justify-center rounded-lg border"
+                      style={{
+                        width: "31px",
+                        height: "31px",
+                        borderRadius: "8px",
+                        color: "#EC7B80",
+                        borderColor: "#EC7B80",
+                        backgroundColor: "#EC7B8033",
+                      }}
+                      onClick={() => deleteView()}
+                    >
+                      <GoTrash size={14} /></button>
+                  </div>
+                </div>
+              )}
               {/* columns customizer dialog */}
-              {showPropertiesDialog && (
-                <div
-                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                  onClick={() => setShowPropertiesDialog(false)}
-                >
+              {
+                showToolbarView && showPropertiesDialog && (
                   <div
-                    className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
-                    onClick={(e) => e.stopPropagation()}
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onClick={() => setShowPropertiesDialog(false)}
                   >
-                    <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl" >
-                      <div>
-                        <h1 className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>{translation("COLUMN STATE")}</h1>
-                        <span className='mt-1 block text-sm ' style={{ color: "#6B7280", fontSize: "16px" }}>{translation("Show or hide columns for this grid view")}</span>
+                    <div
+                      className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl" >
+                        <div>
+                          <h1 className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>{translation("COLUMN STATE")}</h1>
+                          <span className='mt-1 block text-sm ' style={{ color: "#6B7280", fontSize: "16px" }}>{translation("Show or hide columns for this grid view")}</span>
+                        </div>
+                        <button
+                          className=" inline-flex items-center justify-center"
+                          style={{
+                            color: "#6A7282"
+                          }}
+                          onClick={() => setShowPropertiesDialog(false)}
+                        >
+                          <IoMdClose />
+                        </button>
                       </div>
-                      <button
-                        className=" inline-flex items-center justify-center"
-                        style={{
-                          color: "#0A0A0A"
-                        }}
-                        onClick={() => setShowPropertiesDialog(false)}
-                      >
-                        <IoMdClose />
-                      </button>
-                    </div>
-                    <div className="px-5 py-4">
-                      <div className="sticky top-0 z-10 bg-white pb-3">
-                        <div className="flex flex-row gap-2 md:flex-row md:items-center">
-                          <input
-                            className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
-                            placeholder={translation('Search field')}
-                            value={propertySearch}
-                            onChange={(e) => setPropertySearch(e.target.value)}
-                            style={{ height: "31px", borderColor: "#0000001A", borderRadius: "6px" }}
-                          />
-
-                          <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm" style={{ color: "#717182", fontSize: "12px", fontWeight: 500 }}>
+                      <div className="px-5 py-4">
+                        <div className="sticky top-0 z-10 bg-white pb-3">
+                          <div className="flex flex-row gap-2 md:flex-row md:items-center">
                             <input
-                              type="checkbox"
-                              checked={showVisibleOnly}
-                              onChange={(e) => setShowVisibleOnly(e.target.checked)}
-                              style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
+                              className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
+                              placeholder={translation('Search field')}
+                              value={propertySearch}
+                              onChange={(e) => setPropertySearch(e.target.value)}
+                              style={{ height: "31px", borderColor: "#0000001A", borderRadius: "6px" }}
                             />
-                            <span>{translation('Visible only')}</span>
-                          </label>
-                          <div>
+
+                            <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm" style={{ color: "#717182", fontSize: "12px", fontWeight: 500 }}>
+                              <input
+                                type="checkbox"
+                                checked={showVisibleOnly}
+                                onChange={(e) => setShowVisibleOnly(e.target.checked)}
+                                style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
+                              />
+                              <span>{translation('Visible only')}</span>
+                            </label>
+                            <div>
+                              <button
+                                type="button"
+                                className="rounded-md border  bg-white px-3 py-2 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                                style={{ borderColor: "rgba(0, 0, 0, 0.1)", color: "#0A0A0A", height: "31px", fontSize: "12px", fontWeight: 500 }}
+                                onClick={() => setFilteredColumnsVisible(true)}
+                                disabled={filteredColumns.length === 0}
+                              >
+                                {translation('Select all')}
+                              </button>
+                            </div>
                             <button
                               type="button"
-                              className="rounded-md border  bg-white px-3 py-2 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                              style={{ borderColor: "rgba(0, 0, 0, 0.1)", color: "#0A0A0A", height: "31px", fontSize: "12px", fontWeight: 500 }}
-                              onClick={() => setFilteredColumnsVisible(true)}
+                              className="rounded-md border px-3 flex items-center justify-center py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                              style={{ borderColor: "#6B8AD4", color: "#6B8AD4", height: "31px", fontSize: "12px", fontWeight: 500 }}
+                              onClick={() => setFilteredColumnsVisible(false)}
                               disabled={filteredColumns.length === 0}
                             >
-                              {translation('Select all')}
+                              {translation('Clear all')}
                             </button>
                           </div>
-                          <button
-                            type="button"
-                            className="rounded-md border px-3 flex items-center justify-center py-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            style={{ borderColor: "#6B8AD4", color: "#6B8AD4", height: "31px", fontSize: "12px", fontWeight: 500 }}
-                            onClick={() => setFilteredColumnsVisible(false)}
-                            disabled={filteredColumns.length === 0}
-                          >
-                            {translation('Clear all')}
-                          </button>
                         </div>
-                      </div>
-                      {/* <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
+                        {/* <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
                         <div>
                           {translation('Visible')} : {visibleCount} / {normalizedColumns.length}
                         </div>
@@ -1211,55 +1467,200 @@ const AgGrid: FC<IAgGridProps> = ({
                         </div> 
                       </div> */}
 
-                      <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2" style={{ backgroundColor: "#FAFAFA", borderColor: "#D1D5DC", borderRadius: "10px" }}>
-                        {filteredColumns.length === 0 ? (
-                          <div className="px-3 py-8 text-center text-sm text-slate-500">
-                            {translation('No fields match your filter')}.
+                        <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2" style={{ backgroundColor: "#FAFAFA", borderColor: "#D1D5DC", borderRadius: "10px" }}>
+                          {filteredColumns.length === 0 ? (
+                            <div className="px-3 py-8 text-center text-sm text-slate-500">
+                              {translation('No fields match your filter')}.
+                            </div>
+                          ) : (
+                            filteredColumns.map((column) => {
+                              const isVisible = !column.isHidden;
+                              return (
+                                <div
+                                  key={column.field}
+                                  className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
+                                >
+                                  <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={isVisible}
+                                      onChange={() => handleColumnToggle(column.field)}
+                                      style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
+                                    />
+                                    <span
+                                      className={`truncate ${isVisible ? "text-gray-700" : "text-slate-400"
+                                        }`}
+                                    >
+                                      {column.field}
+                                    </span>
+                                  </label>
+
+                                  <select
+                                    value={column.pinned || 'unpinned'}
+                                    className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                    style={{ height: "31px" }}
+                                    onChange={(e) => handlePinChange(column.field, e.target.value)}
+                                  >
+                                    <option value="unpinned">{translation('No pin')}</option>
+                                    <option value="left">{translation('Pin left')}</option>
+                                    <option value="right">{translation('Pin right')}</option>
+                                  </select>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+              {
+                showToolbarSorting && showSortingDialog && (
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onClick={() => setShowSortingDialog(false)}
+                  >
+                    <div
+                      className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-start justify-between gap-3 border-b border-slate-200  px-5 py-4 rounded-t-xl">
+                        <div>
+                          <span className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>
+                            {translation('ADVANCED SORTING')}
+                          </span>
+                          <span className="mt-1 block text-sm" style={{ color: "#4A5565", fontSize: '14px' }}>
+                            {translation(
+                              'Choose one or multiple columns and define sort direction for each level',
+                            )}
+                          </span>
+                        </div>
+                        <button
+                          className=" inline-flex items-center justify-center"
+                          style={{
+                            color: "#6A7282"
+                          }}
+                          onClick={() => setShowSortingDialog(false)}
+                        >
+                          <IoMdClose />
+                        </button>
+                      </div>
+                      <div className="">
+                        {sortableColumns.length === 0 ? (
+                          <div className=" bg-slate-50 px-3 py-2 " style={{ color: "#4A5565", fontSize: '14px' }}>
+                            {translation('No sortable columns are enabled in grid properties')}
                           </div>
                         ) : (
-                          filteredColumns.map((column) => {
-                            const isVisible = !column.isHidden;
-                            return (
-                              <div
-                                key={column.field}
-                                className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
-                              >
-                                <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={isVisible}
-                                    onChange={() => handleColumnToggle(column.field)}
-                                    style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
-                                  />
-                                  <span
-                                    className={`truncate ${isVisible ? "text-gray-700" : "text-slate-400"
-                                      }`}
-                                  >
-                                    {column.field}
-                                  </span>
-                                </label>
-
-                                <select
-                                  value={column.pinned || 'unpinned'}
-                                  className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
-                                  style={{ height: "31px" }}
-                                  onChange={(e) => handlePinChange(column.field, e.target.value)}
-                                >
-                                  <option value="unpinned">{translation('No pin')}</option>
-                                  <option value="left">{translation('Pin left')}</option>
-                                  <option value="right">{translation('Pin right')}</option>
-                                </select>
+                          <>
+                            <div className="px-3 py-2 mb-4 " >
+                              <div className="space-y-2 max-h-80 overflow-y-auto">
+                                {sortDialogModel.length === 0 ? (
+                                  <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600">
+                                    {translation('No sort level configured yet')}
+                                  </div>
+                                ) : (
+                                  sortDialogModel.map((rule, index) => (
+                                    <div
+                                      key={`${rule.colId}-${index}`}
+                                      className="flex items-center gap-2 px-2 py-2"
+                                    >
+                                      <span className="w-14" style={{ color: "#364153", fontSize: "14px" }}>
+                                        {translation('Level')} {index + 1}
+                                      </span>
+                                      <select
+                                        className="min-w-0 flex-1 px-2 py-1" style={{ backgroundColor: "#F3F3F5", borderRadius: "8px", height: "36px", fontSize: "14px", width: "256px" }}
+                                        value={rule.colId}
+                                        onChange={(e) => updateSortLevelColumn(index, e.target.value)}
+                                      >
+                                        {sortableColumns.map((column) => (
+                                          <option key={column.colId} value={column.colId}>
+                                            {column.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        className="w-28 rounded-md" style={{ backgroundColor: "#F3F3F5", borderRadius: "8px", height: "36px", width: "128px", fontSize: "14px" }}
+                                        value={rule.sort}
+                                        onChange={(e) =>
+                                          updateSortLevelDirection(
+                                            index,
+                                            (e.target.value as 'asc' | 'desc') || 'asc',
+                                          )
+                                        }
+                                      >
+                                        <option value="asc">{translation('Asc')}</option>
+                                        <option value="desc">{translation('Desc')}</option>
+                                      </select>
+                                      <button
+                                        type="button"
+                                        className=" border bg-white px-2 py-1"
+                                        style={{ height: "32px", borderColor: "#0000001A", borderRadius: "8px", fontSize: "12px" }}
+                                        onClick={() => removeSortLevel(index)}
+                                      >
+                                        {translation('Remove')}
+                                      </button>
+                                    </div>
+                                  ))
+                                )}
                               </div>
-                            );
-                          })
+                              <div className="mt-3 flex items-center justify-between pb-4">
+                                <button
+                                  type="button"
+                                  style={{
+                                    height: "31px",
+                                    borderRadius: "8px",
+                                    borderColor: "#0000001A",
+                                    color: "#44444C",
+                                    fontSize: "12px",
+                                    fontWeight: 500
+                                  }}
+                                  className="rounded-md border px-3 py-2 flex items-center justify-center"
+                                  onClick={addSortLevel}
+                                  disabled={sortableColumns.length === 0}
+                                >
+                                  {translation('Add level')}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex justify-end align-end items-center gap-2 w-full p-4 " style={{ borderTop: "1px solid #E5E7EB" }}>
+                              <button
+                                type="button"
+                                className="rounded-md border px-3 py-2 flex items-center justify-center "
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                  fontSize: "12px"
+                                }}
+                                onClick={clearAdvancedSorting}
+                              >
+                                {translation('Clear')}
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md border  px-3 py-2 text-sm text-white flex text-center items-center justify-center"
+                                onClick={applyAdvancedSorting}
+                                style={{
+                                  background: "#2B5797",
+                                  height: "31px",
+                                  fontSize: "12px"
+                                }}
+                              >
+                                {translation('Apply sorting')}
+                              </button>
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </>
-          )}
+                )
+              }
+            </div>
+          )
+          }
           <div className="records-count text-sm  flex justify-end gap-2 mt-2 mb-2 pr-4" ><span style={{ color: "#0A0A0A", fontSize: "12px", fontWeight: 400 }}>{_count}</span> <span style={{ color: "#717182", fontSize: "12px", fontWeight: 400 }}>{translation("records")}</span></div>
           <div className='px-4 h-full'>
             <AgGridReact
@@ -1293,20 +1694,21 @@ const AgGrid: FC<IAgGridProps> = ({
               onCellMouseOut={onCellMouseOut}
               onCellMouseOver={onCellMouseOver}
               onCellKeyDown={onCellKeyDown}
+              getRowClass={getRowClass}
               theme={theme}
               className={cn({ 'pointer-events-none opacity-40': disabled })}
               columnHoverHighlight={enableColumnHover}
             />
           </div>
-        </div>
+        </div >
       ) : (
         <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
           <p>Error</p>
         </div>
       )
-      }
+      };
     </div >
   );
-};
+}
 
 export default AgGrid;
