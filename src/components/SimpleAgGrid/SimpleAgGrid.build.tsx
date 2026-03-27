@@ -35,6 +35,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   const colDefs: ColDef[] = useMemo(() => {
     const dataCols = columns.map((col) => ({
       field: col.title,
+      hide: !!col.hidden,
       editable: enableAddNewRow && col.editable !== false,
       sortable: !!col.sorting,
       width: col.width,
@@ -89,6 +90,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     return base;
   }, [columns, enableAddNewRow, enableRowDrag]);
 
+  // No CustomCell here: design canvas lacks useI18n / useLocalization providers (runtime uses CustomCell in .render).
   const defaultColDef = useMemo<ColDef>(() => ({ flex: 1, minWidth: 80 }), []);
 
   const rowSelection = useMemo(

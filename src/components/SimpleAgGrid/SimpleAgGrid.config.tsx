@@ -154,8 +154,18 @@ export default {
                     flex: 1,
                     editable: true,
                     sorting: true,
+                    hidden: false,
                     id: generate(),
-                    dataType: item.attribute.type || 'string',
+                    ...(item.attribute.type === 'image'
+                      ? { dataType: item.attribute.type, format: '' }
+                      : item.attribute.type === 'bool'
+                        ? { dataType: item.attribute.type, format: 'boolean' }
+                        : ['blob', 'object'].includes(item.attribute.type)
+                          ? { dataType: item.attribute.type || 'object', format: '' }
+                          : {
+                              format: '',
+                              dataType: item.attribute.type || 'string',
+                            }),
                   } as any,
                 ];
             }
@@ -220,6 +230,10 @@ export interface ISimpleColumn {
   flex: number;
   editable: boolean;
   sorting: boolean;
+  /** When true, column is hidden in the grid (same as AgGrid). */
+  hidden?: boolean;
+  /** Display format (FORMAT_FIELD), same as AgGrid. */
+  format?: string;
   id: string;
   dataType: string;
 }

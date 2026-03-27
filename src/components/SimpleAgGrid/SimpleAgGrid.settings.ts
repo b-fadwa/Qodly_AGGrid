@@ -28,6 +28,14 @@ const commonSettings: TSetting[] = [
         key: 'source',
       },
       {
+        label: 'Format',
+        defaultValue: '',
+        type: ESetting.FORMAT_FIELD,
+        key: 'format',
+        labelClassName: 'mr-4 ml-2 w-16',
+        className: 'mb-2',
+      },
+      {
         label: 'Width',
         type: ESetting.NUMBER_FIELD,
         defaultValue: 150,
@@ -50,6 +58,12 @@ const commonSettings: TSetting[] = [
         defaultValue: false,
         type: ESetting.CHECKBOX,
         key: 'sorting',
+      },
+      {
+        label: 'Hide column',
+        defaultValue: false,
+        type: ESetting.CHECKBOX,
+        key: 'hidden',
       },
     ],
   },

@@ -11,6 +11,7 @@ import cn from 'classnames';
 import { CSSProperties, FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { ISimpleAgGridProps, ISimpleColumn } from './SimpleAgGrid.config';
+import CustomCell from '../AgGrid/CustomCell';
 import {
   ColDef,
   RowDragEndEvent,
@@ -223,11 +224,16 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   const colDefs: ColDef[] = useMemo(() => {
     const dataCols = columns.map((col) => ({
       field: col.title,
+      hide: !!col.hidden,
       editable: (params: any) =>
         enableAddNewRow && col.editable !== false && !!params.data?.__isInputRow,
       sortable: !!col.sorting,
       width: col.width,
       flex: col.flex,
+      cellRendererParams: {
+        format: col.format ?? '',
+        dataType: col.dataType ?? 'string',
+      },
     }));
     const base: ColDef[] = [];
     if (enableRowDrag) {
@@ -258,7 +264,15 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     return base;
   }, [columns, enableAddNewRow, enableRowDrag]);
 
-  const defaultColDef = useMemo<ColDef>(() => ({ flex: 1, minWidth: 80 }), []);
+  const defaultColDef = useMemo<ColDef>(
+    () => ({
+      flex: 1,
+      minWidth: 80,
+      cellDataType: false,
+      cellRenderer: CustomCell,
+    }),
+    [],
+  );
 
   const rowSelection = useMemo(
     () => ({
@@ -298,9 +312,12 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       }
       if (rowCssField && params.data) {
         const cols = columnsRef.current;
-        const value = params.data.__entity?.[rowCssField] ?? findValueBySource(params.data, rowCssField, cols);
+        const value =
+          params.data.__entity?.[rowCssField] ?? findValueBySource(params.data, rowCssField, cols);
         if (value !== undefined && value !== null && value !== '') {
-          const sanitized = String(value).replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+          const sanitized = String(value)
+            .replace(/[^a-zA-Z0-9_-]/g, '-')
+            .toLowerCase();
           classes.push(`simple-aggrid-row-${sanitized}`);
         }
       }
@@ -342,11 +359,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       if (!enableRowDrag) return;
       const fromIndex = event.node?.data?.__rowIndex ?? event.node?.rowIndex;
       const toIndex = event.overIndex;
-      if (
-        fromIndex !== undefined &&
-        toIndex !== undefined &&
-        fromIndex !== toIndex
-      ) {
+      if (fromIndex !== undefined && toIndex !== undefined && fromIndex !== toIndex) {
         emit('onrowdnd', {
           fromIndex,
           toIndex,
@@ -411,7 +424,14 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   }, [style, containerHeight]);
 
   return (
-    <div ref={(el) => { containerRef.current = el?.parentElement as HTMLDivElement; connect(el); }} style={resolvedStyle} className={cn(className, classNames)}>
+    <div
+      ref={(el) => {
+        containerRef.current = el?.parentElement as HTMLDivElement;
+        connect(el);
+      }}
+      style={resolvedStyle}
+      className={cn(className, classNames)}
+    >
       {datasource ? (
         <div className="flex flex-col h-full" style={{ overflow: 'hidden' }}>
           <div style={{ flex: 1, minHeight: 0 }}>
