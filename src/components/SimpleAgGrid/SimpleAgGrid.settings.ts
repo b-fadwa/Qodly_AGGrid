@@ -3,8 +3,11 @@ import {
   ESetting,
   ETextFieldModifier,
   TSetting,
+  getStaticFeaturesExperimentalFlag,
 } from '@ws-ui/webform-editor';
 import { validateServerSide } from '@ws-ui/shared';
+
+const isI18nEnabled = getStaticFeaturesExperimentalFlag('i18n');
 
 const commonSettings: TSetting[] = [
   {
@@ -16,7 +19,7 @@ const commonSettings: TSetting[] = [
       {
         label: 'Title',
         defaultValue: '',
-        type: ESetting.TEXT_FIELD,
+        type: isI18nEnabled ? ESetting.I18NFIELD : ESetting.TEXT_FIELD,
         key: 'title',
       },
       {
