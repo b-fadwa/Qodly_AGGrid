@@ -18,7 +18,6 @@ import {
   RowClassParams,
   themeQuartz,
 } from 'ag-grid-community';
-
 const SaveActionRenderer: FC<any> = (params: any) => {
   if (!params.data?.__isInputRow) return null;
   return (
@@ -67,12 +66,15 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   headerTextColor,
   style,
   disabled = false,
+  enableAddNewRow = true,
+  showFooter = true,
+  enableRowDrag = true,
   className,
   classNames = [],
 }) => {
   const { connect, emit } = useRenderer({
     autoBindEvents: !disabled,
-    omittedEvents: ['onsetvalue', 'onrowdnd', 'onsaverow'],
+    omittedEvents: ['onsetvalue', 'onrowdnd', 'onsaverow', 'onrowdblclick'],
   });
   const {
     sources: { datasource: ds, currentElement },
@@ -111,6 +113,9 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   const dsRef = useRef(ds);
   dsRef.current = ds;
 
+  const enableAddNewRowRef = useRef(enableAddNewRow);
+  enableAddNewRowRef.current = enableAddNewRow;
+
   const createEmptyInputRow = useCallback(() => {
     const cols = columnsRef.current;
     const row: any = { __isInputRow: true, __isNew: true };
@@ -120,11 +125,26 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     return row;
   }, []);
 
-  const [pinnedTopRowData, setPinnedTopRowData] = useState<any[]>(() => [createEmptyInputRow()]);
+  const [pinnedTopRowData, setPinnedTopRowData] = useState<any[]>(() => {
+    if (!enableAddNewRow) return [];
+    const row: any = { __isInputRow: true, __isNew: true };
+    columns.forEach((col) => {
+      row[col.title] = '';
+    });
+    return [row];
+  });
 
   const resetInputRow = useCallback(() => {
+    if (!enableAddNewRowRef.current) {
+      setPinnedTopRowData([]);
+      return;
+    }
     setPinnedTopRowData([createEmptyInputRow()]);
   }, [createEmptyInputRow]);
+
+  useEffect(() => {
+    resetInputRow();
+  }, [enableAddNewRow, resetInputRow]);
 
   const loadAllData = useCallback(async () => {
     const currentDs = dsRef.current;
@@ -200,9 +220,18 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
 
   const gridContext = useMemo(() => ({ onSaveRow }), [onSaveRow]);
 
-  const colDefs: ColDef[] = useMemo(
-    () => [
-      {
+  const colDefs: ColDef[] = useMemo(() => {
+    const dataCols = columns.map((col) => ({
+      field: col.title,
+      editable: (params: any) =>
+        enableAddNewRow && col.editable !== false && !!params.data?.__isInputRow,
+      sortable: !!col.sorting,
+      width: col.width,
+      flex: col.flex,
+    }));
+    const base: ColDef[] = [];
+    if (enableRowDrag) {
+      base.push({
         headerName: '',
         field: '__drag',
         rowDrag: (params: any) => !params.data?.__isInputRow,
@@ -211,15 +240,11 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
         flex: 0,
         sortable: false,
         editable: false,
-      },
-      ...columns.map((col) => ({
-        field: col.title,
-        editable: (params: any) => col.editable !== false && !!params.data?.__isInputRow,
-        sortable: !!col.sorting,
-        width: col.width,
-        flex: col.flex,
-      })),
-      {
+      });
+    }
+    base.push(...dataCols);
+    if (enableAddNewRow) {
+      base.push({
         headerName: '',
         field: '__action',
         width: 50,
@@ -228,12 +253,22 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
         sortable: false,
         editable: false,
         cellRenderer: SaveActionRenderer,
-      },
-    ],
-    [columns],
-  );
+      });
+    }
+    return base;
+  }, [columns, enableAddNewRow, enableRowDrag]);
 
   const defaultColDef = useMemo<ColDef>(() => ({ flex: 1, minWidth: 80 }), []);
+
+  const rowSelection = useMemo(
+    () => ({
+      mode: 'singleRow' as const,
+      enableClickSelection: true,
+      checkboxes: false,
+      isRowSelectable: (node: any) => !!node.data && !node.data.__isInputRow,
+    }),
+    [],
+  );
 
   // -- Theme --
 
@@ -258,7 +293,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   const getRowClass = useCallback(
     (params: RowClassParams) => {
       const classes: string[] = [];
-      if (params.data?.__isInputRow) {
+      if (enableAddNewRow && params.data?.__isInputRow) {
         classes.push('simple-aggrid-input-row');
       }
       if (rowCssField && params.data) {
@@ -271,7 +306,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       }
       return classes.join(' ');
     },
-    [rowCssField],
+    [rowCssField, enableAddNewRow],
   );
 
   // -- Feature 1: Inline editing → onsetvalue --
@@ -304,6 +339,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
 
   const onRowDragEnd = useCallback(
     (event: RowDragEndEvent) => {
+      if (!enableRowDrag) return;
       const fromIndex = event.node?.data?.__rowIndex ?? event.node?.rowIndex;
       const toIndex = event.overIndex;
       if (
@@ -317,14 +353,15 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
         });
       }
     },
-    [emit],
+    [emit, enableRowDrag],
   );
 
-  // -- Row click → update currentElement --
+  // -- Row click / double-click (same pattern as AgGrid.render) --
 
   const onRowClicked = useCallback(
     async (event: any) => {
       if (!dsRef.current || event.data?.__isInputRow) return;
+      event.node?.setSelected(true, false);
       isSelectingRef.current = true;
       try {
         await updateCurrentDsValue({ index: event.rowIndex });
@@ -333,6 +370,32 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       }
     },
     [updateCurrentDsValue],
+  );
+
+  const onRowDoubleClicked = useCallback(
+    async (event: any) => {
+      if (!dsRef.current || !event.data || event.data.__isInputRow) return;
+      event.node?.setSelected(true, false);
+      isSelectingRef.current = true;
+      try {
+        await updateCurrentDsValue({
+          index: event.rowIndex,
+          forceUpdate: true,
+        });
+      } finally {
+        isSelectingRef.current = false;
+      }
+      const cols = columnsRef.current;
+      const payload: Record<string, any> = {};
+      cols.forEach((c) => {
+        payload[c.source] = event.data?.[c.title];
+      });
+      emit('onrowdblclick', {
+        rowIndex: event.rowIndex,
+        rowData: payload,
+      });
+    },
+    [emit, updateCurrentDsValue],
   );
 
   const resolvedStyle = useMemo<CSSProperties>(() => {
@@ -355,13 +418,16 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
             <AgGridReact
               ref={gridRef}
               rowData={rowData}
-              pinnedTopRowData={pinnedTopRowData}
+              pinnedTopRowData={enableAddNewRow ? pinnedTopRowData : []}
               columnDefs={colDefs}
               defaultColDef={defaultColDef}
-              rowDragManaged={true}
+              rowDragManaged={enableRowDrag}
               onCellValueChanged={onCellValueChanged}
-              onRowDragEnd={onRowDragEnd}
+              onRowDragEnd={enableRowDrag ? onRowDragEnd : undefined}
               onRowClicked={onRowClicked}
+              onRowDoubleClicked={onRowDoubleClicked}
+              rowSelection={rowSelection}
+              suppressCellFocus={true}
               getRowClass={getRowClass}
               context={gridContext}
               theme={theme}
@@ -370,19 +436,20 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
               className={cn({ 'pointer-events-none opacity-40': disabled })}
             />
           </div>
-          {/* Footer — sticky at the bottom, reserved for future use */}
-          <div
-            className="simple-aggrid-footer"
-            style={{
-              flexShrink: 0,
-              minHeight: '40px',
-              borderTop: '1px solid #e0e0e0',
-              backgroundColor: '#fafafa',
-              padding: '8px 12px',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          />
+          {showFooter && (
+            <div
+              className="simple-aggrid-footer"
+              style={{
+                flexShrink: 0,
+                minHeight: '40px',
+                borderTop: '1px solid #e0e0e0',
+                backgroundColor: '#fafafa',
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            />
+          )}
         </div>
       ) : (
         <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">

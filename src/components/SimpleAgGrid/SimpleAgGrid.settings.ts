@@ -77,6 +77,24 @@ const dataAccessSettings: TSetting[] = [
     placeholder: 'e.g. status',
   },
   {
+    key: 'enableAddNewRow',
+    label: 'Enable add new row',
+    type: ESetting.CHECKBOX,
+    defaultValue: true,
+  },
+  {
+    key: 'showFooter',
+    label: 'Show footer',
+    type: ESetting.CHECKBOX,
+    defaultValue: true,
+  },
+  {
+    key: 'enableRowDrag',
+    label: 'Enable row drag (DnD)',
+    type: ESetting.CHECKBOX,
+    defaultValue: true,
+  },
+  {
     key: 'serverSideRef',
     label: 'Server Side',
     type: ESetting.TEXT_FIELD,

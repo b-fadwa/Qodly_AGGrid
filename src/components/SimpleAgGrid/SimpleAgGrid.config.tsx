@@ -71,6 +71,10 @@ export default {
         label: 'On Save Row',
         value: 'onsaverow',
       },
+      {
+        label: 'On Row Double Click',
+        value: 'onrowdblclick',
+      },
     ],
     datasources: {
       declarations: (props) => {
@@ -180,6 +184,9 @@ export default {
     headerTextColor: '',
     rowBorder: true,
     columnBorder: false,
+    enableAddNewRow: true,
+    showFooter: true,
+    enableRowDrag: true,
   },
 } as T4DComponentConfig<ISimpleAgGridProps>;
 
@@ -198,6 +205,12 @@ export interface ISimpleAgGridProps extends webforms.ComponentProps {
   columnBorder: boolean;
   headerBackgroundColor: string;
   headerTextColor: string;
+  /** When false, hides the pinned input row and save action (no in-grid add). */
+  enableAddNewRow: boolean;
+  /** When false, hides the bottom footer strip. */
+  showFooter: boolean;
+  /** When false, row reorder drag-and-drop is disabled. */
+  enableRowDrag: boolean;
 }
 
 export interface ISimpleColumn {

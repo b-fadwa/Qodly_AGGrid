@@ -13,6 +13,9 @@ import {
   ModuleRegistry,
   RowDragModule,
   TextEditorModule,
+  EventApiModule,
+  RenderApiModule,
+  RowSelectionModule,
 } from 'ag-grid-community';
 
 ModuleRegistry.registerModules([
@@ -25,6 +28,9 @@ ModuleRegistry.registerModules([
   PinnedRowModule,
   RowDragModule,
   TextEditorModule,
+  EventApiModule,
+  RenderApiModule,
+  RowSelectionModule,
 ]);
 
 const SimpleAgGrid: T4DComponent<ISimpleAgGridProps> = (props) => {

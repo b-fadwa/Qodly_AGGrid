@@ -23,7 +23,7 @@ import {
   useState,
 } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { IAgGridProps } from './AgGrid.config';
+import { IAgGridProps, IColumn } from './AgGrid.config';
 import {
   buildFocusedCellClipboardText,
   buildManualSelectedCellsClipboardText,
@@ -78,6 +78,16 @@ ModuleRegistry.registerModules([
   NumberFilterModule,
   DateFilterModule,
 ]);
+
+function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
+  const bySource = cols.find((c) => c.source === field);
+  if (bySource && data[bySource.title] !== undefined && data[bySource.title] !== null) {
+    return data[bySource.title];
+  }
+  const byTitle = cols.find((c) => c.title === field);
+  if (byTitle) return data[byTitle.title];
+  return undefined;
+}
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -458,12 +468,14 @@ const AgGrid: FC<IAgGridProps> = ({
   const getRowClass = useCallback(
     (params: RowClassParams) => {
       if (!rowCssField || !params.data) return '';
-      const value = params.data.__entity?.[rowCssField];
+      const value =
+        params.data.__entity?.[rowCssField] ??
+        findAgGridRowCssValue(params.data, rowCssField, columns);
       if (value === undefined || value === null || value === '') return '';
       const sanitized = String(value).replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
       return `aggrid-row-${sanitized}`;
     },
-    [rowCssField],
+    [rowCssField, columns],
   );
 
   const { updateCurrentDsValue } = useDsChangeHandler({
@@ -1131,11 +1143,6 @@ const AgGrid: FC<IAgGridProps> = ({
         return field.includes(rawSearch) || compactField.includes(compactSearch);
       });
   }, [normalizedColumns, propertySearch, showVisibleOnly]);
-
-  const visibleCount = useMemo(
-    () => normalizedColumns.filter((column) => !column.isHidden).length,
-    [normalizedColumns],
-  );
 
   const setFilteredColumnsVisible = (visible: boolean) => {
     filteredColumns.forEach((column) => {

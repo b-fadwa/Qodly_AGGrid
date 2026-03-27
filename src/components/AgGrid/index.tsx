@@ -15,6 +15,8 @@ import {
   DateFilterModule,
   ModuleRegistry,
   GridStateModule,
+  CellStyleModule,
+  RowStyleModule,
 } from 'ag-grid-community';
 
 ModuleRegistry.registerModules([
@@ -29,6 +31,8 @@ ModuleRegistry.registerModules([
   DateFilterModule,
   ColumnApiModule,
   GridStateModule,
+  CellStyleModule,
+  RowStyleModule,
 ]);
 // To minimize bundle size, only register the modules you want to use. See the Modules page for more information.
 const AgGrid: T4DComponent<IAgGridProps> = (props) => {
