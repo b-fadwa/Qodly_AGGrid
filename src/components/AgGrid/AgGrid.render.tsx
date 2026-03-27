@@ -1218,244 +1218,245 @@ const AgGrid: FC<IAgGridProps> = ({
                 </button>
               )}
           </div>)}
-
-          {showAnyToolbarSection && (
-            < div className="grid-header items-stretch flex items-center justify-between cursor-pointer flex-wrap  py-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
-              {/* AGGrid header actions */}
-              {showToolbarActions && (
-                <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg  bg-white px-4 py-2 text-sm text-gray-800">
-                  <span className="actions-title"
-                    style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
-                  >{translation('Actions')}</span>
-                  <div className="flex gap-2">
-                    <Element id="agGridActions" is={resolver.StyleBox} canvas />
-                  </div>
-                </div>
-              )}
-              {showToolbarView && (
-                <div className='flex items-center gap-2 flex-wrap pr-4'>
-                  {/* columns customizer button */}
-                  <div className="customizer-section flex flex-col gap-2  rounded-lg  bg-white py-2 text-sm text-gray-800">
-                    <span className="customizer-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('View')}</span>
-                    <div className="flex gap-2">
-                      <button
-                        className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
-                        style={{
-                          width: "31px",
-                          height: "31px",
-                          borderRadius: "8px",
-                          borderColor: "#0000001A",
-                          color: "#44444C"
-                        }}
-                        onClick={() => setShowPropertiesDialog(true)}
-                      >
-                        <FaTableColumns size={14} />
-                      </button>
-                      <button
-                        className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-                        style={{
-                          width: "31px",
-                          height: "31px",
-                          borderRadius: "8px",
-                          borderColor: "#0000001A",
-                          color: "#44444C"
-                        }}
-                        onClick={() => resetColumnview()}
-                      >
-                        <FaClockRotateLeft size={14} />
-                      </button>
+          {showColumnActions && (
+            <>
+              {showAnyToolbarSection && (
+                < div className="grid-header items-stretch flex items-center justify-between cursor-pointer flex-wrap  py-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
+                  {/* AGGrid header actions */}
+                  {showToolbarActions && (
+                    <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg  bg-white px-4 py-2 text-sm text-gray-800">
+                      <span className="actions-title"
+                        style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
+                      >{translation('Actions')}</span>
+                      <div className="flex gap-2">
+                        <Element id="agGridActions" is={resolver.StyleBox} canvas />
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
-              {showToolbarSorting && (
-                <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
-                  <span className="sorting-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Sorting')}:</span>
-                  <div className="flex gap-2 items-center">
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={openAdvancedSortingDialog}
-                      style={{
-                        height: "31px",
-                        borderRadius: "6px",
-                        borderColor: "#0000001A",
-                        color: "#44444C",
-                      }}
-                      disabled={sortableColumns.length === 0}
-                    >
-                      {translation('Advanced sorting')}
-                    </button>
-                    <span className="text-xs text-slate-600">
-                      {translation('Levels')}: {advancedSortModel.length}
-                    </span>
-                  </div>
-                </div>
-              )}
-              {/* new view section */}
-              {showToolbarSaveView && (
-                < div className="view-section flex flex-col gap-2 rounded-lg  bg-white  py-2 text-sm text-gray-800">
-                  <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder={translation('View name')}
-                      className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                      value={viewName}
-                      onChange={(e: any) => {
-                        setViewName(e.target.value);
-                      }}
-                      style={{
-                        height: "31px",
-                        borderRadius: "6px",
-                        borderColor: "#0000001A",
-                        color: "#44444C",
-                      }}
-                    />
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => saveNewView()}
-                      style={{
-                        height: "31px",
-                        borderRadius: "6px",
-                        borderColor: "#0000001A",
-                        color: "#44444C",
-                      }}
-                    >
-                      {translation('Save new')}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {/* saved views section */}
-              {showToolbarSavedViews && (
-                < div className="views-section flex flex-col gap-2 rounded-lg bg-white py-2 text-sm text-gray-800">
-                  <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Saved views')}</span>
-                  <div className="flex gap-2">
-                    <select
-                      value={selectedView}
-                      className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                      onChange={(e: any) => {
-                        setSelectedView(e.target.value);
-                      }}
-                      style={{
-                        height: "31px",
-                        borderRadius: "6px",
-                        borderColor: "#0000001A",
-                        color: "#44444C",
-                      }}
-                    >
-                      <option value="">{translation('Select view')}</option>
-                      {savedViews.map((view, _) => (
-                        <option value={view.name}>{view.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => loadView()}
-                      style={{
-                        height: "31px",
-                        borderRadius: "6px",
-                        borderColor: "#0000001A",
-                        color: "#44444C",
-                      }}                      >
-                      {translation('Load')}
-                    </button>
-                    <button
-                      className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                      onClick={() => updateView()}
-                      style={{
-                        height: "31px",
-                        borderRadius: "6px",
-                        borderColor: "#0000001A",
-                        color: "#44444C",
-                      }}                      >
-                      {translation('Overwrite')}
-                    </button>
-                    <button
-                      className="header-button-trash inline-flex items-center justify-center rounded-lg border"
-                      style={{
-                        width: "31px",
-                        height: "31px",
-                        borderRadius: "8px",
-                        color: "#EC7B80",
-                        borderColor: "#EC7B80",
-                        backgroundColor: "#EC7B8033",
-                      }}
-                      onClick={() => deleteView()}
-                    >
-                      <GoTrash size={14} /></button>
-                  </div>
-                </div>
-              )}
-              {/* columns customizer dialog */}
-              {
-                showToolbarView && showPropertiesDialog && (
-                  <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                    onClick={() => setShowPropertiesDialog(false)}
-                  >
-                    <div
-                      className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl" >
-                        <div>
-                          <h1 className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>{translation("COLUMN STATE")}</h1>
-                          <span className='mt-1 block text-sm ' style={{ color: "#6B7280", fontSize: "16px" }}>{translation("Show or hide columns for this grid view")}</span>
+                  )}
+                  {showToolbarView && (
+                    <div className='flex items-center gap-2 flex-wrap pr-4'>
+                      {/* columns customizer button */}
+                      <div className="customizer-section flex flex-col gap-2  rounded-lg  bg-white py-2 text-sm text-gray-800">
+                        <span className="customizer-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('View')}</span>
+                        <div className="flex gap-2">
+                          <button
+                            className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
+                            style={{
+                              width: "31px",
+                              height: "31px",
+                              borderRadius: "8px",
+                              borderColor: "#0000001A",
+                              color: "#44444C"
+                            }}
+                            onClick={() => setShowPropertiesDialog(true)}
+                          >
+                            <FaTableColumns size={14} />
+                          </button>
+                          <button
+                            className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                            style={{
+                              width: "31px",
+                              height: "31px",
+                              borderRadius: "8px",
+                              borderColor: "#0000001A",
+                              color: "#44444C"
+                            }}
+                            onClick={() => resetColumnview()}
+                          >
+                            <FaClockRotateLeft size={14} />
+                          </button>
                         </div>
+                      </div>
+                    </div>
+                  )}
+                  {showToolbarSorting && (
+                    <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
+                      <span className="sorting-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Sorting')}:</span>
+                      <div className="flex gap-2 items-center">
                         <button
-                          className=" inline-flex items-center justify-center"
+                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                          onClick={openAdvancedSortingDialog}
                           style={{
-                            color: "#6A7282"
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
                           }}
-                          onClick={() => setShowPropertiesDialog(false)}
+                          disabled={sortableColumns.length === 0}
                         >
-                          <IoMdClose />
+                          {translation('Advanced sorting')}
+                        </button>
+                        <span className="text-xs text-slate-600">
+                          {translation('Levels')}: {advancedSortModel.length}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {/* new view section */}
+                  {showToolbarSaveView && (
+                    < div className="view-section flex flex-col gap-2 rounded-lg  bg-white  py-2 text-sm text-gray-800">
+                      <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder={translation('View name')}
+                          className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                          value={viewName}
+                          onChange={(e: any) => {
+                            setViewName(e.target.value);
+                          }}
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}
+                        />
+                        <button
+                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                          onClick={() => saveNewView()}
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}
+                        >
+                          {translation('Save new')}
                         </button>
                       </div>
-                      <div className="px-5 py-4">
-                        <div className="sticky top-0 z-10 bg-white pb-3">
-                          <div className="flex flex-row gap-2 md:flex-row md:items-center">
-                            <input
-                              className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
-                              placeholder={translation('Search field')}
-                              value={propertySearch}
-                              onChange={(e) => setPropertySearch(e.target.value)}
-                              style={{ height: "31px", borderColor: "#0000001A", borderRadius: "6px" }}
-                            />
-
-                            <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm" style={{ color: "#717182", fontSize: "12px", fontWeight: 500 }}>
-                              <input
-                                type="checkbox"
-                                checked={showVisibleOnly}
-                                onChange={(e) => setShowVisibleOnly(e.target.checked)}
-                                style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
-                              />
-                              <span>{translation('Visible only')}</span>
-                            </label>
+                    </div>
+                  )}
+                  {/* saved views section */}
+                  {showToolbarSavedViews && (
+                    < div className="views-section flex flex-col gap-2 rounded-lg bg-white py-2 text-sm text-gray-800">
+                      <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Saved views')}</span>
+                      <div className="flex gap-2">
+                        <select
+                          value={selectedView}
+                          className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                          onChange={(e: any) => {
+                            setSelectedView(e.target.value);
+                          }}
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}
+                        >
+                          <option value="">{translation('Select view')}</option>
+                          {savedViews.map((view, _) => (
+                            <option value={view.name}>{view.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                          onClick={() => loadView()}
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}                      >
+                          {translation('Load')}
+                        </button>
+                        <button
+                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                          onClick={() => updateView()}
+                          style={{
+                            height: "31px",
+                            borderRadius: "6px",
+                            borderColor: "#0000001A",
+                            color: "#44444C",
+                          }}                      >
+                          {translation('Overwrite')}
+                        </button>
+                        <button
+                          className="header-button-trash inline-flex items-center justify-center rounded-lg border"
+                          style={{
+                            width: "31px",
+                            height: "31px",
+                            borderRadius: "8px",
+                            color: "#EC7B80",
+                            borderColor: "#EC7B80",
+                            backgroundColor: "#EC7B8033",
+                          }}
+                          onClick={() => deleteView()}
+                        >
+                          <GoTrash size={14} /></button>
+                      </div>
+                    </div>
+                  )}
+                  {/* columns customizer dialog */}
+                  {
+                    showToolbarView && showPropertiesDialog && (
+                      <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                        onClick={() => setShowPropertiesDialog(false)}
+                      >
+                        <div
+                          className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl" >
                             <div>
-                              <button
-                                type="button"
-                                className="rounded-md border  bg-white px-3 py-2 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                                style={{ borderColor: "rgba(0, 0, 0, 0.1)", color: "#0A0A0A", height: "31px", fontSize: "12px", fontWeight: 500 }}
-                                onClick={() => setFilteredColumnsVisible(true)}
-                                disabled={filteredColumns.length === 0}
-                              >
-                                {translation('Select all')}
-                              </button>
+                              <h1 className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>{translation("COLUMN STATE")}</h1>
+                              <span className='mt-1 block text-sm ' style={{ color: "#6B7280", fontSize: "16px" }}>{translation("Show or hide columns for this grid view")}</span>
                             </div>
                             <button
-                              type="button"
-                              className="rounded-md border px-3 flex items-center justify-center py-2 disabled:cursor-not-allowed disabled:opacity-50"
-                              style={{ borderColor: "#6B8AD4", color: "#6B8AD4", height: "31px", fontSize: "12px", fontWeight: 500 }}
-                              onClick={() => setFilteredColumnsVisible(false)}
-                              disabled={filteredColumns.length === 0}
+                              className=" inline-flex items-center justify-center"
+                              style={{
+                                color: "#6A7282"
+                              }}
+                              onClick={() => setShowPropertiesDialog(false)}
                             >
-                              {translation('Clear all')}
+                              <IoMdClose />
                             </button>
                           </div>
-                        </div>
-                        {/* <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
+                          <div className="px-5 py-4">
+                            <div className="sticky top-0 z-10 bg-white pb-3">
+                              <div className="flex flex-row gap-2 md:flex-row md:items-center">
+                                <input
+                                  className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
+                                  placeholder={translation('Search field')}
+                                  value={propertySearch}
+                                  onChange={(e) => setPropertySearch(e.target.value)}
+                                  style={{ height: "31px", borderColor: "#0000001A", borderRadius: "6px" }}
+                                />
+
+                                <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm" style={{ color: "#717182", fontSize: "12px", fontWeight: 500 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={showVisibleOnly}
+                                    onChange={(e) => setShowVisibleOnly(e.target.checked)}
+                                    style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
+                                  />
+                                  <span>{translation('Visible only')}</span>
+                                </label>
+                                <div>
+                                  <button
+                                    type="button"
+                                    className="rounded-md border  bg-white px-3 py-2 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                                    style={{ borderColor: "rgba(0, 0, 0, 0.1)", color: "#0A0A0A", height: "31px", fontSize: "12px", fontWeight: 500 }}
+                                    onClick={() => setFilteredColumnsVisible(true)}
+                                    disabled={filteredColumns.length === 0}
+                                  >
+                                    {translation('Select all')}
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="rounded-md border px-3 flex items-center justify-center py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                  style={{ borderColor: "#6B8AD4", color: "#6B8AD4", height: "31px", fontSize: "12px", fontWeight: 500 }}
+                                  onClick={() => setFilteredColumnsVisible(false)}
+                                  disabled={filteredColumns.length === 0}
+                                >
+                                  {translation('Clear all')}
+                                </button>
+                              </div>
+                            </div>
+                            {/* <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
                         <div>
                           {translation('Visible')} : {visibleCount} / {normalizedColumns.length}
                         </div>
@@ -1466,200 +1467,202 @@ const AgGrid: FC<IAgGridProps> = ({
                         </div> 
                       </div> */}
 
-                        <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2" style={{ backgroundColor: "#FAFAFA", borderColor: "#D1D5DC", borderRadius: "10px" }}>
-                          {filteredColumns.length === 0 ? (
-                            <div className="px-3 py-8 text-center text-sm text-slate-500">
-                              {translation('No fields match your filter')}.
-                            </div>
-                          ) : (
-                            filteredColumns.map((column) => {
-                              const isVisible = !column.isHidden;
-                              return (
-                                <div
-                                  key={column.field}
-                                  className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
-                                >
-                                  <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
-                                    <input
-                                      type="checkbox"
-                                      checked={isVisible}
-                                      onChange={() => handleColumnToggle(column.field)}
-                                      style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
-                                    />
-                                    <span
-                                      className={`truncate ${isVisible ? "text-gray-700" : "text-slate-400"
-                                        }`}
-                                    >
-                                      {column.field}
-                                    </span>
-                                  </label>
-
-                                  <select
-                                    value={column.pinned || 'unpinned'}
-                                    className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
-                                    style={{ height: "31px" }}
-                                    onChange={(e) => handlePinChange(column.field, e.target.value)}
-                                  >
-                                    <option value="unpinned">{translation('No pin')}</option>
-                                    <option value="left">{translation('Pin left')}</option>
-                                    <option value="right">{translation('Pin right')}</option>
-                                  </select>
+                            <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2" style={{ backgroundColor: "#FAFAFA", borderColor: "#D1D5DC", borderRadius: "10px" }}>
+                              {filteredColumns.length === 0 ? (
+                                <div className="px-3 py-8 text-center text-sm text-slate-500">
+                                  {translation('No fields match your filter')}.
                                 </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              }
-              {
-                showToolbarSorting && showSortingDialog && (
-                  <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                    onClick={() => setShowSortingDialog(false)}
-                  >
-                    <div
-                      className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex items-start justify-between gap-3 border-b border-slate-200  px-5 py-4 rounded-t-xl">
-                        <div>
-                          <span className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>
-                            {translation('ADVANCED SORTING')}
-                          </span>
-                          <span className="mt-1 block text-sm" style={{ color: "#4A5565", fontSize: '14px' }}>
-                            {translation(
-                              'Choose one or multiple columns and define sort direction for each level',
-                            )}
-                          </span>
-                        </div>
-                        <button
-                          className=" inline-flex items-center justify-center"
-                          style={{
-                            color: "#6A7282"
-                          }}
-                          onClick={() => setShowSortingDialog(false)}
-                        >
-                          <IoMdClose />
-                        </button>
-                      </div>
-                      <div className="">
-                        {sortableColumns.length === 0 ? (
-                          <div className=" bg-slate-50 px-3 py-2 " style={{ color: "#4A5565", fontSize: '14px' }}>
-                            {translation('No sortable columns are enabled in grid properties')}
-                          </div>
-                        ) : (
-                          <>
-                            <div className="px-3 py-2 mb-4 " >
-                              <div className="space-y-2 max-h-80 overflow-y-auto">
-                                {sortDialogModel.length === 0 ? (
-                                  <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600">
-                                    {translation('No sort level configured yet')}
-                                  </div>
-                                ) : (
-                                  sortDialogModel.map((rule, index) => (
+                              ) : (
+                                filteredColumns.map((column) => {
+                                  const isVisible = !column.isHidden;
+                                  return (
                                     <div
-                                      key={`${rule.colId}-${index}`}
-                                      className="flex items-center gap-2 px-2 py-2"
+                                      key={column.field}
+                                      className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
                                     >
-                                      <span className="w-14" style={{ color: "#364153", fontSize: "14px" }}>
-                                        {translation('Level')} {index + 1}
-                                      </span>
+                                      <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
+                                        <input
+                                          type="checkbox"
+                                          checked={isVisible}
+                                          onChange={() => handleColumnToggle(column.field)}
+                                          style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
+                                        />
+                                        <span
+                                          className={`truncate ${isVisible ? "text-gray-700" : "text-slate-400"
+                                            }`}
+                                        >
+                                          {column.field}
+                                        </span>
+                                      </label>
+
                                       <select
-                                        className="min-w-0 flex-1 px-2 py-1" style={{ backgroundColor: "#F3F3F5", borderRadius: "8px", height: "36px", fontSize: "14px", width: "256px" }}
-                                        value={rule.colId}
-                                        onChange={(e) => updateSortLevelColumn(index, e.target.value)}
+                                        value={column.pinned || 'unpinned'}
+                                        className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                        style={{ height: "31px" }}
+                                        onChange={(e) => handlePinChange(column.field, e.target.value)}
                                       >
-                                        {sortableColumns.map((column) => (
-                                          <option key={column.colId} value={column.colId}>
-                                            {column.label}
-                                          </option>
-                                        ))}
+                                        <option value="unpinned">{translation('No pin')}</option>
+                                        <option value="left">{translation('Pin left')}</option>
+                                        <option value="right">{translation('Pin right')}</option>
                                       </select>
-                                      <select
-                                        className="w-28 rounded-md" style={{ backgroundColor: "#F3F3F5", borderRadius: "8px", height: "36px", width: "128px", fontSize: "14px" }}
-                                        value={rule.sort}
-                                        onChange={(e) =>
-                                          updateSortLevelDirection(
-                                            index,
-                                            (e.target.value as 'asc' | 'desc') || 'asc',
-                                          )
-                                        }
-                                      >
-                                        <option value="asc">{translation('Asc')}</option>
-                                        <option value="desc">{translation('Desc')}</option>
-                                      </select>
-                                      <button
-                                        type="button"
-                                        className=" border bg-white px-2 py-1"
-                                        style={{ height: "32px", borderColor: "#0000001A", borderRadius: "8px", fontSize: "12px" }}
-                                        onClick={() => removeSortLevel(index)}
-                                      >
-                                        {translation('Remove')}
-                                      </button>
                                     </div>
-                                  ))
-                                )}
-                              </div>
-                              <div className="mt-3 flex items-center justify-between pb-4">
-                                <button
-                                  type="button"
-                                  style={{
-                                    height: "31px",
-                                    borderRadius: "8px",
-                                    borderColor: "#0000001A",
-                                    color: "#44444C",
-                                    fontSize: "12px",
-                                    fontWeight: 500
-                                  }}
-                                  className="rounded-md border px-3 py-2 flex items-center justify-center"
-                                  onClick={addSortLevel}
-                                  disabled={sortableColumns.length === 0}
-                                >
-                                  {translation('Add level')}
-                                </button>
-                              </div>
+                                  )
+                                })
+                              )}
                             </div>
-                            <div className="flex justify-end align-end items-center gap-2 w-full p-4 " style={{ borderTop: "1px solid #E5E7EB" }}>
-                              <button
-                                type="button"
-                                className="rounded-md border px-3 py-2 flex items-center justify-center "
-                                style={{
-                                  height: "31px",
-                                  borderRadius: "6px",
-                                  borderColor: "#0000001A",
-                                  color: "#44444C",
-                                  fontSize: "12px"
-                                }}
-                                onClick={clearAdvancedSorting}
-                              >
-                                {translation('Clear')}
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded-md border  px-3 py-2 text-sm text-white flex text-center items-center justify-center"
-                                onClick={applyAdvancedSorting}
-                                style={{
-                                  background: "#2B5797",
-                                  height: "31px",
-                                  fontSize: "12px"
-                                }}
-                              >
-                                {translation('Apply sorting')}
-                              </button>
-                            </div>
-                          </>
-                        )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                )
+                    )
+                  }
+                  {
+                    showToolbarSorting && showSortingDialog && (
+                      <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                        onClick={() => setShowSortingDialog(false)}
+                      >
+                        <div
+                          className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-start justify-between gap-3 border-b border-slate-200  px-5 py-4 rounded-t-xl">
+                            <div>
+                              <span className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>
+                                {translation('ADVANCED SORTING')}
+                              </span>
+                              <span className="mt-1 block text-sm" style={{ color: "#4A5565", fontSize: '14px' }}>
+                                {translation(
+                                  'Choose one or multiple columns and define sort direction for each level',
+                                )}
+                              </span>
+                            </div>
+                            <button
+                              className=" inline-flex items-center justify-center"
+                              style={{
+                                color: "#6A7282"
+                              }}
+                              onClick={() => setShowSortingDialog(false)}
+                            >
+                              <IoMdClose />
+                            </button>
+                          </div>
+                          <div className="">
+                            {sortableColumns.length === 0 ? (
+                              <div className=" bg-slate-50 px-3 py-2 " style={{ color: "#4A5565", fontSize: '14px' }}>
+                                {translation('No sortable columns are enabled in grid properties')}
+                              </div>
+                            ) : (
+                              <>
+                                <div className="px-3 py-2 mb-4 " >
+                                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                                    {sortDialogModel.length === 0 ? (
+                                      <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600">
+                                        {translation('No sort level configured yet')}
+                                      </div>
+                                    ) : (
+                                      sortDialogModel.map((rule, index) => (
+                                        <div
+                                          key={`${rule.colId}-${index}`}
+                                          className="flex items-center gap-2 px-2 py-2"
+                                        >
+                                          <span className="w-14" style={{ color: "#364153", fontSize: "14px" }}>
+                                            {translation('Level')} {index + 1}
+                                          </span>
+                                          <select
+                                            className="min-w-0 flex-1 px-2 py-1" style={{ backgroundColor: "#F3F3F5", borderRadius: "8px", height: "36px", fontSize: "14px", width: "256px" }}
+                                            value={rule.colId}
+                                            onChange={(e) => updateSortLevelColumn(index, e.target.value)}
+                                          >
+                                            {sortableColumns.map((column) => (
+                                              <option key={column.colId} value={column.colId}>
+                                                {column.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <select
+                                            className="w-28 rounded-md" style={{ backgroundColor: "#F3F3F5", borderRadius: "8px", height: "36px", width: "128px", fontSize: "14px" }}
+                                            value={rule.sort}
+                                            onChange={(e) =>
+                                              updateSortLevelDirection(
+                                                index,
+                                                (e.target.value as 'asc' | 'desc') || 'asc',
+                                              )
+                                            }
+                                          >
+                                            <option value="asc">{translation('Asc')}</option>
+                                            <option value="desc">{translation('Desc')}</option>
+                                          </select>
+                                          <button
+                                            type="button"
+                                            className=" border bg-white px-2 py-1"
+                                            style={{ height: "32px", borderColor: "#0000001A", borderRadius: "8px", fontSize: "12px" }}
+                                            onClick={() => removeSortLevel(index)}
+                                          >
+                                            {translation('Remove')}
+                                          </button>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                  <div className="mt-3 flex items-center justify-between pb-4">
+                                    <button
+                                      type="button"
+                                      style={{
+                                        height: "31px",
+                                        borderRadius: "8px",
+                                        borderColor: "#0000001A",
+                                        color: "#44444C",
+                                        fontSize: "12px",
+                                        fontWeight: 500
+                                      }}
+                                      className="rounded-md border px-3 py-2 flex items-center justify-center"
+                                      onClick={addSortLevel}
+                                      disabled={sortableColumns.length === 0}
+                                    >
+                                      {translation('Add level')}
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className="flex justify-end align-end items-center gap-2 w-full p-4 " style={{ borderTop: "1px solid #E5E7EB" }}>
+                                  <button
+                                    type="button"
+                                    className="rounded-md border px-3 py-2 flex items-center justify-center "
+                                    style={{
+                                      height: "31px",
+                                      borderRadius: "6px",
+                                      borderColor: "#0000001A",
+                                      color: "#44444C",
+                                      fontSize: "12px"
+                                    }}
+                                    onClick={clearAdvancedSorting}
+                                  >
+                                    {translation('Clear')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="rounded-md border  px-3 py-2 text-sm text-white flex text-center items-center justify-center"
+                                    onClick={applyAdvancedSorting}
+                                    style={{
+                                      background: "#2B5797",
+                                      height: "31px",
+                                      fontSize: "12px"
+                                    }}
+                                  >
+                                    {translation('Apply sorting')}
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+                </div>
+              )
               }
-            </div>
-          )
-          }
+            </>
+          )}
           <div className="records-count text-sm  flex justify-end gap-2 mt-2 mb-2 pr-4" ><span style={{ color: "#0A0A0A", fontSize: "12px", fontWeight: 400 }}>{_count}</span> <span style={{ color: "#717182", fontSize: "12px", fontWeight: 400 }}>{translation("records")}</span></div>
           <div className='px-4 h-full'>
             <AgGridReact
