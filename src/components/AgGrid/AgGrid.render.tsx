@@ -89,6 +89,33 @@ function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
   return undefined;
 }
 
+function hasMeaningfulColumnState(columnState: unknown): boolean {
+  return Array.isArray(columnState) && columnState.length > 0;
+}
+
+/** Merge Qodly attribute path onto AG Grid column state (match by colId === column title). */
+function enrichColumnStateWithSource(columnState: any[] | undefined | null, columns: IColumn[]): any[] {
+  if (!Array.isArray(columnState)) return [];
+  const byTitle = new Map(columns.map((c) => [c.title, c]));
+  return columnState.map((cs: any) => {
+    const col = cs?.colId != null ? byTitle.get(cs.colId) : undefined;
+    return col?.source != null ? { ...cs, source: col.source } : { ...cs };
+  });
+}
+
+/** Strip custom keys before applyColumnState (AG Grid only uses its own column state shape). */
+function columnStateForAgGridApply(columnState: any[] | undefined | null): any[] {
+  if (!Array.isArray(columnState)) return [];
+  return columnState.map((s: any) => {
+    if (s && typeof s === 'object' && 'source' in s) {
+      const next = { ...s };
+      delete next.source;
+      return next;
+    }
+    return s;
+  });
+}
+
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
   columns,
@@ -150,6 +177,8 @@ const AgGrid: FC<IAgGridProps> = ({
     sources: { datasource: ds, currentElement },
   } = useSources({ acceptIteratorSel: true });
   const { id: nodeID } = useEnhancedNode();
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
   const prevSortModelRef = useRef<SortModelItem[]>([]);
   const gridRef = useRef<AgGridReact>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -702,23 +731,24 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const persistGridState = useCallback(
     (columnState: any[], filterModel: any, sortModel: SortModelItem[]) => {
+      const enriched = enrichColumnStateWithSource(columnState, columnsRef.current);
       if (saveLocalStorage) {
         localStorage.setItem(
           `gridState_${nodeID}`,
-          JSON.stringify({ columnState, filterModel, sortModel }),
+          JSON.stringify({ columnState: enriched, filterModel, sortModel }),
         );
       } else if (stateDS) {
         stateDS.getValue().then((currentData: any) => {
           const gridData = {
             ...currentData,
-            columnState,
+            columnState: enriched,
             filterModel,
             sortModel,
           };
           stateDS.setValue(null, gridData);
         });
       }
-      emit('onsavestate', { columnState, filterModel, sortModel });
+      emit('onsavestate', { columnState: enriched, filterModel, sortModel });
     },
     [emit, nodeID, saveLocalStorage, stateDS],
   );
@@ -734,43 +764,94 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }, [buildSortModelFromColumnState, persistGridState]);
 
-  const getState = useCallback(async (params: any) => {
-    if (saveLocalStorage) {
-      const storedState = localStorage.getItem(`gridState_${nodeID}`);
-      if (storedState) {
-        const parsedState = JSON.parse(storedState);
-        if (parsedState?.columnState) {
-          params.api.applyColumnState({ state: parsedState.columnState, applyOrder: true });
+  const getState = useCallback(
+    async (params: any) => {
+      let appliedFromStore = false;
+      const cols = columnsRef.current;
+
+      const seedInitialPersist = () => {
+        const columnState = params.api.getColumnState();
+        const filterModel = params.api.getFilterModel() ?? {};
+        const sortModel = buildSortModelFromColumnState(columnState);
+        setAdvancedSortModel(sortModel);
+        prevSortModelRef.current = sortModel;
+        persistGridState(columnState, filterModel, sortModel);
+      };
+
+      if (saveLocalStorage) {
+        const storedState = localStorage.getItem(`gridState_${nodeID}`);
+        if (storedState) {
+          const parsedState = JSON.parse(storedState);
+          let mergedForSort: any[] | null = null;
+          if (hasMeaningfulColumnState(parsedState?.columnState)) {
+            appliedFromStore = true;
+            mergedForSort = enrichColumnStateWithSource(parsedState.columnState, cols);
+            params.api.applyColumnState({
+              state: columnStateForAgGridApply(mergedForSort),
+              applyOrder: true,
+            });
+          }
+          if (parsedState?.filterModel) {
+            params.api.setFilterModel(parsedState.filterModel);
+          }
+          const stateSortModel = parsedState?.sortModel
+            ? normalizeSortModel(parsedState.sortModel)
+            : buildSortModelFromColumnState(mergedForSort ?? params.api.getColumnState());
+          setAdvancedSortModel(stateSortModel);
+          prevSortModelRef.current = stateSortModel;
+          if (parsedState?.sortModel && !hasMeaningfulColumnState(parsedState?.columnState)) {
+            applySortModelToGrid(parsedState.sortModel, params.api);
+          }
         }
-        if (parsedState?.filterModel) {
-          params.api.setFilterModel(parsedState.filterModel);
+        if (!appliedFromStore) {
+          seedInitialPersist();
         }
-        const stateSortModel = parsedState?.sortModel
-          ? normalizeSortModel(parsedState.sortModel)
-          : buildSortModelFromColumnState(parsedState?.columnState);
-        setAdvancedSortModel(stateSortModel);
-        prevSortModelRef.current = stateSortModel;
-        if (parsedState?.sortModel && !parsedState?.columnState) {
-          applySortModelToGrid(parsedState.sortModel, params.api);
+      } else if (stateDS) {
+        const dsValue = await stateDS?.getValue();
+        let mergedForSort: any[] | null = null;
+        if (dsValue && hasMeaningfulColumnState(dsValue.columnState)) {
+          appliedFromStore = true;
+          mergedForSort = enrichColumnStateWithSource(dsValue.columnState, cols);
+          params.api.applyColumnState({
+            state: columnStateForAgGridApply(mergedForSort),
+            applyOrder: true,
+          });
+          if (dsValue.filterModel) {
+            params.api.setFilterModel(dsValue.filterModel);
+          }
+          const stateSortModel = dsValue.sortModel
+            ? normalizeSortModel(dsValue.sortModel)
+            : buildSortModelFromColumnState(mergedForSort);
+          setAdvancedSortModel(stateSortModel);
+          prevSortModelRef.current = stateSortModel;
+        } else {
+          if (dsValue?.filterModel) {
+            params.api.setFilterModel(dsValue.filterModel);
+          }
+          if (dsValue?.sortModel) {
+            applySortModelToGrid(dsValue.sortModel, params.api);
+          }
+          const stateSortModel = dsValue?.sortModel
+            ? normalizeSortModel(dsValue.sortModel)
+            : buildSortModelFromColumnState(params.api.getColumnState());
+          setAdvancedSortModel(stateSortModel);
+          prevSortModelRef.current = stateSortModel;
+        }
+        if (!appliedFromStore) {
+          seedInitialPersist();
         }
       }
-    } else if (stateDS) {
-      const dsValue = await stateDS?.getValue();
-      if (dsValue && dsValue.columnState) {
-        params.api.applyColumnState({ state: dsValue.columnState, applyOrder: true });
-        if (dsValue.filterModel) {
-          params.api.setFilterModel(dsValue.filterModel);
-        }
-        const stateSortModel = dsValue.sortModel
-          ? normalizeSortModel(dsValue.sortModel)
-          : buildSortModelFromColumnState(dsValue.columnState);
-        setAdvancedSortModel(stateSortModel);
-        prevSortModelRef.current = stateSortModel;
-      } else if (dsValue?.sortModel) {
-        applySortModelToGrid(dsValue.sortModel, params.api);
-      }
-    }
-  }, [applySortModelToGrid, buildSortModelFromColumnState, nodeID, normalizeSortModel, saveLocalStorage, stateDS]);
+    },
+    [
+      applySortModelToGrid,
+      buildSortModelFromColumnState,
+      nodeID,
+      normalizeSortModel,
+      persistGridState,
+      saveLocalStorage,
+      stateDS,
+    ],
+  );
 
   const applySorting = useCallback(async (params: IGetRowsParams, columns: any[], ds: any) => {
     if (params.sortModel.length === 0) {
@@ -1029,7 +1110,8 @@ const AgGrid: FC<IAgGridProps> = ({
   // views actions
   const saveNewView = () => {
     if (!viewName.trim()) return;
-    const columnState = gridRef.current?.api?.getColumnState();
+    const rawState = gridRef.current?.api?.getColumnState() ?? [];
+    const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
     const filterModel = gridRef.current?.api?.getFilterModel();
     const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
     const newView = { name: viewName, columnState, filterModel, sortModel };
@@ -1054,7 +1136,11 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!view) return;
     if (gridRef.current?.api) {
       if (view.columnState) {
-        gridRef.current.api.applyColumnState({ state: view.columnState, applyOrder: true });
+        const merged = enrichColumnStateWithSource(view.columnState, columnsRef.current);
+        gridRef.current.api.applyColumnState({
+          state: columnStateForAgGridApply(merged),
+          applyOrder: true,
+        });
       }
       // Restore filter model of selected view
       if (view.filterModel) {
@@ -1094,7 +1180,8 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const updateView = () => {
-    const columnState = gridRef.current?.api?.getColumnState();
+    const rawState = gridRef.current?.api?.getColumnState() ?? [];
+    const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
     const filterModel = gridRef.current?.api?.getFilterModel();
     const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
     const updatedViews = savedViews.map((view) => {
@@ -1675,6 +1762,7 @@ const AgGrid: FC<IAgGridProps> = ({
             <AgGridReact
               ref={gridRef}
               columnDefs={colDefs}
+              maintainColumnOrder
               defaultColDef={defaultColDef}
               onRowClicked={onRowClicked}
               onSelectionChanged={onSelectionChanged}
@@ -1714,8 +1802,7 @@ const AgGrid: FC<IAgGridProps> = ({
         <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
           <p>Error</p>
         </div>
-      )
-      };
+      )}
     </div >
   );
 }
