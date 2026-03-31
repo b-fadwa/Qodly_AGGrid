@@ -79,6 +79,16 @@ ModuleRegistry.registerModules([
   DateFilterModule,
 ]);
 
+function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
+  const bySource = cols.find((c) => c.source === field);
+  if (bySource && data[bySource.title] !== undefined && data[bySource.title] !== null) {
+    return data[bySource.title];
+  }
+  const byTitle = cols.find((c) => c.title === field);
+  if (byTitle) return data[byTitle.title];
+  return undefined;
+}
+
 function hasMeaningfulColumnState(columnState: unknown): boolean {
   return Array.isArray(columnState) && columnState.length > 0;
 }
@@ -487,12 +497,14 @@ const AgGrid: FC<IAgGridProps> = ({
   const getRowClass = useCallback(
     (params: RowClassParams) => {
       if (!rowCssField || !params.data) return '';
-      const value = params.data.__entity?.[rowCssField];
+      const value =
+        params.data.__entity?.[rowCssField] ??
+        findAgGridRowCssValue(params.data, rowCssField, columns);
       if (value === undefined || value === null || value === '') return '';
       const sanitized = String(value).replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
       return `aggrid-row-${sanitized}`;
     },
-    [rowCssField],
+    [rowCssField, columns],
   );
 
   const { updateCurrentDsValue } = useDsChangeHandler({
@@ -1790,8 +1802,7 @@ const AgGrid: FC<IAgGridProps> = ({
         <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
           <p>Error</p>
         </div>
-      )
-      };
+      )}
     </div >
   );
 }

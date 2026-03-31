@@ -3,8 +3,11 @@ import {
   ESetting,
   ETextFieldModifier,
   TSetting,
+  getStaticFeaturesExperimentalFlag,
 } from '@ws-ui/webform-editor';
 import { validateServerSide } from '@ws-ui/shared';
+
+const isI18nEnabled = getStaticFeaturesExperimentalFlag('i18n');
 
 const commonSettings: TSetting[] = [
   {
@@ -16,13 +19,21 @@ const commonSettings: TSetting[] = [
       {
         label: 'Title',
         defaultValue: '',
-        type: ESetting.TEXT_FIELD,
+        type: isI18nEnabled ? ESetting.I18NFIELD : ESetting.TEXT_FIELD,
         key: 'title',
       },
       {
         label: 'Source',
         type: ESetting.DS_AUTO_SUGGEST,
         key: 'source',
+      },
+      {
+        label: 'Format',
+        defaultValue: '',
+        type: ESetting.FORMAT_FIELD,
+        key: 'format',
+        labelClassName: 'mr-4 ml-2 w-16',
+        className: 'mb-2',
       },
       {
         label: 'Width',
@@ -47,6 +58,12 @@ const commonSettings: TSetting[] = [
         defaultValue: false,
         type: ESetting.CHECKBOX,
         key: 'sorting',
+      },
+      {
+        label: 'Hide column',
+        defaultValue: false,
+        type: ESetting.CHECKBOX,
+        key: 'hidden',
       },
     ],
   },
@@ -75,6 +92,24 @@ const dataAccessSettings: TSetting[] = [
     label: 'Row CSS Field',
     type: ESetting.TEXT_FIELD,
     placeholder: 'e.g. status',
+  },
+  {
+    key: 'enableAddNewRow',
+    label: 'Enable add new row',
+    type: ESetting.CHECKBOX,
+    defaultValue: true,
+  },
+  {
+    key: 'showFooter',
+    label: 'Show footer',
+    type: ESetting.CHECKBOX,
+    defaultValue: true,
+  },
+  {
+    key: 'enableRowDrag',
+    label: 'Enable row drag (DnD)',
+    type: ESetting.CHECKBOX,
+    defaultValue: true,
   },
   {
     key: 'serverSideRef',

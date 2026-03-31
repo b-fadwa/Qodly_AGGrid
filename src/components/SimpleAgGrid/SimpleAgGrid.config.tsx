@@ -71,6 +71,10 @@ export default {
         label: 'On Save Row',
         value: 'onsaverow',
       },
+      {
+        label: 'On Row Double Click',
+        value: 'onrowdblclick',
+      },
     ],
     datasources: {
       declarations: (props) => {
@@ -150,8 +154,18 @@ export default {
                     flex: 1,
                     editable: true,
                     sorting: true,
+                    hidden: false,
                     id: generate(),
-                    dataType: item.attribute.type || 'string',
+                    ...(item.attribute.type === 'image'
+                      ? { dataType: item.attribute.type, format: '' }
+                      : item.attribute.type === 'bool'
+                        ? { dataType: item.attribute.type, format: 'boolean' }
+                        : ['blob', 'object'].includes(item.attribute.type)
+                          ? { dataType: item.attribute.type || 'object', format: '' }
+                          : {
+                              format: '',
+                              dataType: item.attribute.type || 'string',
+                            }),
                   } as any,
                 ];
             }
@@ -180,6 +194,9 @@ export default {
     headerTextColor: '',
     rowBorder: true,
     columnBorder: false,
+    enableAddNewRow: true,
+    showFooter: true,
+    enableRowDrag: true,
   },
 } as T4DComponentConfig<ISimpleAgGridProps>;
 
@@ -198,6 +215,12 @@ export interface ISimpleAgGridProps extends webforms.ComponentProps {
   columnBorder: boolean;
   headerBackgroundColor: string;
   headerTextColor: string;
+  /** When false, hides the pinned input row and save action (no in-grid add). */
+  enableAddNewRow: boolean;
+  /** When false, hides the bottom footer strip. */
+  showFooter: boolean;
+  /** When false, row reorder drag-and-drop is disabled. */
+  enableRowDrag: boolean;
 }
 
 export interface ISimpleColumn {
@@ -207,6 +230,10 @@ export interface ISimpleColumn {
   flex: number;
   editable: boolean;
   sorting: boolean;
+  /** When true, column is hidden in the grid (same as AgGrid). */
+  hidden?: boolean;
+  /** Display format (FORMAT_FIELD), same as AgGrid. */
+  format?: string;
   id: string;
   dataType: string;
 }

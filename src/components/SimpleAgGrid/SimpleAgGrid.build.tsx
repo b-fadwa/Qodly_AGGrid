@@ -21,6 +21,9 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   headerBackgroundColor,
   headerTextColor,
   disabled,
+  enableAddNewRow = true,
+  showFooter = true,
+  enableRowDrag = true,
   style,
   className,
   classNames = [],
@@ -29,9 +32,18 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     connectors: { connect },
   } = useEnhancedNode();
 
-  const colDefs: ColDef[] = useMemo(
-    () => [
-      {
+  const colDefs: ColDef[] = useMemo(() => {
+    const dataCols = columns.map((col) => ({
+      field: col.title,
+      hide: !!col.hidden,
+      editable: enableAddNewRow && col.editable !== false,
+      sortable: !!col.sorting,
+      width: col.width,
+      flex: col.flex,
+    }));
+    const base: ColDef[] = [];
+    if (enableRowDrag) {
+      base.push({
         headerName: '',
         field: '__drag',
         rowDrag: (params: any) => !params.data?.__isInputRow,
@@ -40,15 +52,11 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
         flex: 0,
         sortable: false,
         editable: false,
-      },
-      ...columns.map((col) => ({
-        field: col.title,
-        editable: col.editable !== false,
-        sortable: !!col.sorting,
-        width: col.width,
-        flex: col.flex,
-      })),
-      {
+      });
+    }
+    base.push(...dataCols);
+    if (enableAddNewRow) {
+      base.push({
         headerName: '',
         field: '__action',
         width: 50,
@@ -77,20 +85,32 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
             </span>
           );
         },
-      },
-    ],
-    [columns],
-  );
+      });
+    }
+    return base;
+  }, [columns, enableAddNewRow, enableRowDrag]);
 
+  // No CustomCell here: design canvas lacks useI18n / useLocalization providers (runtime uses CustomCell in .render).
   const defaultColDef = useMemo<ColDef>(() => ({ flex: 1, minWidth: 80 }), []);
 
+  const rowSelection = useMemo(
+    () => ({
+      mode: 'singleRow' as const,
+      enableClickSelection: true,
+      checkboxes: false,
+      isRowSelectable: (node: any) => !!node.data && !node.data.__isInputRow,
+    }),
+    [],
+  );
+
   const pinnedTopRowData = useMemo(() => {
+    if (!enableAddNewRow) return [];
     const row: any = { __isInputRow: true };
     columns.forEach((col) => {
       row[col.title] = '';
     });
     return [row];
-  }, [columns]);
+  }, [columns, enableAddNewRow]);
 
   const rowData = useMemo(
     () =>
@@ -131,24 +151,27 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
                 pinnedTopRowData={pinnedTopRowData}
                 columnDefs={colDefs}
                 defaultColDef={defaultColDef}
-                rowDragManaged={true}
+                rowDragManaged={enableRowDrag}
+                rowSelection={rowSelection}
+                suppressCellFocus={true}
                 theme={theme}
                 className={cn({ 'pointer-events-none opacity-40': disabled })}
               />
             </div>
-            {/* Footer — sticky at the bottom, reserved for future use */}
-            <div
-              className="simple-aggrid-footer"
-              style={{
-                flexShrink: 0,
-                minHeight: '40px',
-                borderTop: '1px solid #e0e0e0',
-                backgroundColor: '#fafafa',
-                padding: '8px 12px',
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            />
+            {showFooter && (
+              <div
+                className="simple-aggrid-footer"
+                style={{
+                  flexShrink: 0,
+                  minHeight: '40px',
+                  borderTop: '1px solid #e0e0e0',
+                  backgroundColor: '#fafafa',
+                  padding: '8px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+              />
+            )}
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
