@@ -68,6 +68,7 @@ import { FaTableColumns } from "react-icons/fa6";
 import { FaClockRotateLeft } from "react-icons/fa6";
 import { GoTrash } from "react-icons/go";
 import { IoMdClose } from 'react-icons/io';
+import { FaSortAmountDown } from "react-icons/fa";
 
 ModuleRegistry.registerModules([
   ColumnHoverModule,
@@ -1315,173 +1316,174 @@ const AgGrid: FC<IAgGridProps> = ({
           {showColumnActions && (
             <>
               {showAnyToolbarSection && (
-                < div className="grid-header items-stretch flex items-center justify-between cursor-pointer flex-wrap  py-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
+                < div className="grid-header flex items-start justify-between flex-wrap gap-4 " style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
                   {/* AGGrid header actions */}
                   {showToolbarActions && (
-                    <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg  bg-white px-4 py-2 text-sm text-gray-800">
+                    <div className="actions-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
                       <span className="actions-title"
                         style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
                       >{translation('Actions')}</span>
-                      <div className="flex gap-2">
-                        <Element id="agGridActions" is={resolver.StyleBox} canvas />
+                      <div className='flex flex-row gap-2'>
+                        <div className="flex gap-2">
+                          <Element id="agGridActions" is={resolver.StyleBox} canvas />
+                        </div>
+                        {showToolbarSorting && (
+                          <div className="sorting-section ">
+                            <button
+                              onClick={openAdvancedSortingDialog}
+                              className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                              style={{
+                                width: "31px",
+                                height: "31px",
+                                borderRadius: "8px",
+                                borderColor: "#0000001A",
+                                color: "#44444C"
+                              }}
+                              disabled={sortableColumns.length === 0}
+                            >
+                              <FaSortAmountDown />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
-                  {showToolbarView && (
-                    <div className='flex items-center gap-2 flex-wrap pr-4'>
-                      {/* columns customizer button */}
-                      <div className="customizer-section flex flex-col gap-2  rounded-lg  bg-white py-2 text-sm text-gray-800">
-                        <span className="customizer-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('View')}</span>
-                        <div className="flex gap-2">
-                          <button
-                            className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
-                            style={{
-                              width: "31px",
-                              height: "31px",
-                              borderRadius: "8px",
-                              borderColor: "#0000001A",
-                              color: "#44444C"
-                            }}
-                            onClick={() => setShowPropertiesDialog(true)}
-                          >
-                            <FaTableColumns size={14} />
-                          </button>
-                          <button
-                            className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-                            style={{
-                              width: "31px",
-                              height: "31px",
-                              borderRadius: "8px",
-                              borderColor: "#0000001A",
-                              color: "#44444C"
-                            }}
-                            onClick={() => resetColumnview()}
-                          >
-                            <FaClockRotateLeft size={14} />
-                          </button>
+                  <div className="flex flex-row gap-2 flex-wrap" >
+                    {showToolbarView && (
+                      <div className='flex items-center gap-2 flex-wrap'>
+                        {/* columns customizer button */}
+                        <div className="customizer-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                          <span className="customizer-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('View')}</span>
+                          <div className="flex gap-2">
+                            <button
+                              className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
+                              style={{
+                                width: "31px",
+                                height: "31px",
+                                borderRadius: "8px",
+                                borderColor: "#0000001A",
+                                color: "#44444C"
+                              }}
+                              onClick={() => setShowPropertiesDialog(true)}
+                            >
+                              <FaTableColumns size={14} />
+                            </button>
+                            <button
+                              className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                              style={{
+                                width: "31px",
+                                height: "31px",
+                                borderRadius: "8px",
+                                borderColor: "#0000001A",
+                                color: "#44444C"
+                              }}
+                              onClick={() => resetColumnview()}
+                            >
+                              <FaClockRotateLeft size={14} />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                  {showToolbarSorting && (
-                    <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
-                      <span className="sorting-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Sorting')}:</span>
-                      <div className="flex gap-2 items-center">
-                        <button
-                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                          onClick={openAdvancedSortingDialog}
-                          style={{
-                            height: "31px",
-                            borderRadius: "6px",
-                            borderColor: "#0000001A",
-                            color: "#44444C",
-                          }}
-                          disabled={sortableColumns.length === 0}
-                        >
-                          {translation('Advanced sorting')}
-                        </button>
-                        <span className="text-xs text-slate-600">
-                          {translation('Levels')}: {advancedSortModel.length}
-                        </span>
+                    )}
+                    {/* new view section */}
+                    {showToolbarSaveView && (
+                      < div className="view-management flex flex-row ">
+                        < div className="view-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                          <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              placeholder={translation('View name')}
+                              className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                              value={viewName}
+                              onChange={(e: any) => {
+                                setViewName(e.target.value);
+                              }}
+                              style={{
+                                height: "31px",
+                                borderRadius: "6px",
+                                borderColor: "#0000001A",
+                                color: "#44444C",
+                              }}
+                            />
+                            <button
+                              className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                              onClick={() => saveNewView()}
+                              style={{
+                                height: "31px",
+                                borderRadius: "6px",
+                                borderColor: "#0000001A",
+                                color: "#44444C",
+                              }}
+                            >
+                              {translation('Save new')}
+                            </button>
+                          </div>
+                        </div>
+                        {/* saved views section */}
+                        {showToolbarSavedViews && (
+                          < div className="views-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                            <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Saved views')}</span>
+                            <div className="flex gap-2">
+                              <select
+                                value={selectedView}
+                                className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                                onChange={(e: any) => {
+                                  setSelectedView(e.target.value);
+                                }}
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}
+                              >
+                                <option value="">{translation('Select view')}</option>
+                                {savedViews.map((view, _) => (
+                                  <option value={view.name}>{view.name}</option>
+                                ))}
+                              </select>
+                              <button
+                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                onClick={() => loadView()}
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}                      >
+                                {translation('Load')}
+                              </button>
+                              <button
+                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                onClick={() => updateView()}
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}                      >
+                                {translation('Overwrite')}
+                              </button>
+                              <button
+                                className="header-button-trash inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: "31px",
+                                  height: "31px",
+                                  borderRadius: "8px",
+                                  color: "#EC7B80",
+                                  borderColor: "#EC7B80",
+                                  backgroundColor: "#EC7B8033",
+                                }}
+                                onClick={() => deleteView()}
+                              >
+                                <GoTrash size={14} /></button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
-                  {/* new view section */}
-                  {showToolbarSaveView && (
-                    < div className="view-section flex flex-col gap-2 rounded-lg  bg-white  py-2 text-sm text-gray-800">
-                      <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder={translation('View name')}
-                          className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                          value={viewName}
-                          onChange={(e: any) => {
-                            setViewName(e.target.value);
-                          }}
-                          style={{
-                            height: "31px",
-                            borderRadius: "6px",
-                            borderColor: "#0000001A",
-                            color: "#44444C",
-                          }}
-                        />
-                        <button
-                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                          onClick={() => saveNewView()}
-                          style={{
-                            height: "31px",
-                            borderRadius: "6px",
-                            borderColor: "#0000001A",
-                            color: "#44444C",
-                          }}
-                        >
-                          {translation('Save new')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {/* saved views section */}
-                  {showToolbarSavedViews && (
-                    < div className="views-section flex flex-col gap-2 rounded-lg bg-white py-2 text-sm text-gray-800">
-                      <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Saved views')}</span>
-                      <div className="flex gap-2">
-                        <select
-                          value={selectedView}
-                          className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                          onChange={(e: any) => {
-                            setSelectedView(e.target.value);
-                          }}
-                          style={{
-                            height: "31px",
-                            borderRadius: "6px",
-                            borderColor: "#0000001A",
-                            color: "#44444C",
-                          }}
-                        >
-                          <option value="">{translation('Select view')}</option>
-                          {savedViews.map((view, _) => (
-                            <option value={view.name}>{view.name}</option>
-                          ))}
-                        </select>
-                        <button
-                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                          onClick={() => loadView()}
-                          style={{
-                            height: "31px",
-                            borderRadius: "6px",
-                            borderColor: "#0000001A",
-                            color: "#44444C",
-                          }}                      >
-                          {translation('Load')}
-                        </button>
-                        <button
-                          className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                          onClick={() => updateView()}
-                          style={{
-                            height: "31px",
-                            borderRadius: "6px",
-                            borderColor: "#0000001A",
-                            color: "#44444C",
-                          }}                      >
-                          {translation('Overwrite')}
-                        </button>
-                        <button
-                          className="header-button-trash inline-flex items-center justify-center rounded-lg border"
-                          style={{
-                            width: "31px",
-                            height: "31px",
-                            borderRadius: "8px",
-                            color: "#EC7B80",
-                            borderColor: "#EC7B80",
-                            backgroundColor: "#EC7B8033",
-                          }}
-                          onClick={() => deleteView()}
-                        >
-                          <GoTrash size={14} /></button>
-                      </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                   {/* columns customizer dialog */}
                   {
                     showToolbarView && showPropertiesDialog && (

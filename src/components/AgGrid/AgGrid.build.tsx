@@ -11,6 +11,7 @@ import { FaTableColumns } from "react-icons/fa6";
 import { FaClockRotateLeft } from "react-icons/fa6";
 import { GoTrash } from "react-icons/go";
 import { IoMdClose } from "react-icons/io";
+import { FaSortAmountDown } from "react-icons/fa";
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -148,16 +149,35 @@ const AgGrid: FC<IAgGridProps> = ({
             {showColumnActions && (
               <>
                 {showAnyToolbarSection && (
-                  <div className="grid-header flex items-center justify-between cursor-pointer flex-wrap py-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
+                  <div className="grid-header flex items-start justify-between flex-wrap gap-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
                     {showToolbarActions && (
-                      <div className="actions-section flex flex-col gap-2 mr-4 rounded-lg  bg-white px-4 py-2 text-sm text-gray-800">
+                      <div className="actions-section flex flex-col gap-2  rounded-lg  bg-white px-4 ">
                         <span className="actions-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Actions")}</span>
-                        <div className="flex gap-2">
-                          <Element
-                            id="agGridActions"
-                            is={resolver.StyleBox}
-                            canvas
-                          ></Element>
+                        <div className='flex flex-row gap-2'>
+                          <div className="flex gap-2">
+                            <Element
+                              id="agGridActions"
+                              is={resolver.StyleBox}
+                              canvas
+                            ></Element>
+                          </div>
+                          {showToolbarSorting && (
+                            <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
+                              <button
+                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                onClick={openSortingDialog}
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}
+                                disabled={sortableColumns.length === 0}
+                              >
+                                <FaSortAmountDown />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -195,92 +215,72 @@ const AgGrid: FC<IAgGridProps> = ({
                         </div>
                       </div>
                     )}
-                    {showToolbarSorting && (
-                      <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
-                        <span className="sorting-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Sorting')}:</span>
-                        <div className="flex gap-2 items-center">
-                          <button
-                            className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                            onClick={openSortingDialog}
-                            style={{
-                              height: "31px",
-                              borderRadius: "6px",
-                              borderColor: "#0000001A",
-                              color: "#44444C",
-                            }}
-                            disabled={sortableColumns.length === 0}
-                          >
-                            {translation('Advanced sorting')}
-                          </button>
-                          <span className="text-xs text-slate-600">
-                            {translation('Levels')}: {sortRules.length}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+
                     {showToolbarSaveView && (
-                      <div className="view-section flex flex-col gap-2  rounded-lg  bg-white  py-2 text-sm text-gray-800">
-                        <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Save view")}</span>
-                        <div className="flex gap-2">
-                          <input type="text" placeholder={translation("View name")} className="view-input border px-4 py-2 text-sm" style={{
-                            height: "31px",
-                            borderRadius: "6px",
-                            borderColor: "#0000001A",
-                            color: "#44444C",
-                          }} />
-                          <button className='header-button inline-flex gap-2 items-center  border  bg-white px-4 py-2 text-sm font-medium '
-                            style={{
+                      < div className="view-management flex flex-row ">
+                        <div className="view-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                          <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Save view")}</span>
+                          <div className="flex gap-2">
+                            <input type="text" placeholder={translation("View name")} className="view-input border px-4 py-2 text-sm" style={{
                               height: "31px",
                               borderRadius: "6px",
                               borderColor: "#0000001A",
                               color: "#44444C",
-                            }}
-                          >{translation("Save new")}</button>
+                            }} />
+                            <button className='header-button inline-flex gap-2 items-center  border  bg-white px-4 py-2 text-sm font-medium '
+                              style={{
+                                height: "31px",
+                                borderRadius: "6px",
+                                borderColor: "#0000001A",
+                                color: "#44444C",
+                              }}
+                            >{translation("Save new")}</button>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {showToolbarSavedViews && (
-                      <div className="views-section flex flex-col gap-2  rounded-lg  bg-white  py-2 text-sm text-gray-800">
-                        <span className="views-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Saved views")}</span>
-                        <div className="flex gap-2">
-                          <select className="rounded-lg border px-4 py-2 text-sm "
-                            style={{
-                              height: "31px",
-                              borderRadius: "6px",
-                              borderColor: "#0000001A",
-                              color: "#44444C",
-                            }}
-                          >
-                            <option value="">{translation("Select view")}</option>
-                          </select>
-                          <button className='header-button inline-flex gap-2 items-center border  bg-white px-4 py-2 text-sm font-medium'
-                            style={{
-                              height: "31px",
-                              borderRadius: "6px",
-                              borderColor: "#0000001A",
-                              color: "#44444C",
-                            }}                        >
-                            {translation("Load")}</button>
-                          <button className='header-button inline-flex gap-2 items-center border bg-white px-4 py-2 text-sm font-medium '
-                            style={{
-                              height: "31px",
-                              borderRadius: "6px",
-                              borderColor: "#0000001A",
-                              color: "#44444C",
-                            }}
-                          >{translation("Overwrite")}</button>
-                          <button
-                            className="header-button-trash inline-flex items-center justify-center border"
-                            style={{
-                              width: "31px",
-                              height: "31px",
-                              borderRadius: "6px",
-                              color: "#EC7B80",
-                              borderColor: "#EC7B80",
-                              backgroundColor: "#EC7B8033",
-                            }}>
-                            <GoTrash size={14} /></button>
-                        </div>
+                        {showToolbarSavedViews && (
+                          <div className="views-section  flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                            <span className="views-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Saved views")}</span>
+                            <div className="flex gap-2">
+                              <select className="rounded-lg border px-4 py-2 text-sm "
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}
+                              >
+                                <option value="">{translation("Select view")}</option>
+                              </select>
+                              <button className='header-button inline-flex gap-2 items-center border  bg-white px-4 py-2 text-sm font-medium'
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}                        >
+                                {translation("Load")}</button>
+                              <button className='header-button inline-flex gap-2 items-center border bg-white px-4 py-2 text-sm font-medium '
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}
+                              >{translation("Overwrite")}</button>
+                              <button
+                                className="header-button-trash inline-flex items-center justify-center border"
+                                style={{
+                                  width: "31px",
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  color: "#EC7B80",
+                                  borderColor: "#EC7B80",
+                                  backgroundColor: "#EC7B8033",
+                                }}>
+                                <GoTrash size={14} /></button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
