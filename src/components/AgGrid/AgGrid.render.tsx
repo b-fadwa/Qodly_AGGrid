@@ -1352,7 +1352,7 @@ const AgGrid: FC<IAgGridProps> = ({
                     {showToolbarView && (
                       <div className='flex items-center gap-2 flex-wrap'>
                         {/* columns customizer button */}
-                        <div className="customizer-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                        <div className="customizer-section flex flex-col gap-2 rounded-lg bg-white  py-2">
                           <span className="customizer-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('View')}</span>
                           <div className="flex gap-2">
                             <button
@@ -1388,7 +1388,7 @@ const AgGrid: FC<IAgGridProps> = ({
                     {/* new view section */}
                     {showToolbarSaveView && (
                       < div className="view-management flex flex-row ">
-                        < div className="view-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                        < div className="view-section flex flex-col gap-2 rounded-lg bg-white  py-2">
                           <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
                           <div className="flex gap-2">
                             <input
@@ -1414,6 +1414,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 borderRadius: "6px",
                                 borderColor: "#0000001A",
                                 color: "#44444C",
+                                fontSize: "12px"
                               }}
                             >
                               {translation('Save new')}
@@ -1436,6 +1437,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: "6px",
                                   borderColor: "#0000001A",
                                   color: "#44444C",
+                                  fontSize: "12px"
                                 }}
                               >
                                 <option value="">{translation('Select view')}</option>
@@ -1451,6 +1453,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: "6px",
                                   borderColor: "#0000001A",
                                   color: "#44444C",
+                                  fontSize: "12px"
                                 }}                      >
                                 {translation('Load')}
                               </button>
@@ -1462,6 +1465,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: "6px",
                                   borderColor: "#0000001A",
                                   color: "#44444C",
+                                  fontSize: "12px"
                                 }}                      >
                                 {translation('Overwrite')}
                               </button>

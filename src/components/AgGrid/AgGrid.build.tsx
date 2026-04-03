@@ -233,6 +233,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 borderRadius: "6px",
                                 borderColor: "#0000001A",
                                 color: "#44444C",
+                                fontSize: "12px"
                               }}
                             >{translation("Save new")}</button>
                           </div>
@@ -247,6 +248,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: "6px",
                                   borderColor: "#0000001A",
                                   color: "#44444C",
+                                  fontSize: "12px"
                                 }}
                               >
                                 <option value="">{translation("Select view")}</option>
@@ -257,6 +259,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: "6px",
                                   borderColor: "#0000001A",
                                   color: "#44444C",
+                                  fontSize: "12px"
                                 }}                        >
                                 {translation("Load")}</button>
                               <button className='header-button inline-flex gap-2 items-center border bg-white px-4 py-2 text-sm font-medium '
@@ -265,6 +268,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: "6px",
                                   borderColor: "#0000001A",
                                   color: "#44444C",
+                                  fontSize: "12px"
                                 }}
                               >{translation("Overwrite")}</button>
                               <button
