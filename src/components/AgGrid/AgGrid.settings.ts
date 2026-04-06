@@ -126,6 +126,12 @@ const dataAccessSettings: TSetting[] = [
     key: 'showCopyActions',
   },
   {
+    label: 'Show record count',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showRecordCount',
+  },
+  {
     label: 'Toolbar: Actions',
     defaultValue: true,
     type: ESetting.CHECKBOX,

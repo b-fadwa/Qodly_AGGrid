@@ -61,14 +61,16 @@ import {
 import isEqual from 'lodash/isEqual';
 import cloneDeep from 'lodash/cloneDeep';
 import CustomCell from './CustomCell';
+import AgGridSelectionHeader from './AgGridSelectionHeader';
 import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
-import { FaTableColumns } from "react-icons/fa6";
-import { FaClockRotateLeft } from "react-icons/fa6";
-import { GoTrash } from "react-icons/go";
+import { FaTableColumns } from 'react-icons/fa6';
+import { FaClockRotateLeft } from 'react-icons/fa6';
+import { GoTrash } from 'react-icons/go';
 import { IoMdClose } from 'react-icons/io';
-import { FaSortAmountDown } from "react-icons/fa";
+import { FaSortAmountDown } from 'react-icons/fa';
+import { FaCopy } from 'react-icons/fa6';
 
 ModuleRegistry.registerModules([
   ColumnHoverModule,
@@ -95,7 +97,10 @@ function hasMeaningfulColumnState(columnState: unknown): boolean {
 }
 
 /** Merge Qodly attribute path onto AG Grid column state (match by colId === column title). */
-function enrichColumnStateWithSource(columnState: any[] | undefined | null, columns: IColumn[]): any[] {
+function enrichColumnStateWithSource(
+  columnState: any[] | undefined | null,
+  columns: IColumn[],
+): any[] {
   if (!Array.isArray(columnState)) return [];
   const byTitle = new Map(columns.map((c) => [c.title, c]));
   return columnState.map((cs: any) => {
@@ -116,6 +121,22 @@ function columnStateForAgGridApply(columnState: any[] | undefined | null): any[]
     return s;
   });
 }
+
+/** AG Grid ignores `{}` for clearing; use `null` to reset all column filters. */
+function normalizeAgGridFilterModel(model: any): any {
+  if (model == null) return null;
+  if (typeof model !== 'object' || Array.isArray(model)) return model;
+  return Object.keys(model).length === 0 ? null : model;
+}
+
+function applyGridFilterModel(api: GridApi, filterModel: any): void {
+  const desired = normalizeAgGridFilterModel(filterModel);
+  const current = normalizeAgGridFilterModel(api.getFilterModel());
+  if (isEqual(current, desired)) return;
+  api.setFilterModel(desired === null ? null : filterModel);
+}
+
+type CopyMode = 'cells' | 'rows' | 'none';
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -157,6 +178,7 @@ const AgGrid: FC<IAgGridProps> = ({
   className,
   classNames = [],
   showCopyActions,
+  showRecordCount = true,
 }) => {
   const { connect, emit } = useRenderer({
     autoBindEvents: !disabled,
@@ -235,9 +257,33 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const [selected, setSelected] = useState(-1);
   const [scrollIndex, setScrollIndex] = useState(0);
-  const [_count, setCount] = useState(0);
-  const [copyMode, setCopyMode] = useState<'cells' | 'rows'>('cells');
+  const [, setCount] = useState(0);
+  /** Row total for the current grid query (main ds or filtered clone), from getRows `length`. */
+  const [displayedRecordCount, setDisplayedRecordCount] = useState(0);
+  /** Select-all only when this fetch returned every row (rowData.length >= total length from server). */
+  const [showSelectAllHeaderCheckbox, setShowSelectAllHeaderCheckbox] = useState(false);
+
+  const selectionColumnDef = useMemo(
+    () =>
+      multiSelection
+        ? {
+            headerComponent: AgGridSelectionHeader,
+            headerComponentParams: {
+              ariaLabelSelectAll: translation('Select all rows'),
+              showSelectAllCheckbox: showSelectAllHeaderCheckbox,
+            },
+            suppressHeaderMenuButton: true,
+            width: 48,
+          }
+        : undefined,
+    [multiSelection, i18n, lang, showSelectAllHeaderCheckbox],
+  );
+
+  const [copyMode, setCopyMode] = useState<CopyMode>('cells');
+  const [showCopyModeDialog, setShowCopyModeDialog] = useState(false);
+  const [copyModeDraft, setCopyModeDraft] = useState<CopyMode>('cells');
   const [manualSelectedCells, setManualSelectedCells] = useState<TManualSelectedCell[]>([]);
+  const [cellRangeSelectionActive, setCellRangeSelectionActive] = useState(false);
   const [isCellSelectionAvailable, setIsCellSelectionAvailable] = useState(false);
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
@@ -248,7 +294,7 @@ const AgGrid: FC<IAgGridProps> = ({
     { name: string; columnState?: any; filterModel?: any; sortModel?: SortModelItem[] }[]
   >([]);
   const [selectedView, setSelectedView] = useState<string>('');
-  const [advancedSortModel, setAdvancedSortModel] = useState<SortModelItem[]>([]);
+  const [_advancedSortModel, setAdvancedSortModel] = useState<SortModelItem[]>([]);
   const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
 
   // dialog
@@ -283,15 +329,46 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   useEffect(() => {
-    if (copyMode !== 'cells') {
-      setManualSelectedCells([]);
-    }
-  }, [copyMode]);
+    if (!multiSelection) setShowSelectAllHeaderCheckbox(false);
+  }, [multiSelection]);
 
   useEffect(() => {
-    if (copyMode !== 'cells' || isCellSelectionAvailable) return;
+    const api = gridRef.current?.api;
+    if (!api) return;
+    const id = requestAnimationFrame(() => {
+      api.refreshHeader();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [showSelectAllHeaderCheckbox]);
+
+  useEffect(() => {
+    if (copyMode !== 'cells' || !showCopyActions) {
+      setManualSelectedCells([]);
+      setCellRangeSelectionActive(false);
+    }
+  }, [copyMode, showCopyActions]);
+
+  useEffect(() => {
+    if (!isCellSelectionAvailable) {
+      setCellRangeSelectionActive(false);
+    }
+  }, [isCellSelectionAvailable]);
+
+  useEffect(() => {
+    if (!showCopyActions) {
+      setManualSelectedCells([]);
+      setCellRangeSelectionActive(false);
+      if (isCellSelectionAvailable) {
+        (gridRef.current?.api as any)?.clearCellSelection?.();
+      }
+      gridRef.current?.api?.refreshCells({ force: true });
+    }
+  }, [showCopyActions, isCellSelectionAvailable]);
+
+  useEffect(() => {
+    if (copyMode !== 'cells' || isCellSelectionAvailable || !showCopyActions) return;
     gridRef.current?.api?.refreshCells({ force: true });
-  }, [copyMode, isCellSelectionAvailable, manualSelectedCells]);
+  }, [copyMode, isCellSelectionAvailable, manualSelectedCells, showCopyActions]);
 
   // Load saved views from localStorage/stateDS on init
   useEffect(() => {
@@ -326,6 +403,23 @@ const AgGrid: FC<IAgGridProps> = ({
       currentSelectionDS.removeListener('changed', listener);
     };
   }, [currentSelectionDS]);
+
+  // Re-apply filterModel when state object is updated externally (e.g. 4D clears filters).
+  useEffect(() => {
+    if (!stateDS || saveLocalStorage) return;
+    const listener = async () => {
+      const api = gridRef.current?.api;
+      if (!api) return;
+      const data = await stateDS.getValue();
+      if (data != null && typeof data === 'object' && 'filterModel' in data) {
+        applyGridFilterModel(api, data.filterModel);
+      }
+    };
+    stateDS.addListener('changed', listener);
+    return () => {
+      stateDS.removeListener('changed', listener);
+    };
+  }, [stateDS, saveLocalStorage]);
 
   //very initial state of columns
   const initialColumnVisibility = useMemo(
@@ -363,7 +457,7 @@ const AgGrid: FC<IAgGridProps> = ({
             boxSizing: '',
             backgroundColor: '',
           };
-          if (copyMode !== 'cells') return resetStyle;
+          if (!showCopyActions || copyMode !== 'cells') return resetStyle;
           const rowIndex = params?.node?.rowIndex;
           if (typeof rowIndex !== 'number') return resetStyle;
           const key = `${rowIndex}::${params.column.getColId()}`;
@@ -383,7 +477,14 @@ const AgGrid: FC<IAgGridProps> = ({
         filterParams: getColumnFilterParams(col, isBooleanColumn),
       };
     });
-  }, [columns, columnVisibility, copyMode, isCellSelectionAvailable, manualSelectedCellKeySet]);
+  }, [
+    columns,
+    columnVisibility,
+    copyMode,
+    isCellSelectionAvailable,
+    manualSelectedCellKeySet,
+    showCopyActions,
+  ]);
 
   const defaultColDef = useMemo<ColDef>(() => {
     return {
@@ -434,8 +535,10 @@ const AgGrid: FC<IAgGridProps> = ({
       return columnState
         .filter((column) => isSortDirection(column?.sort))
         .sort((a, b) => {
-          const aSortIndex = typeof a?.sortIndex === 'number' ? a.sortIndex : Number.MAX_SAFE_INTEGER;
-          const bSortIndex = typeof b?.sortIndex === 'number' ? b.sortIndex : Number.MAX_SAFE_INTEGER;
+          const aSortIndex =
+            typeof a?.sortIndex === 'number' ? a.sortIndex : Number.MAX_SAFE_INTEGER;
+          const bSortIndex =
+            typeof b?.sortIndex === 'number' ? b.sortIndex : Number.MAX_SAFE_INTEGER;
           return aSortIndex - bSortIndex;
         })
         .map((column) => ({ colId: column.colId, sort: column.sort as 'asc' | 'desc' }));
@@ -449,7 +552,10 @@ const AgGrid: FC<IAgGridProps> = ({
       if (!gridApi) return;
       const normalizedSortModel = normalizeSortModel(sortModel);
       const sortIndexByColId = new Map(
-        normalizedSortModel.map((rule, index) => [rule.colId, { sort: rule.sort, sortIndex: index }]),
+        normalizedSortModel.map((rule, index) => [
+          rule.colId,
+          { sort: rule.sort, sortIndex: index },
+        ]),
       );
       const updatedColumnState = gridApi.getColumnState().map((columnState) => {
         const sortState = sortIndexByColId.get(columnState.colId);
@@ -502,7 +608,9 @@ const AgGrid: FC<IAgGridProps> = ({
         params.data.__entity?.[rowCssField] ??
         findAgGridRowCssValue(params.data, rowCssField, columns);
       if (value === undefined || value === null || value === '') return '';
-      const sanitized = String(value).replace(/[^a-zA-Z0-9_-]/g, '-').toLowerCase();
+      const sanitized = String(value)
+        .replace(/[^a-zA-Z0-9_-]/g, '-')
+        .toLowerCase();
       return `aggrid-row-${sanitized}`;
     },
     [rowCssField, columns],
@@ -551,12 +659,12 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const focusRowForCopy = useCallback(
     (api: GridApi | undefined, rowIndex: number) => {
-      if (!api || copyMode !== 'rows' || rowIndex < 0) return;
+      if (!api || !showCopyActions || copyMode !== 'rows' || rowIndex < 0) return;
       const firstColumn = api.getAllDisplayedColumns()?.[0];
       if (!firstColumn) return;
       api.setFocusedCell(rowIndex, firstColumn);
     },
-    [copyMode],
+    [copyMode, showCopyActions],
   );
 
   const onRowClicked = useCallback(
@@ -601,7 +709,7 @@ const AgGrid: FC<IAgGridProps> = ({
     (event: any) => {
       if (!ds) return;
 
-      if (copyMode === 'cells' && !isCellSelectionAvailable) {
+      if (showCopyActions && copyMode === 'cells' && !isCellSelectionAvailable) {
         const rowIndex = event?.node?.rowIndex;
         const colId = event?.column?.getColId?.();
         if (typeof rowIndex === 'number' && colId) {
@@ -622,7 +730,7 @@ const AgGrid: FC<IAgGridProps> = ({
         value: event.value,
       });
     },
-    [ds, copyMode, isCellSelectionAvailable],
+    [ds, copyMode, isCellSelectionAvailable, showCopyActions],
   );
 
   const onCellDoubleClicked = useCallback((event: any) => {
@@ -663,6 +771,11 @@ const AgGrid: FC<IAgGridProps> = ({
   const handleCopyShortcut = useCallback(
     (event: any, api: GridApi): boolean => {
       if (!isCopyShortcut(event)) return false;
+      if (!showCopyActions) return false;
+
+      if (copyMode === 'none') {
+        return false;
+      }
 
       if (copyMode === 'rows') {
         event.preventDefault?.();
@@ -694,7 +807,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
       return false;
     },
-    [copyMode, multiSelection, isCellSelectionAvailable, manualSelectedCells],
+    [copyMode, multiSelection, isCellSelectionAvailable, manualSelectedCells, showCopyActions],
   );
 
   const onCellKeyDown = useCallback(
@@ -713,7 +826,7 @@ const AgGrid: FC<IAgGridProps> = ({
       const api = event.api;
       const selectedNodes = api.getSelectedNodes();
 
-      if (copyMode === 'rows' && selectedNodes.length > 0) {
+      if (showCopyActions && copyMode === 'rows' && selectedNodes.length > 0) {
         const rowIndex = selectedNodes[selectedNodes.length - 1]?.rowIndex;
         if (typeof rowIndex === 'number') {
           focusRowForCopy(api, rowIndex);
@@ -727,7 +840,7 @@ const AgGrid: FC<IAgGridProps> = ({
         }
       }
     },
-    [copyMode, focusRowForCopy, multiSelection, currentSelectionDS],
+    [copyMode, focusRowForCopy, multiSelection, currentSelectionDS, showCopyActions],
   );
 
   const persistGridState = useCallback(
@@ -754,16 +867,19 @@ const AgGrid: FC<IAgGridProps> = ({
     [emit, nodeID, saveLocalStorage, stateDS],
   );
 
-  const onStateUpdated = useCallback((params: StateUpdatedEvent) => {
-    if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
-    if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
-      const columnState = params.api.getColumnState();
-      const filterModel = params.api.getFilterModel();
-      const sortModel = buildSortModelFromColumnState(columnState);
-      setAdvancedSortModel(sortModel);
-      persistGridState(columnState, filterModel, sortModel);
-    }
-  }, [buildSortModelFromColumnState, persistGridState]);
+  const onStateUpdated = useCallback(
+    (params: StateUpdatedEvent) => {
+      if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
+      if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
+        const columnState = params.api.getColumnState();
+        const filterModel = params.api.getFilterModel();
+        const sortModel = buildSortModelFromColumnState(columnState);
+        setAdvancedSortModel(sortModel);
+        persistGridState(columnState, filterModel, sortModel);
+      }
+    },
+    [buildSortModelFromColumnState, persistGridState],
+  );
 
   const getState = useCallback(
     async (params: any) => {
@@ -792,8 +908,12 @@ const AgGrid: FC<IAgGridProps> = ({
               applyOrder: true,
             });
           }
-          if (parsedState?.filterModel) {
-            params.api.setFilterModel(parsedState.filterModel);
+          if (
+            parsedState != null &&
+            typeof parsedState === 'object' &&
+            'filterModel' in parsedState
+          ) {
+            applyGridFilterModel(params.api, parsedState.filterModel);
           }
           const stateSortModel = parsedState?.sortModel
             ? normalizeSortModel(parsedState.sortModel)
@@ -817,8 +937,8 @@ const AgGrid: FC<IAgGridProps> = ({
             state: columnStateForAgGridApply(mergedForSort),
             applyOrder: true,
           });
-          if (dsValue.filterModel) {
-            params.api.setFilterModel(dsValue.filterModel);
+          if (dsValue != null && typeof dsValue === 'object' && 'filterModel' in dsValue) {
+            applyGridFilterModel(params.api, dsValue.filterModel);
           }
           const stateSortModel = dsValue.sortModel
             ? normalizeSortModel(dsValue.sortModel)
@@ -826,8 +946,8 @@ const AgGrid: FC<IAgGridProps> = ({
           setAdvancedSortModel(stateSortModel);
           prevSortModelRef.current = stateSortModel;
         } else {
-          if (dsValue?.filterModel) {
-            params.api.setFilterModel(dsValue.filterModel);
+          if (dsValue != null && typeof dsValue === 'object' && 'filterModel' in dsValue) {
+            applyGridFilterModel(params.api, dsValue.filterModel);
           }
           if (dsValue?.sortModel) {
             applySortModelToGrid(dsValue.sortModel, params.api);
@@ -854,29 +974,32 @@ const AgGrid: FC<IAgGridProps> = ({
     ],
   );
 
-  const applySorting = useCallback(async (params: IGetRowsParams, columns: any[], ds: any) => {
-    if (params.sortModel.length === 0) {
-      prevSortModelRef.current = [];
-      setAdvancedSortModel([]);
-      return;
-    }
-    if (isEqual(params.sortModel, prevSortModelRef.current)) return;
+  const applySorting = useCallback(
+    async (params: IGetRowsParams, columns: any[], ds: any) => {
+      if (params.sortModel.length === 0) {
+        prevSortModelRef.current = [];
+        setAdvancedSortModel([]);
+        return;
+      }
+      if (isEqual(params.sortModel, prevSortModelRef.current)) return;
 
-    const sortInstructions = params.sortModel
-      .map((sort) => {
-        const matchedColumn = columns.find(
-          (column) => column.title === sort.colId || column.source === sort.colId,
-        );
-        if (!matchedColumn?.source || !sort.sort) return '';
-        return `${matchedColumn.source} ${sort.sort}`;
-      })
-      .filter(Boolean);
+      const sortInstructions = params.sortModel
+        .map((sort) => {
+          const matchedColumn = columns.find(
+            (column) => column.title === sort.colId || column.source === sort.colId,
+          );
+          if (!matchedColumn?.source || !sort.sort) return '';
+          return `${matchedColumn.source} ${sort.sort}`;
+        })
+        .filter(Boolean);
 
-    if (!sortInstructions.length) return;
-    prevSortModelRef.current = params.sortModel;
-    setAdvancedSortModel(normalizeSortModel(params.sortModel));
-    await ds.orderBy(sortInstructions.join(', '));
-  }, [normalizeSortModel]);
+      if (!sortInstructions.length) return;
+      prevSortModelRef.current = params.sortModel;
+      setAdvancedSortModel(normalizeSortModel(params.sortModel));
+      await ds.orderBy(sortInstructions.join(', '));
+    },
+    [normalizeSortModel],
+  );
 
   // (fix bug when calling 4d function on aggrid that displayes related values)
   // sanitize values to plain JSON-safe primitives/objects to avoid circular refs
@@ -923,6 +1046,30 @@ const AgGrid: FC<IAgGridProps> = ({
     },
     [handleCopyShortcut],
   );
+
+  const syncCellRangeSelectionFromApi = useCallback(() => {
+    const api = gridRef.current?.api;
+    if (!api || typeof (api as any).getCellRanges !== 'function') {
+      setCellRangeSelectionActive(false);
+      return;
+    }
+    const ranges = (api as any).getCellRanges() as unknown[] | null;
+    setCellRangeSelectionActive(Array.isArray(ranges) && ranges.length > 0);
+  }, []);
+
+  const onCellSelectionChanged = useCallback(() => {
+    if (!showCopyActions || !isCellSelectionAvailable || copyMode !== 'cells') return;
+    syncCellRangeSelectionFromApi();
+  }, [copyMode, isCellSelectionAvailable, showCopyActions, syncCellRangeSelectionFromApi]);
+
+  const clearCopyCellsSelection = useCallback(() => {
+    if (isCellSelectionAvailable) {
+      (gridRef.current?.api as any)?.clearCellSelection?.();
+      setCellRangeSelectionActive(false);
+    } else {
+      setManualSelectedCells([]);
+    }
+  }, [isCellSelectionAvailable]);
 
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
     const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
@@ -1016,8 +1163,17 @@ const AgGrid: FC<IAgGridProps> = ({
         }
 
         if (Array.isArray(entities)) {
+          // Only evaluate on the first block: later infinite-range requests can return 0 rows and would
+          // incorrectly clear the flag (e.g. rowData.length 0 while length is still the total).
+          if (rowParams.startRow === 0) {
+            setShowSelectAllHeaderCheckbox(
+              multiSelection && length > 0 && rowData.length >= length,
+            );
+            setDisplayedRecordCount(length);
+          }
           rowParams.successCallback(rowData, length);
         } else {
+          setShowSelectAllHeaderCheckbox(false);
           rowParams.failCallback();
         }
         getSelectedRow(params.api);
@@ -1143,9 +1299,9 @@ const AgGrid: FC<IAgGridProps> = ({
           applyOrder: true,
         });
       }
-      // Restore filter model of selected view
-      if (view.filterModel) {
-        gridRef.current.api.setFilterModel(view.filterModel);
+      // Restore filter model of selected view (including clearing when empty / {})
+      if ('filterModel' in view) {
+        applyGridFilterModel(gridRef.current.api, view.filterModel);
       }
       if (view.sortModel) {
         applySortModelToGrid(view.sortModel, gridRef.current.api);
@@ -1260,70 +1416,85 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarSaveView ||
     showToolbarSavedViews;
 
+  const showClearCopyCells =
+    showCopyActions &&
+    copyMode === 'cells' &&
+    (cellRangeSelectionActive || (!isCellSelectionAvailable && manualSelectedCells.length > 0));
+
+  const renderCopyCellsClearButton = () => {
+    if (!showCopyActions || !showClearCopyCells) return null;
+    return (
+      <button
+        type="button"
+        className="rounded-md border px-2 py-1 text-xs"
+        style={{
+          height: '31px',
+          borderColor: '#0000001A',
+          color: '#44444C',
+          fontSize: '12px',
+          fontWeight: 500,
+        }}
+        onClick={clearCopyCellsSelection}
+      >
+        {!isCellSelectionAvailable && manualSelectedCells.length > 0
+          ? `${translation('Clear')} (${manualSelectedCells.length})`
+          : translation('Clear')}
+      </button>
+    );
+  };
+
   return (
-    <div ref={(el) => { containerRef.current = el?.parentElement as HTMLDivElement; connect(el); }} style={resolvedStyle} className={cn(className, classNames)}>
+    <div
+      ref={(el) => {
+        containerRef.current = el?.parentElement as HTMLDivElement;
+        connect(el);
+      }}
+      style={resolvedStyle}
+      className={cn(className, classNames)}
+    >
       {datasource ? (
         <div className="flex flex-col gap-2 h-full" onKeyDownCapture={onGridKeyDownCapture}>
-          {showCopyActions && (<div className="flex items-center gap-2 text-sm text-gray-800">
-            <span className="font-semibold">{translation('Copy mode')}:</span>
-            <button
-              type="button"
-              className={cn(
-                'rounded border px-2 py-1',
-                copyMode === 'cells'
-                  ? 'border-slate-700 bg-slate-700 text-white'
-                  : 'border-gray-300 bg-white text-gray-800',
-              )}
-              onClick={() => {
-                setCopyMode('cells');
-              }}
-            >
-              {translation('Cells')}
-            </button>
-            <button
-              type="button"
-              className={cn(
-                'rounded border px-2 py-1',
-                copyMode === 'rows'
-                  ? 'border-slate-700 bg-slate-700 text-white'
-                  : 'border-gray-300 bg-white text-gray-800',
-              )}
-              onClick={() => {
-                setCopyMode('rows');
-              }}
-            >
-              {translation('Rows')}
-            </button>
-            {copyMode === 'cells' && !isCellSelectionAvailable && (
-              <span className="text-xs text-slate-600">
-                {translation('Clicked cells')}: {manualSelectedCells.length}
-              </span>
-            )}
-            {copyMode === 'cells' &&
-              !isCellSelectionAvailable &&
-              manualSelectedCells.length > 0 && (
-                <button
-                  type="button"
-                  className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-800"
-                  onClick={() => {
-                    setManualSelectedCells([]);
-                  }}
-                >
-                  {translation('Clear')}
-                </button>
-              )}
-          </div>)}
+          {showCopyActions && !(showColumnActions && showToolbarActions) && (
+            <div className="flex items-center gap-2 px-4 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setCopyModeDraft(copyMode);
+                  setShowCopyModeDialog(true);
+                }}
+                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                style={{
+                  width: '31px',
+                  height: '31px',
+                  borderRadius: '8px',
+                  borderColor: '#0000001A',
+                  color: '#44444C',
+                }}
+                title={`${translation('Copy mode')}: ${copyMode === 'cells' ? translation('Cells') : copyMode === 'rows' ? translation('Rows') : translation('Nothing')}`}
+                aria-label={translation('Copy mode')}
+              >
+                <FaCopy size={14} />
+              </button>
+              {renderCopyCellsClearButton()}
+            </div>
+          )}
           {showColumnActions && (
             <>
               {showAnyToolbarSection && (
-                < div className="grid-header flex items-start justify-between flex-wrap gap-4 " style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
+                <div
+                  className="grid-header flex items-start justify-between flex-wrap gap-4 "
+                  style={{ boxShadow: '0px 1px 3px 0px rgba(0, 0, 0, 0.1)' }}
+                >
                   {/* AGGrid header actions */}
                   {showToolbarActions && (
                     <div className="actions-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                      <span className="actions-title"
-                        style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
-                      >{translation('Actions')}</span>
-                      <div className='flex flex-row gap-2'>
+                      <span
+                        className="actions-title"
+                        style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
+                      >
+                        {translation('Actions')}
+                      </span>
+                      <div className="flex flex-row gap-2">
                         <div className="flex gap-2">
                           <Element id="agGridActions" is={resolver.StyleBox} canvas />
                         </div>
@@ -1333,11 +1504,11 @@ const AgGrid: FC<IAgGridProps> = ({
                               onClick={openAdvancedSortingDialog}
                               className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
                               style={{
-                                width: "31px",
-                                height: "31px",
-                                borderRadius: "8px",
-                                borderColor: "#0000001A",
-                                color: "#44444C"
+                                width: '31px',
+                                height: '31px',
+                                borderRadius: '8px',
+                                borderColor: '#0000001A',
+                                color: '#44444C',
                               }}
                               disabled={sortableColumns.length === 0}
                             >
@@ -1345,24 +1516,53 @@ const AgGrid: FC<IAgGridProps> = ({
                             </button>
                           </div>
                         )}
+                        {showCopyActions && (
+                          <div className="copy-mode-section flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCopyModeDraft(copyMode);
+                                setShowCopyModeDialog(true);
+                              }}
+                              className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                              style={{
+                                width: '31px',
+                                height: '31px',
+                                borderRadius: '8px',
+                                borderColor: '#0000001A',
+                                color: '#44444C',
+                              }}
+                              title={`${translation('Copy mode')}: ${copyMode === 'cells' ? translation('Cells') : copyMode === 'rows' ? translation('Rows') : translation('Nothing')}`}
+                              aria-label={translation('Copy mode')}
+                            >
+                              <FaCopy size={14} />
+                            </button>
+                            {renderCopyCellsClearButton()}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
-                  <div className="flex flex-row gap-2 flex-wrap" >
+                  <div className="flex flex-row gap-2 flex-wrap">
                     {showToolbarView && (
-                      <div className='flex items-center gap-2 flex-wrap'>
+                      <div className="flex items-center gap-2 flex-wrap">
                         {/* columns customizer button */}
                         <div className="customizer-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                          <span className="customizer-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('View')}</span>
+                          <span
+                            className="customizer-title"
+                            style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
+                          >
+                            {translation('View')}
+                          </span>
                           <div className="flex gap-2">
                             <button
                               className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
                               style={{
-                                width: "31px",
-                                height: "31px",
-                                borderRadius: "8px",
-                                borderColor: "#0000001A",
-                                color: "#44444C"
+                                width: '31px',
+                                height: '31px',
+                                borderRadius: '8px',
+                                borderColor: '#0000001A',
+                                color: '#44444C',
                               }}
                               onClick={() => setShowPropertiesDialog(true)}
                             >
@@ -1371,11 +1571,11 @@ const AgGrid: FC<IAgGridProps> = ({
                             <button
                               className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
                               style={{
-                                width: "31px",
-                                height: "31px",
-                                borderRadius: "8px",
-                                borderColor: "#0000001A",
-                                color: "#44444C"
+                                width: '31px',
+                                height: '31px',
+                                borderRadius: '8px',
+                                borderColor: '#0000001A',
+                                color: '#44444C',
                               }}
                               onClick={() => resetColumnview()}
                             >
@@ -1387,9 +1587,14 @@ const AgGrid: FC<IAgGridProps> = ({
                     )}
                     {/* new view section */}
                     {showToolbarSaveView && (
-                      < div className="view-management flex flex-row ">
-                        < div className="view-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                          <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Save view')}</span>
+                      <div className="view-management flex flex-row ">
+                        <div className="view-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                          <span
+                            className="view-title"
+                            style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
+                          >
+                            {translation('Save view')}
+                          </span>
                           <div className="flex gap-2">
                             <input
                               type="text"
@@ -1400,20 +1605,20 @@ const AgGrid: FC<IAgGridProps> = ({
                                 setViewName(e.target.value);
                               }}
                               style={{
-                                height: "31px",
-                                borderRadius: "6px",
-                                borderColor: "#0000001A",
-                                color: "#44444C",
+                                height: '31px',
+                                borderRadius: '6px',
+                                borderColor: '#0000001A',
+                                color: '#44444C',
                               }}
                             />
                             <button
                               className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                               onClick={() => saveNewView()}
                               style={{
-                                height: "31px",
-                                borderRadius: "6px",
-                                borderColor: "#0000001A",
-                                color: "#44444C",
+                                height: '31px',
+                                borderRadius: '6px',
+                                borderColor: '#0000001A',
+                                color: '#44444C',
                               }}
                             >
                               {translation('Save new')}
@@ -1422,8 +1627,13 @@ const AgGrid: FC<IAgGridProps> = ({
                         </div>
                         {/* saved views section */}
                         {showToolbarSavedViews && (
-                          < div className="views-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                            <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation('Saved views')}</span>
+                          <div className="views-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                            <span
+                              className="views-title "
+                              style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
+                            >
+                              {translation('Saved views')}
+                            </span>
                             <div className="flex gap-2">
                               <select
                                 value={selectedView}
@@ -1432,10 +1642,10 @@ const AgGrid: FC<IAgGridProps> = ({
                                   setSelectedView(e.target.value);
                                 }}
                                 style={{
-                                  height: "31px",
-                                  borderRadius: "6px",
-                                  borderColor: "#0000001A",
-                                  color: "#44444C",
+                                  height: '31px',
+                                  borderRadius: '6px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
                                 }}
                               >
                                 <option value="">{translation('Select view')}</option>
@@ -1447,37 +1657,40 @@ const AgGrid: FC<IAgGridProps> = ({
                                 className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                                 onClick={() => loadView()}
                                 style={{
-                                  height: "31px",
-                                  borderRadius: "6px",
-                                  borderColor: "#0000001A",
-                                  color: "#44444C",
-                                }}                      >
+                                  height: '31px',
+                                  borderRadius: '6px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                              >
                                 {translation('Load')}
                               </button>
                               <button
                                 className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                                 onClick={() => updateView()}
                                 style={{
-                                  height: "31px",
-                                  borderRadius: "6px",
-                                  borderColor: "#0000001A",
-                                  color: "#44444C",
-                                }}                      >
+                                  height: '31px',
+                                  borderRadius: '6px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                              >
                                 {translation('Overwrite')}
                               </button>
                               <button
                                 className="header-button-trash inline-flex items-center justify-center rounded-lg border"
                                 style={{
-                                  width: "31px",
-                                  height: "31px",
-                                  borderRadius: "8px",
-                                  color: "#EC7B80",
-                                  borderColor: "#EC7B80",
-                                  backgroundColor: "#EC7B8033",
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  color: '#EC7B80',
+                                  borderColor: '#EC7B80',
+                                  backgroundColor: '#EC7B8033',
                                 }}
                                 onClick={() => deleteView()}
                               >
-                                <GoTrash size={14} /></button>
+                                <GoTrash size={14} />
+                              </button>
                             </div>
                           </div>
                         )}
@@ -1485,74 +1698,107 @@ const AgGrid: FC<IAgGridProps> = ({
                     )}
                   </div>
                   {/* columns customizer dialog */}
-                  {
-                    showToolbarView && showPropertiesDialog && (
+                  {showToolbarView && showPropertiesDialog && (
+                    <div
+                      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                      onClick={() => setShowPropertiesDialog(false)}
+                    >
                       <div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                        onClick={() => setShowPropertiesDialog(false)}
+                        className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <div
-                          className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl" >
-                            <div>
-                              <h1 className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>{translation("COLUMN STATE")}</h1>
-                              <span className='mt-1 block text-sm ' style={{ color: "#6B7280", fontSize: "16px" }}>{translation("Show or hide columns for this grid view")}</span>
-                            </div>
-                            <button
-                              className=" inline-flex items-center justify-center"
-                              style={{
-                                color: "#6A7282"
-                              }}
-                              onClick={() => setShowPropertiesDialog(false)}
+                        <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl">
+                          <div>
+                            <h1
+                              className="text-sm tracking-wide"
+                              style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
                             >
-                              <IoMdClose />
-                            </button>
+                              {translation('COLUMN STATE')}
+                            </h1>
+                            <span
+                              className="mt-1 block text-sm "
+                              style={{ color: '#6B7280', fontSize: '16px' }}
+                            >
+                              {translation('Show or hide columns for this grid view')}
+                            </span>
                           </div>
-                          <div className="px-5 py-4">
-                            <div className="sticky top-0 z-10 bg-white pb-3">
-                              <div className="flex flex-row gap-2 md:flex-row md:items-center">
-                                <input
-                                  className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
-                                  placeholder={translation('Search field')}
-                                  value={propertySearch}
-                                  onChange={(e) => setPropertySearch(e.target.value)}
-                                  style={{ height: "31px", borderColor: "#0000001A", borderRadius: "6px" }}
-                                />
+                          <button
+                            className=" inline-flex items-center justify-center"
+                            style={{
+                              color: '#6A7282',
+                            }}
+                            onClick={() => setShowPropertiesDialog(false)}
+                          >
+                            <IoMdClose />
+                          </button>
+                        </div>
+                        <div className="px-5 py-4">
+                          <div className="sticky top-0 z-10 bg-white pb-3">
+                            <div className="flex flex-row gap-2 md:flex-row md:items-center">
+                              <input
+                                className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
+                                placeholder={translation('Search field')}
+                                value={propertySearch}
+                                onChange={(e) => setPropertySearch(e.target.value)}
+                                style={{
+                                  height: '31px',
+                                  borderColor: '#0000001A',
+                                  borderRadius: '6px',
+                                }}
+                              />
 
-                                <label className="inline-flex items-center gap-2 whitespace-nowrap text-sm" style={{ color: "#717182", fontSize: "12px", fontWeight: 500 }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={showVisibleOnly}
-                                    onChange={(e) => setShowVisibleOnly(e.target.checked)}
-                                    style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
-                                  />
-                                  <span>{translation('Visible only')}</span>
-                                </label>
-                                <div>
-                                  <button
-                                    type="button"
-                                    className="rounded-md border  bg-white px-3 py-2 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                                    style={{ borderColor: "rgba(0, 0, 0, 0.1)", color: "#0A0A0A", height: "31px", fontSize: "12px", fontWeight: 500 }}
-                                    onClick={() => setFilteredColumnsVisible(true)}
-                                    disabled={filteredColumns.length === 0}
-                                  >
-                                    {translation('Select all')}
-                                  </button>
-                                </div>
+                              <label
+                                className="inline-flex items-center gap-2 whitespace-nowrap text-sm"
+                                style={{ color: '#717182', fontSize: '12px', fontWeight: 500 }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={showVisibleOnly}
+                                  onChange={(e) => setShowVisibleOnly(e.target.checked)}
+                                  style={{
+                                    height: '12px',
+                                    width: '12px',
+                                    backgroundColor: '#2b5797',
+                                    borderRadius: '4px',
+                                  }}
+                                />
+                                <span>{translation('Visible only')}</span>
+                              </label>
+                              <div>
                                 <button
                                   type="button"
-                                  className="rounded-md border px-3 flex items-center justify-center py-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                  style={{ borderColor: "#6B8AD4", color: "#6B8AD4", height: "31px", fontSize: "12px", fontWeight: 500 }}
-                                  onClick={() => setFilteredColumnsVisible(false)}
+                                  className="rounded-md border  bg-white px-3 py-2 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                                  style={{
+                                    borderColor: 'rgba(0, 0, 0, 0.1)',
+                                    color: '#0A0A0A',
+                                    height: '31px',
+                                    fontSize: '12px',
+                                    fontWeight: 500,
+                                  }}
+                                  onClick={() => setFilteredColumnsVisible(true)}
                                   disabled={filteredColumns.length === 0}
                                 >
-                                  {translation('Clear all')}
+                                  {translation('Select all')}
                                 </button>
                               </div>
+                              <button
+                                type="button"
+                                className="rounded-md border px-3 flex items-center justify-center py-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                style={{
+                                  borderColor: '#6B8AD4',
+                                  color: '#6B8AD4',
+                                  height: '31px',
+                                  fontSize: '12px',
+                                  fontWeight: 500,
+                                }}
+                                onClick={() => setFilteredColumnsVisible(false)}
+                                disabled={filteredColumns.length === 0}
+                              >
+                                {translation('Clear all')}
+                              </button>
                             </div>
-                            {/* <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
+                          </div>
+                          {/* <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
                         <div>
                           {translation('Visible')} : {visibleCount} / {normalizedColumns.length}
                         </div>
@@ -1563,204 +1809,367 @@ const AgGrid: FC<IAgGridProps> = ({
                         </div> 
                       </div> */}
 
-                            <div className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2" style={{ backgroundColor: "#FAFAFA", borderColor: "#D1D5DC", borderRadius: "10px" }}>
-                              {filteredColumns.length === 0 ? (
-                                <div className="px-3 py-8 text-center text-sm text-slate-500">
-                                  {translation('No fields match your filter')}.
-                                </div>
-                              ) : (
-                                filteredColumns.map((column) => {
-                                  const isVisible = !column.isHidden;
-                                  return (
-                                    <div
-                                      key={column.field}
-                                      className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
-                                    >
-                                      <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
-                                        <input
-                                          type="checkbox"
-                                          checked={isVisible}
-                                          onChange={() => handleColumnToggle(column.field)}
-                                          style={{ height: "12px", width: "12px", backgroundColor: "#2b5797", borderRadius: "4px" }}
-                                        />
-                                        <span
-                                          className={`truncate ${isVisible ? "text-gray-700" : "text-slate-400"
-                                            }`}
-                                        >
-                                          {column.field}
-                                        </span>
-                                      </label>
-
-                                      <select
-                                        value={column.pinned || 'unpinned'}
-                                        className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
-                                        style={{ height: "31px" }}
-                                        onChange={(e) => handlePinChange(column.field, e.target.value)}
-                                      >
-                                        <option value="unpinned">{translation('No pin')}</option>
-                                        <option value="left">{translation('Pin left')}</option>
-                                        <option value="right">{translation('Pin right')}</option>
-                                      </select>
-                                    </div>
-                                  )
-                                })
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  }
-                  {
-                    showToolbarSorting && showSortingDialog && (
-                      <div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                        onClick={() => setShowSortingDialog(false)}
-                      >
-                        <div
-                          className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex items-start justify-between gap-3 border-b border-slate-200  px-5 py-4 rounded-t-xl">
-                            <div>
-                              <span className="text-sm tracking-wide" style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}>
-                                {translation('ADVANCED SORTING')}
-                              </span>
-                              <span className="mt-1 block text-sm" style={{ color: "#4A5565", fontSize: '14px' }}>
-                                {translation(
-                                  'Choose one or multiple columns and define sort direction for each level',
-                                )}
-                              </span>
-                            </div>
-                            <button
-                              className=" inline-flex items-center justify-center"
-                              style={{
-                                color: "#6A7282"
-                              }}
-                              onClick={() => setShowSortingDialog(false)}
-                            >
-                              <IoMdClose />
-                            </button>
-                          </div>
-                          <div className="">
-                            {sortableColumns.length === 0 ? (
-                              <div className=" bg-slate-50 px-3 py-2 " style={{ color: "#4A5565", fontSize: '14px' }}>
-                                {translation('No sortable columns are enabled in grid properties')}
+                          <div
+                            className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2"
+                            style={{
+                              backgroundColor: '#FAFAFA',
+                              borderColor: '#D1D5DC',
+                              borderRadius: '10px',
+                            }}
+                          >
+                            {filteredColumns.length === 0 ? (
+                              <div className="px-3 py-8 text-center text-sm text-slate-500">
+                                {translation('No fields match your filter')}.
                               </div>
                             ) : (
-                              <>
-                                <div className="px-3 py-2 mb-4 " >
-                                  <div className="space-y-2 max-h-80 overflow-y-auto">
-                                    {sortDialogModel.length === 0 ? (
-                                      <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600">
-                                        {translation('No sort level configured yet')}
-                                      </div>
-                                    ) : (
-                                      sortDialogModel.map((rule, index) => (
-                                        <div
-                                          key={`${rule.colId}-${index}`}
-                                          className="flex items-center gap-2 px-2 py-2"
-                                        >
-                                          <span className="w-14" style={{ color: "#364153", fontSize: "14px" }}>
-                                            {translation('Level')} {index + 1}
-                                          </span>
-                                          <select
-                                            className="min-w-0 flex-1 px-2 py-1" style={{ backgroundColor: "#F3F3F5", borderRadius: "8px", height: "36px", fontSize: "14px", width: "256px" }}
-                                            value={rule.colId}
-                                            onChange={(e) => updateSortLevelColumn(index, e.target.value)}
-                                          >
-                                            {sortableColumns.map((column) => (
-                                              <option key={column.colId} value={column.colId}>
-                                                {column.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          <select
-                                            className="w-28 rounded-md" style={{ backgroundColor: "#F3F3F5", borderRadius: "8px", height: "36px", width: "128px", fontSize: "14px" }}
-                                            value={rule.sort}
-                                            onChange={(e) =>
-                                              updateSortLevelDirection(
-                                                index,
-                                                (e.target.value as 'asc' | 'desc') || 'asc',
-                                              )
-                                            }
-                                          >
-                                            <option value="asc">{translation('Asc')}</option>
-                                            <option value="desc">{translation('Desc')}</option>
-                                          </select>
-                                          <button
-                                            type="button"
-                                            className=" border bg-white px-2 py-1"
-                                            style={{ height: "32px", borderColor: "#0000001A", borderRadius: "8px", fontSize: "12px" }}
-                                            onClick={() => removeSortLevel(index)}
-                                          >
-                                            {translation('Remove')}
-                                          </button>
-                                        </div>
-                                      ))
-                                    )}
-                                  </div>
-                                  <div className="mt-3 flex items-center justify-between pb-4">
-                                    <button
-                                      type="button"
-                                      style={{
-                                        height: "31px",
-                                        borderRadius: "8px",
-                                        borderColor: "#0000001A",
-                                        color: "#44444C",
-                                        fontSize: "12px",
-                                        fontWeight: 500
-                                      }}
-                                      className="rounded-md border px-3 py-2 flex items-center justify-center"
-                                      onClick={addSortLevel}
-                                      disabled={sortableColumns.length === 0}
+                              filteredColumns.map((column) => {
+                                const isVisible = !column.isHidden;
+                                return (
+                                  <div
+                                    key={column.field}
+                                    className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
+                                  >
+                                    <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={isVisible}
+                                        onChange={() => handleColumnToggle(column.field)}
+                                        style={{
+                                          height: '12px',
+                                          width: '12px',
+                                          backgroundColor: '#2b5797',
+                                          borderRadius: '4px',
+                                        }}
+                                      />
+                                      <span
+                                        className={`truncate ${
+                                          isVisible ? 'text-gray-700' : 'text-slate-400'
+                                        }`}
+                                      >
+                                        {column.field}
+                                      </span>
+                                    </label>
+
+                                    <select
+                                      value={column.pinned || 'unpinned'}
+                                      className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                                      style={{ height: '31px' }}
+                                      onChange={(e) =>
+                                        handlePinChange(column.field, e.target.value)
+                                      }
                                     >
-                                      {translation('Add level')}
-                                    </button>
+                                      <option value="unpinned">{translation('No pin')}</option>
+                                      <option value="left">{translation('Pin left')}</option>
+                                      <option value="right">{translation('Pin right')}</option>
+                                    </select>
                                   </div>
-                                </div>
-                                <div className="flex justify-end align-end items-center gap-2 w-full p-4 " style={{ borderTop: "1px solid #E5E7EB" }}>
-                                  <button
-                                    type="button"
-                                    className="rounded-md border px-3 py-2 flex items-center justify-center "
-                                    style={{
-                                      height: "31px",
-                                      borderRadius: "6px",
-                                      borderColor: "#0000001A",
-                                      color: "#44444C",
-                                      fontSize: "12px"
-                                    }}
-                                    onClick={clearAdvancedSorting}
-                                  >
-                                    {translation('Clear')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="rounded-md border  px-3 py-2 text-sm text-white flex text-center items-center justify-center"
-                                    onClick={applyAdvancedSorting}
-                                    style={{
-                                      background: "#2B5797",
-                                      height: "31px",
-                                      fontSize: "12px"
-                                    }}
-                                  >
-                                    {translation('Apply sorting')}
-                                  </button>
-                                </div>
-                              </>
+                                );
+                              })
                             )}
                           </div>
                         </div>
                       </div>
-                    )
-                  }
+                    </div>
+                  )}
+                  {showToolbarSorting && showSortingDialog && (
+                    <div
+                      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                      onClick={() => setShowSortingDialog(false)}
+                    >
+                      <div
+                        className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-start justify-between gap-3 border-b border-slate-200  px-5 py-4 rounded-t-xl">
+                          <div>
+                            <span
+                              className="text-sm tracking-wide"
+                              style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
+                            >
+                              {translation('ADVANCED SORTING')}
+                            </span>
+                            <span
+                              className="mt-1 block text-sm"
+                              style={{ color: '#4A5565', fontSize: '14px' }}
+                            >
+                              {translation(
+                                'Choose one or multiple columns and define sort direction for each level',
+                              )}
+                            </span>
+                          </div>
+                          <button
+                            className=" inline-flex items-center justify-center"
+                            style={{
+                              color: '#6A7282',
+                            }}
+                            onClick={() => setShowSortingDialog(false)}
+                          >
+                            <IoMdClose />
+                          </button>
+                        </div>
+                        <div className="">
+                          {sortableColumns.length === 0 ? (
+                            <div
+                              className=" bg-slate-50 px-3 py-2 "
+                              style={{ color: '#4A5565', fontSize: '14px' }}
+                            >
+                              {translation('No sortable columns are enabled in grid properties')}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="px-3 py-2 mb-4 ">
+                                <div className="space-y-2 max-h-80 overflow-y-auto">
+                                  {sortDialogModel.length === 0 ? (
+                                    <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600">
+                                      {translation('No sort level configured yet')}
+                                    </div>
+                                  ) : (
+                                    sortDialogModel.map((rule, index) => (
+                                      <div
+                                        key={`${rule.colId}-${index}`}
+                                        className="flex items-center gap-2 px-2 py-2"
+                                      >
+                                        <span
+                                          className="w-14"
+                                          style={{ color: '#364153', fontSize: '14px' }}
+                                        >
+                                          {translation('Level')} {index + 1}
+                                        </span>
+                                        <select
+                                          className="min-w-0 flex-1 px-2 py-1"
+                                          style={{
+                                            backgroundColor: '#F3F3F5',
+                                            borderRadius: '8px',
+                                            height: '36px',
+                                            fontSize: '14px',
+                                            width: '256px',
+                                          }}
+                                          value={rule.colId}
+                                          onChange={(e) =>
+                                            updateSortLevelColumn(index, e.target.value)
+                                          }
+                                        >
+                                          {sortableColumns.map((column) => (
+                                            <option key={column.colId} value={column.colId}>
+                                              {column.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <select
+                                          className="w-28 rounded-md"
+                                          style={{
+                                            backgroundColor: '#F3F3F5',
+                                            borderRadius: '8px',
+                                            height: '36px',
+                                            width: '128px',
+                                            fontSize: '14px',
+                                          }}
+                                          value={rule.sort}
+                                          onChange={(e) =>
+                                            updateSortLevelDirection(
+                                              index,
+                                              (e.target.value as 'asc' | 'desc') || 'asc',
+                                            )
+                                          }
+                                        >
+                                          <option value="asc">{translation('Asc')}</option>
+                                          <option value="desc">{translation('Desc')}</option>
+                                        </select>
+                                        <button
+                                          type="button"
+                                          className=" border bg-white px-2 py-1"
+                                          style={{
+                                            height: '32px',
+                                            borderColor: '#0000001A',
+                                            borderRadius: '8px',
+                                            fontSize: '12px',
+                                          }}
+                                          onClick={() => removeSortLevel(index)}
+                                        >
+                                          {translation('Remove')}
+                                        </button>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                                <div className="mt-3 flex items-center justify-between pb-4">
+                                  <button
+                                    type="button"
+                                    style={{
+                                      height: '31px',
+                                      borderRadius: '8px',
+                                      borderColor: '#0000001A',
+                                      color: '#44444C',
+                                      fontSize: '12px',
+                                      fontWeight: 500,
+                                    }}
+                                    className="rounded-md border px-3 py-2 flex items-center justify-center"
+                                    onClick={addSortLevel}
+                                    disabled={sortableColumns.length === 0}
+                                  >
+                                    {translation('Add level')}
+                                  </button>
+                                </div>
+                              </div>
+                              <div
+                                className="flex justify-end align-end items-center gap-2 w-full p-4 "
+                                style={{ borderTop: '1px solid #E5E7EB' }}
+                              >
+                                <button
+                                  type="button"
+                                  className="rounded-md border px-3 py-2 flex items-center justify-center "
+                                  style={{
+                                    height: '31px',
+                                    borderRadius: '6px',
+                                    borderColor: '#0000001A',
+                                    color: '#44444C',
+                                    fontSize: '12px',
+                                  }}
+                                  onClick={clearAdvancedSorting}
+                                >
+                                  {translation('Clear')}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-md border  px-3 py-2 text-sm text-white flex text-center items-center justify-center"
+                                  onClick={applyAdvancedSorting}
+                                  style={{
+                                    background: '#2B5797',
+                                    height: '31px',
+                                    fontSize: '12px',
+                                  }}
+                                >
+                                  {translation('Apply sorting')}
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )
-              }
+              )}
             </>
           )}
-          <div className="records-count text-sm  flex justify-end gap-2 mt-2 mb-2 pr-4" ><span style={{ color: "#0A0A0A", fontSize: "12px", fontWeight: 400 }}>{_count}</span> <span style={{ color: "#717182", fontSize: "12px", fontWeight: 400 }}>{translation("records")}</span></div>
-          <div className='px-4 h-full'>
+          {showCopyActions && showCopyModeDialog && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+              onClick={() => setShowCopyModeDialog(false)}
+            >
+              <div
+                className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-slate-200 px-5 py-4">
+                  <div>
+                    <span
+                      className="text-sm tracking-wide"
+                      style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
+                    >
+                      {translation('COPY MODE')}
+                    </span>
+                    <span
+                      className="mt-1 block text-sm"
+                      style={{ color: '#4A5565', fontSize: '14px' }}
+                    >
+                      {translation('Choose how keyboard copy applies to the grid')}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center"
+                    style={{ color: '#6A7282' }}
+                    onClick={() => setShowCopyModeDialog(false)}
+                  >
+                    <IoMdClose />
+                  </button>
+                </div>
+                <div className="px-5 py-4">
+                  <div className="space-y-2">
+                    {(
+                      [
+                        { value: 'cells' as CopyMode, title: translation('Cells') },
+                        { value: 'rows' as CopyMode, title: translation('Rows') },
+                        { value: 'none' as CopyMode, title: translation('Nothing') },
+                      ] as const
+                    ).map((opt) => {
+                      const selected = copyModeDraft === opt.value;
+                      return (
+                        <label
+                          key={opt.value}
+                          className="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 transition-colors"
+                          style={{
+                            borderColor: selected ? '#2B5797' : '#E5E7EB',
+                            backgroundColor: selected ? '#F3F3F5' : '#FFFFFF',
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="aggrid-copy-mode"
+                            style={{ accentColor: '#2B5797' }}
+                            checked={selected}
+                            onChange={() => setCopyModeDraft(opt.value)}
+                          />
+                          <span
+                            className="min-w-0 flex-1 text-sm font-medium"
+                            style={{ color: '#0A0A0A' }}
+                          >
+                            {opt.title}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div
+                  className="flex w-full items-center justify-end gap-2 border-t border-slate-200 p-4"
+                  style={{ borderTop: '1px solid #E5E7EB' }}
+                >
+                  <button
+                    type="button"
+                    className="flex items-center justify-center rounded-md border px-3 py-2"
+                    style={{
+                      height: '31px',
+                      borderRadius: '6px',
+                      borderColor: '#0000001A',
+                      color: '#44444C',
+                      fontSize: '12px',
+                    }}
+                    onClick={() => setShowCopyModeDialog(false)}
+                  >
+                    {translation('Cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="flex items-center justify-center rounded-md border px-3 py-2 text-sm text-white"
+                    style={{
+                      background: '#2B5797',
+                      height: '31px',
+                      fontSize: '12px',
+                    }}
+                    onClick={() => {
+                      setCopyMode(copyModeDraft);
+                      setShowCopyModeDialog(false);
+                    }}
+                  >
+                    {translation('Apply')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {showRecordCount && (
+            <div className="records-count text-sm  flex justify-end gap-2 mt-2 mb-2 pr-4">
+              <span style={{ color: '#0A0A0A', fontSize: '12px', fontWeight: 400 }}>
+                {displayedRecordCount}
+              </span>{' '}
+              <span style={{ color: '#717182', fontSize: '12px', fontWeight: 400 }}>
+                {translation('records')}
+              </span>
+            </div>
+          )}
+          <div className="px-4 h-full">
             <AgGridReact
               ref={gridRef}
               columnDefs={colDefs}
@@ -1777,7 +2186,9 @@ const AgGrid: FC<IAgGridProps> = ({
                 enableSelectionWithoutKeys: multiSelection,
                 checkboxes: multiSelection,
                 copySelectedRows: copyMode === 'rows' && multiSelection,
+                ...(multiSelection ? { headerCheckbox: false as const } : {}),
               }}
+              selectionColumnDef={selectionColumnDef}
               cellSelection={copyMode === 'cells' && isCellSelectionAvailable}
               copyHeadersToClipboard={true}
               cacheBlockSize={100}
@@ -1793,20 +2204,21 @@ const AgGrid: FC<IAgGridProps> = ({
               onCellMouseOut={onCellMouseOut}
               onCellMouseOver={onCellMouseOver}
               onCellKeyDown={onCellKeyDown}
+              onCellSelectionChanged={onCellSelectionChanged}
               getRowClass={getRowClass}
               theme={theme}
               className={cn({ 'pointer-events-none opacity-40': disabled })}
               columnHoverHighlight={enableColumnHover}
             />
           </div>
-        </div >
+        </div>
       ) : (
         <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-purple-400 py-4 text-white">
           <p>Error</p>
         </div>
       )}
-    </div >
+    </div>
   );
-}
+};
 
 export default AgGrid;

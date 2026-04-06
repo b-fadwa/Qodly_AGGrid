@@ -243,6 +243,7 @@ export default {
     showToolbarSorting: true,
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
+    showRecordCount: true,
   },
 } as T4DComponentConfig<IAgGridProps>;
 
@@ -285,6 +286,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarSaveView?: boolean;
   /** Toolbar: Load / overwrite / delete saved views */
   showToolbarSavedViews?: boolean;
+  /** Show total row count below the toolbar (matches active filter / clone when filtering). */
+  showRecordCount?: boolean;
   rowCssField?: string;
 }
 
