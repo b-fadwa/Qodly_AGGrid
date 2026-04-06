@@ -149,10 +149,12 @@ const AgGrid: FC<IAgGridProps> = ({
             {showColumnActions && (
               <>
                 {showAnyToolbarSection && (
-                  <div className="grid-header flex items-start justify-between flex-wrap gap-4" style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
+                  <div className="grid-header flex items-start justify-between flex-wrap gap-4 " style={{ boxShadow: "0px 1px 3px 0px rgba(0, 0, 0, 0.1)" }}>
                     {showToolbarActions && (
-                      <div className="actions-section flex flex-col gap-2  rounded-lg  bg-white px-4 ">
-                        <span className="actions-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Actions")}</span>
+                      <div className="actions-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
+                        <span className="actions-title"
+                          style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
+                        >{translation("Actions")}</span>
                         <div className='flex flex-row gap-2'>
                           <div className="flex gap-2">
                             <Element
@@ -162,15 +164,17 @@ const AgGrid: FC<IAgGridProps> = ({
                             ></Element>
                           </div>
                           {showToolbarSorting && (
-                            <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
+                            <div className="sorting-section ">
                               <button
-                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
                                 onClick={openSortingDialog}
                                 style={{
+                                  width: "31px",
                                   height: "31px",
-                                  borderRadius: "6px",
+                                  borderRadius: "8px",
                                   borderColor: "#0000001A",
                                   color: "#44444C",
+                                  fontSize: "12px"
                                 }}
                                 disabled={sortableColumns.length === 0}
                               >
@@ -181,114 +185,121 @@ const AgGrid: FC<IAgGridProps> = ({
                         </div>
                       </div>
                     )}
-                    {showToolbarView && (
-                      <div className="customizer-section flex flex-col gap-2  rounded-lg  bg-white py-2 text-sm text-gray-800">
-                        <span className="customizer-title "
-                          style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}
-                        >{translation("View")}</span>
-                        <div className="flex gap-2">
-                          <button
-                            className="header-button-customize-view inline-flex items-center justify-center border"
-                            style={{
-                              width: "31px",
-                              height: "31px",
-                              borderRadius: "6px",
-                              borderColor: "#0000001A",
-                              color: "#44444C"
-                            }}
-                            onClick={() => setShowPropertiesDialog(true)}
-                          >
-                            <FaTableColumns size={14} />
-                          </button>
-                          <button
-                            className="header-button-reload-view inline-flex items-center justify-center border"
-                            style={{
-                              width: "31px",
-                              height: "31px",
-                              borderRadius: "6px",
-                              borderColor: "#0000001A",
-                              color: "#44444C"
-                            }}
-                          >
-                            <FaClockRotateLeft size={14} />
-                          </button>
+                    <div className="flex flex-row gap-2 flex-wrap" >
+                      {showToolbarView && (
+                        <div className='flex items-center gap-2 flex-wrap'>
+                          <div className="customizer-section flex flex-col gap-2 rounded-lg bg-white  py-2">
+                            <span className="customizer-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("View")}</span>
+                            <div className="flex gap-2">
+                              <button
+                                className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: "31px",
+                                  height: "31px",
+                                  borderRadius: "8px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C"
+                                }}
+                                onClick={() => setShowPropertiesDialog(true)}
+                              >
+                                <FaTableColumns size={14} />
+                              </button>
+                              <button
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: "31px",
+                                  height: "31px",
+                                  borderRadius: "8px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C"
+                                }}
+                              >
+                                <FaClockRotateLeft size={14} />
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    )}
-
-                    {showToolbarSaveView && (
-                      < div className="view-management flex flex-row ">
-                        <div className="view-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                          <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Save view")}</span>
-                          <div className="flex gap-2">
-                            <input type="text" placeholder={translation("View name")} className="view-input border px-4 py-2 text-sm" style={{
-                              height: "31px",
-                              borderRadius: "6px",
-                              borderColor: "#0000001A",
-                              color: "#44444C",
-                            }} />
-                            <button className='header-button inline-flex gap-2 items-center  border  bg-white px-4 py-2 text-sm font-medium '
-                              style={{
+                      )}
+                      {showToolbarSaveView && (
+                        <div className="view-management flex flex-row ">
+                          <div className="view-section flex flex-col gap-2 rounded-lg bg-white  py-2">
+                            <span className="view-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Save view")}</span>
+                            <div className="flex gap-2">
+                              <input type="text" placeholder={translation("View name")} className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800" style={{
                                 height: "31px",
                                 borderRadius: "6px",
                                 borderColor: "#0000001A",
                                 color: "#44444C",
-                              }}
-                            >{translation("Save new")}</button>
-                          </div>
-                        </div>
-                        {showToolbarSavedViews && (
-                          <div className="views-section  flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                            <span className="views-title" style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Saved views")}</span>
-                            <div className="flex gap-2">
-                              <select className="rounded-lg border px-4 py-2 text-sm "
+                              }} />
+                              <button className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                                 style={{
                                   height: "31px",
                                   borderRadius: "6px",
                                   borderColor: "#0000001A",
                                   color: "#44444C",
+                                  fontSize: "12px"
                                 }}
-                              >
-                                <option value="">{translation("Select view")}</option>
-                              </select>
-                              <button className='header-button inline-flex gap-2 items-center border  bg-white px-4 py-2 text-sm font-medium'
-                                style={{
-                                  height: "31px",
-                                  borderRadius: "6px",
-                                  borderColor: "#0000001A",
-                                  color: "#44444C",
-                                }}                        >
-                                {translation("Load")}</button>
-                              <button className='header-button inline-flex gap-2 items-center border bg-white px-4 py-2 text-sm font-medium '
-                                style={{
-                                  height: "31px",
-                                  borderRadius: "6px",
-                                  borderColor: "#0000001A",
-                                  color: "#44444C",
-                                }}
-                              >{translation("Overwrite")}</button>
-                              <button
-                                className="header-button-trash inline-flex items-center justify-center border"
-                                style={{
-                                  width: "31px",
-                                  height: "31px",
-                                  borderRadius: "6px",
-                                  color: "#EC7B80",
-                                  borderColor: "#EC7B80",
-                                  backgroundColor: "#EC7B8033",
-                                }}>
-                                <GoTrash size={14} /></button>
+                              >{translation("Save new")}</button>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    )}
+                          {showToolbarSavedViews && (
+                            <div className="views-section flex flex-col gap-2 rounded-lg bg-white px-2 py-2">
+                              <span className="views-title " style={{ color: "#717182", fontWeight: 500, fontSize: "11px" }}>{translation("Saved views")}</span>
+                              <div className="flex gap-2">
+                                <select className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                                  style={{
+                                    height: "31px",
+                                    borderRadius: "6px",
+                                    borderColor: "#0000001A",
+                                    color: "#44444C",
+                                    fontSize: "12px"
+                                  }}
+                                >
+                                  <option value="">{translation("Select view")}</option>
+                                </select>
+                                <button className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                  style={{
+                                    height: "31px",
+                                    borderRadius: "6px",
+                                    borderColor: "#0000001A",
+                                    color: "#44444C",
+                                    fontSize: "12px"
+                                  }}                        >
+                                  {translation("Load")}</button>
+                                <button className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                  style={{
+                                    height: "31px",
+                                    borderRadius: "6px",
+                                    borderColor: "#0000001A",
+                                    color: "#44444C",
+                                    fontSize: "12px"
+                                  }}
+                                >{translation("Overwrite")}</button>
+                                <button
+                                  className="header-button-trash inline-flex items-center justify-center rounded-lg border"
+                                  style={{
+                                    width: "31px",
+                                    height: "31px",
+                                    borderRadius: "8px",
+                                    color: "#EC7B80",
+                                    borderColor: "#EC7B80",
+                                    backgroundColor: "#EC7B8033",
+                                  }}>
+                                  <GoTrash size={14} /></button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
                 {/* columns customizer dialog */}
                 {showToolbarView && showPropertiesDialog && (
                   <div
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onClick={() => setShowPropertiesDialog(false)}
+                  >
                     <div
                       className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
                       onClick={(e) => e.stopPropagation()}
