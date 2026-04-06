@@ -511,7 +511,7 @@ const AgGrid: FC<IAgGridProps> = ({
             {showRecordCount && (
               <div className="records-count text-sm  flex justify-end gap-2  mt-2 mb-2 pr-4 " ><span style={{ color: "#0A0A0A", fontSize: "12px", fontWeight: 400 }}>0</span> <span style={{ color: "#717182", fontSize: "12px", fontWeight: 400 }}>{translation("records")}</span></div>
             )}
-            <div className='px-4 h-full'>
+            <div className='h-full'>
               <AgGridReact
                 rowData={rowData}
                 columnDefs={colDefs}
