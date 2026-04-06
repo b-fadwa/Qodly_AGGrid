@@ -2169,7 +2169,7 @@ const AgGrid: FC<IAgGridProps> = ({
               </span>
             </div>
           )}
-          <div className="px-4 h-full">
+          <div className="h-full">
             <AgGridReact
               ref={gridRef}
               columnDefs={colDefs}

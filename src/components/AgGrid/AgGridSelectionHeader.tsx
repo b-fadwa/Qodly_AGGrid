@@ -43,10 +43,11 @@ const AgGridSelectionHeader = forwardRef<{ refresh: () => boolean }, AgGridSelec
     const [indeterminate, setIndeterminate] = useState(false);
 
     const sync = useCallback(() => {
+      if (api.isDestroyed()) return;
       const next = compute();
       setAllSelected(next.allSelected);
       setIndeterminate(next.indeterminate);
-    }, [compute]);
+    }, [api, compute]);
 
     useEffect(() => {
       if (!showSelectAllCheckbox) return;
@@ -59,13 +60,15 @@ const AgGridSelectionHeader = forwardRef<{ refresh: () => boolean }, AgGridSelec
     }, [indeterminate]);
 
     useEffect(() => {
-      if (!showSelectAllCheckbox) return;
+      if (!showSelectAllCheckbox || api.isDestroyed()) return;
       const handler = () => sync();
       api.addEventListener('selectionChanged', handler);
       api.addEventListener('modelUpdated', handler);
       return () => {
-        api.removeEventListener('selectionChanged', handler);
-        api.removeEventListener('modelUpdated', handler);
+        if (!api.isDestroyed()) {
+          api.removeEventListener('selectionChanged', handler);
+          api.removeEventListener('modelUpdated', handler);
+        }
       };
     }, [api, sync, showSelectAllCheckbox]);
 
@@ -73,14 +76,15 @@ const AgGridSelectionHeader = forwardRef<{ refresh: () => boolean }, AgGridSelec
       ref,
       () => ({
         refresh: () => {
-          if (showSelectAllCheckbox) sync();
+          if (showSelectAllCheckbox && !api.isDestroyed()) sync();
           return true;
         },
       }),
-      [showSelectAllCheckbox, sync],
+      [showSelectAllCheckbox, sync, api],
     );
 
     const onChange = () => {
+      if (api.isDestroyed()) return;
       if (allSelected) {
         api.deselectAll();
         return;
