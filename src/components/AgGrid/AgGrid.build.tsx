@@ -173,7 +173,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                   height: "31px",
                                   borderRadius: "8px",
                                   borderColor: "#0000001A",
-                                  color: "#44444C"
+                                  color: "#44444C",
+                                  fontSize: "12px"
                                 }}
                                 disabled={sortableColumns.length === 0}
                               >
