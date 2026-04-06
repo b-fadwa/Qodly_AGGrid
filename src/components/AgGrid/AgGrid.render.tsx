@@ -1137,6 +1137,15 @@ const AgGrid: FC<IAgGridProps> = ({
         let length = 0;
         let rowData: any[] = [];
         if (!isEqual(rowParams.filterModel, {})) {
+          // Unfiltered getRows uses `ds` only; `searchDs.entitysel` would stay narrowed after a prior
+          // filter. Re-sync from the main DS so each filter applies to the full current selection.
+          if (ds && searchDs) {
+            const mainSel = (ds as any).entitysel;
+            if (mainSel != null) {
+              (searchDs as any).entitysel = mainSel;
+            }
+          }
+
           const filterQueries = buildFilterQueries(rowParams.filterModel, columns);
           const queryStr = filterQueries.filter(Boolean).join(' AND ');
 
