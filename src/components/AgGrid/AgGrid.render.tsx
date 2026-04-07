@@ -232,6 +232,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
   const prevSortModelRef = useRef<SortModelItem[]>([]);
+  /** Skip persisting to `state` while we apply datasource → grid (avoids echo with external updates). */
+  const applyingExternalStateRef = useRef(false);
   const gridRef = useRef<AgGridReact>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState<number | null>(null);
@@ -470,23 +472,6 @@ const AgGrid: FC<IAgGridProps> = ({
     };
   }, [currentSelectionDS]);
 
-  // Re-apply filterModel when state object is updated externally (e.g. 4D clears filters).
-  useEffect(() => {
-    if (!stateDS) return;
-    const listener = async () => {
-      const api = gridRef.current?.api;
-      if (!api) return;
-      const data = await stateDS.getValue();
-      if (data != null && typeof data === 'object' && 'filterModel' in data) {
-        applyGridFilterModel(api, data.filterModel);
-      }
-    };
-    stateDS.addListener('changed', listener);
-    return () => {
-      stateDS.removeListener('changed', listener);
-    };
-  }, [stateDS]);
-
   //very initial state of columns
   const initialColumnVisibility = useMemo(
     () =>
@@ -641,6 +626,75 @@ const AgGrid: FC<IAgGridProps> = ({
     },
     [normalizeSortModel],
   );
+
+  /** Apply `state` datasource snapshot to the grid (same rules as initial `getState`). Returns whether columnState from store was applied. */
+  const applyPersistedStateFromDsValue = useCallback(
+    (api: GridApi, dsValue: any): boolean => {
+      if (!dsValue || typeof dsValue !== 'object') return false;
+      const cols = columnsRef.current;
+      if (hasMeaningfulColumnState(dsValue.columnState)) {
+        const mergedForSort = enrichColumnStateWithSource(dsValue.columnState, cols);
+        api.applyColumnState({
+          state: columnStateForAgGridApply(mergedForSort),
+          applyOrder: true,
+        });
+        if ('filterModel' in dsValue) {
+          applyGridFilterModel(api, dsValue.filterModel);
+        }
+        const stateSortModel = dsValue.sortModel
+          ? normalizeSortModel(dsValue.sortModel)
+          : buildSortModelFromColumnState(mergedForSort);
+        setAdvancedSortModel(stateSortModel);
+        prevSortModelRef.current = stateSortModel;
+        const updatedVisibility = dsValue.columnState.map((col: any) => ({
+          field: col.colId,
+          isHidden: col.hide || false,
+          pinned: col.pinned || null,
+        }));
+        setColumnVisibility(updatedVisibility);
+        return true;
+      }
+      if ('filterModel' in dsValue) {
+        applyGridFilterModel(api, dsValue.filterModel);
+      }
+      if (dsValue.sortModel) {
+        applySortModelToGrid(dsValue.sortModel, api);
+      }
+      const stateSortModel = dsValue.sortModel
+        ? normalizeSortModel(dsValue.sortModel)
+        : buildSortModelFromColumnState(api.getColumnState());
+      setAdvancedSortModel(stateSortModel);
+      prevSortModelRef.current = stateSortModel;
+      return false;
+    },
+    [
+      applySortModelToGrid,
+      buildSortModelFromColumnState,
+      normalizeSortModel,
+    ],
+  );
+
+  // Re-apply column/sort/filter when `state` is updated externally (e.g. 4D after onLoadState).
+  useEffect(() => {
+    if (!stateDS) return;
+    const listener = async () => {
+      const api = gridRef.current?.api;
+      if (!api) return;
+      const data = await stateDS.getValue();
+      applyingExternalStateRef.current = true;
+      try {
+        applyPersistedStateFromDsValue(api, data);
+      } finally {
+        setTimeout(() => {
+          applyingExternalStateRef.current = false;
+        }, 0);
+      }
+    };
+    stateDS.addListener('changed', listener);
+    return () => {
+      stateDS.removeListener('changed', listener);
+    };
+  }, [stateDS, applyPersistedStateFromDsValue]);
 
   const theme = themeQuartz.withParams({
     spacing,
@@ -933,6 +987,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const onStateUpdated = useCallback(
     (params: StateUpdatedEvent) => {
       if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
+      if (applyingExternalStateRef.current) return;
       if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
         const columnState = params.api.getColumnState();
         const filterModel = params.api.getFilterModel();
@@ -946,9 +1001,6 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const getState = useCallback(
     async (params: any) => {
-      let appliedFromStore = false;
-      const cols = columnsRef.current;
-
       const seedInitialPersist = () => {
         const columnState = params.api.getColumnState();
         const filterModel = params.api.getFilterModel() ?? {};
@@ -960,35 +1012,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
       if (stateDS) {
         const dsValue = await stateDS?.getValue();
-        let mergedForSort: any[] | null = null;
-        if (dsValue && hasMeaningfulColumnState(dsValue.columnState)) {
-          appliedFromStore = true;
-          mergedForSort = enrichColumnStateWithSource(dsValue.columnState, cols);
-          params.api.applyColumnState({
-            state: columnStateForAgGridApply(mergedForSort),
-            applyOrder: true,
-          });
-          if (dsValue != null && typeof dsValue === 'object' && 'filterModel' in dsValue) {
-            applyGridFilterModel(params.api, dsValue.filterModel);
-          }
-          const stateSortModel = dsValue.sortModel
-            ? normalizeSortModel(dsValue.sortModel)
-            : buildSortModelFromColumnState(mergedForSort);
-          setAdvancedSortModel(stateSortModel);
-          prevSortModelRef.current = stateSortModel;
-        } else {
-          if (dsValue != null && typeof dsValue === 'object' && 'filterModel' in dsValue) {
-            applyGridFilterModel(params.api, dsValue.filterModel);
-          }
-          if (dsValue?.sortModel) {
-            applySortModelToGrid(dsValue.sortModel, params.api);
-          }
-          const stateSortModel = dsValue?.sortModel
-            ? normalizeSortModel(dsValue.sortModel)
-            : buildSortModelFromColumnState(params.api.getColumnState());
-          setAdvancedSortModel(stateSortModel);
-          prevSortModelRef.current = stateSortModel;
-        }
+        const appliedFromStore = applyPersistedStateFromDsValue(params.api, dsValue);
         if (!appliedFromStore) {
           seedInitialPersist();
         }
@@ -996,13 +1020,7 @@ const AgGrid: FC<IAgGridProps> = ({
         seedInitialPersist();
       }
     },
-    [
-      applySortModelToGrid,
-      buildSortModelFromColumnState,
-      normalizeSortModel,
-      persistGridState,
-      stateDS,
-    ],
+    [applyPersistedStateFromDsValue, buildSortModelFromColumnState, persistGridState, stateDS],
   );
 
   const applySorting = useCallback(
