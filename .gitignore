@@ -32,3 +32,5 @@ qodly_*.zip
 .env
 .env.*
 !.env.example
+
+.agents
