@@ -102,6 +102,10 @@ export default {
         value: 'onsavestate',
       },
       {
+        label: 'On Load State (Load saved view)',
+        value: 'onloadstate',
+      },
+      {
         label: 'On Update State',
         value: 'onupdatestate',
       },

@@ -219,6 +219,7 @@ const AgGrid: FC<IAgGridProps> = ({
       'oncellmouseout',
       'oncellmousedown',
       'onsavestate',
+      'onloadstate',
       'onupdatestate',
       'ondeletestate',
     ],
@@ -1375,6 +1376,13 @@ const AgGrid: FC<IAgGridProps> = ({
         }));
         setColumnVisibility(updatedVisibility);
       }
+      emit('onloadstate', {
+        columnState: view.columnState,
+        filterModel: view.filterModel,
+        sortModel: view.sortModel,
+        selectedView,
+        view,
+      });
     }
   };
 
