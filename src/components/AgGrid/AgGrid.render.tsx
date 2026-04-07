@@ -136,12 +136,39 @@ function applyGridFilterModel(api: GridApi, filterModel: any): void {
   api.setFilterModel(desired === null ? null : filterModel);
 }
 
+/** Toolbar / saved-view row: unify `name` (toolbar) with backend `title` + `id`. */
+function normalizeToolbarView(raw: any): any | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const nameFromName = typeof raw.name === 'string' ? raw.name.trim() : '';
+  const nameFromTitle = typeof raw.title === 'string' ? raw.title.trim() : '';
+  const nameFromId = raw.id != null && raw.id !== '' ? String(raw.id) : '';
+  const name = nameFromName || nameFromTitle || nameFromId;
+  if (!name) return null;
+  return { ...raw, name };
+}
+
+function viewsListFromDatasourceValue(value: unknown): any[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeToolbarView).filter(Boolean);
+}
+
 type CopyMode = 'cells' | 'rows' | 'none';
+
+/** Toolbar-saved row or backend metadata (`webListViews`) merged with optional grid snapshot. */
+type SavedGridView = {
+  name: string;
+  title?: string;
+  id?: string | number;
+  columnState?: any;
+  filterModel?: any;
+  sortModel?: SortModelItem[];
+};
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
   columns,
   state = '',
+  states = '',
   currentSelection = '',
   spacing,
   accentColor,
@@ -168,7 +195,6 @@ const AgGrid: FC<IAgGridProps> = ({
   rowCssField,
   style,
   disabled = false,
-  saveLocalStorage,
   showColumnActions,
   showToolbarActions = true,
   showToolbarView = true,
@@ -193,6 +219,8 @@ const AgGrid: FC<IAgGridProps> = ({
       'oncellmouseout',
       'oncellmousedown',
       'onsavestate',
+      'onupdatestate',
+      'ondeletestate',
     ],
   });
   const { resolver } = useEnhancedEditor(selectResolver);
@@ -253,6 +281,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const path = useWebformPath();
   const stateDS = window.DataSource.getSource(state, path);
+  const statesDS = states ? window.DataSource.getSource(states, path) : null;
   const currentSelectionDS = window.DataSource.getSource(currentSelection, path);
 
   const [selected, setSelected] = useState(-1);
@@ -290,9 +319,7 @@ const AgGrid: FC<IAgGridProps> = ({
   // views management
   const [viewName, setViewName] = useState<string>('');
   // view = name + columnState + filterModel + sortModel
-  const [savedViews, setSavedViews] = useState<
-    { name: string; columnState?: any; filterModel?: any; sortModel?: SortModelItem[] }[]
-  >([]);
+  const [savedViews, setSavedViews] = useState<SavedGridView[]>([]);
   const [selectedView, setSelectedView] = useState<string>('');
   const [_advancedSortModel, setAdvancedSortModel] = useState<SortModelItem[]>([]);
   const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
@@ -370,22 +397,60 @@ const AgGrid: FC<IAgGridProps> = ({
     gridRef.current?.api?.refreshCells({ force: true });
   }, [copyMode, isCellSelectionAvailable, manualSelectedCells, showCopyActions]);
 
-  // Load saved views from localStorage/stateDS on init
+  // Load saved views: prefer `states` datasource; migrate legacy `state.savedViews` once.
   useEffect(() => {
-    if (saveLocalStorage) {
-      const stored = localStorage.getItem(`savedViews_${nodeID}`);
-      if (stored) {
-        setSavedViews(JSON.parse(stored));
-      }
-    } else if (stateDS) {
-      // Load from stateDS the saved views
-      stateDS.getValue().then((data: any) => {
-        if (data && data.savedViews) {
-          setSavedViews(data.savedViews);
+    let cancelled = false;
+    (async () => {
+      if (statesDS) {
+        try {
+          let list = await statesDS.getValue();
+          let views = viewsListFromDatasourceValue(list);
+          if (views.length === 0 && stateDS) {
+            const st = await stateDS.getValue();
+            const legacy = st?.savedViews;
+            if (Array.isArray(legacy) && legacy.length > 0) {
+              views = viewsListFromDatasourceValue(legacy);
+              await statesDS.setValue(null, views);
+              if (st && typeof st === 'object') {
+                const { savedViews: _removed, ...rest } = st as any;
+                await stateDS.setValue(null, rest);
+              }
+            }
+          }
+          if (!cancelled) setSavedViews(views);
+        } catch {
+          if (!cancelled) setSavedViews([]);
         }
-      });
-    }
-  }, []);
+      } else if (stateDS) {
+        try {
+          const data = await stateDS.getValue();
+          if (!cancelled && data?.savedViews) setSavedViews(data.savedViews);
+        } catch {
+          /* ignore */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stateDS, statesDS]);
+
+  // External updates to `states` (e.g. after 4D loadSavedViews).
+  useEffect(() => {
+    if (!statesDS) return;
+    const listener = async () => {
+      try {
+        const list = await statesDS.getValue();
+        setSavedViews(viewsListFromDatasourceValue(list));
+      } catch {
+        setSavedViews([]);
+      }
+    };
+    statesDS.addListener('changed', listener);
+    return () => {
+      statesDS.removeListener('changed', listener);
+    };
+  }, [statesDS]);
 
   //to deselct if current selection ds value is cleared from outside
   useEffect(() => {
@@ -406,7 +471,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   // Re-apply filterModel when state object is updated externally (e.g. 4D clears filters).
   useEffect(() => {
-    if (!stateDS || saveLocalStorage) return;
+    if (!stateDS) return;
     const listener = async () => {
       const api = gridRef.current?.api;
       if (!api) return;
@@ -419,7 +484,7 @@ const AgGrid: FC<IAgGridProps> = ({
     return () => {
       stateDS.removeListener('changed', listener);
     };
-  }, [stateDS, saveLocalStorage]);
+  }, [stateDS]);
 
   //very initial state of columns
   const initialColumnVisibility = useMemo(
@@ -846,25 +911,22 @@ const AgGrid: FC<IAgGridProps> = ({
   const persistGridState = useCallback(
     (columnState: any[], filterModel: any, sortModel: SortModelItem[]) => {
       const enriched = enrichColumnStateWithSource(columnState, columnsRef.current);
-      if (saveLocalStorage) {
-        localStorage.setItem(
-          `gridState_${nodeID}`,
-          JSON.stringify({ columnState: enriched, filterModel, sortModel }),
-        );
-      } else if (stateDS) {
+      if (stateDS) {
         stateDS.getValue().then((currentData: any) => {
           const gridData = {
-            ...currentData,
+            ...(currentData && typeof currentData === 'object' ? currentData : {}),
             columnState: enriched,
             filterModel,
             sortModel,
           };
+          if (statesDS) {
+            delete (gridData as any).savedViews;
+          }
           stateDS.setValue(null, gridData);
         });
       }
-      emit('onsavestate', { columnState: enriched, filterModel, sortModel });
     },
-    [emit, nodeID, saveLocalStorage, stateDS],
+    [stateDS, statesDS],
   );
 
   const onStateUpdated = useCallback(
@@ -895,39 +957,7 @@ const AgGrid: FC<IAgGridProps> = ({
         persistGridState(columnState, filterModel, sortModel);
       };
 
-      if (saveLocalStorage) {
-        const storedState = localStorage.getItem(`gridState_${nodeID}`);
-        if (storedState) {
-          const parsedState = JSON.parse(storedState);
-          let mergedForSort: any[] | null = null;
-          if (hasMeaningfulColumnState(parsedState?.columnState)) {
-            appliedFromStore = true;
-            mergedForSort = enrichColumnStateWithSource(parsedState.columnState, cols);
-            params.api.applyColumnState({
-              state: columnStateForAgGridApply(mergedForSort),
-              applyOrder: true,
-            });
-          }
-          if (
-            parsedState != null &&
-            typeof parsedState === 'object' &&
-            'filterModel' in parsedState
-          ) {
-            applyGridFilterModel(params.api, parsedState.filterModel);
-          }
-          const stateSortModel = parsedState?.sortModel
-            ? normalizeSortModel(parsedState.sortModel)
-            : buildSortModelFromColumnState(mergedForSort ?? params.api.getColumnState());
-          setAdvancedSortModel(stateSortModel);
-          prevSortModelRef.current = stateSortModel;
-          if (parsedState?.sortModel && !hasMeaningfulColumnState(parsedState?.columnState)) {
-            applySortModelToGrid(parsedState.sortModel, params.api);
-          }
-        }
-        if (!appliedFromStore) {
-          seedInitialPersist();
-        }
-      } else if (stateDS) {
+      if (stateDS) {
         const dsValue = await stateDS?.getValue();
         let mergedForSort: any[] | null = null;
         if (dsValue && hasMeaningfulColumnState(dsValue.columnState)) {
@@ -961,15 +991,15 @@ const AgGrid: FC<IAgGridProps> = ({
         if (!appliedFromStore) {
           seedInitialPersist();
         }
+      } else {
+        seedInitialPersist();
       }
     },
     [
       applySortModelToGrid,
       buildSortModelFromColumnState,
-      nodeID,
       normalizeSortModel,
       persistGridState,
-      saveLocalStorage,
       stateDS,
     ],
   );
@@ -1280,25 +1310,45 @@ const AgGrid: FC<IAgGridProps> = ({
     const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
     const filterModel = gridRef.current?.api?.getFilterModel();
     const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
-    const newView = { name: viewName, columnState, filterModel, sortModel };
+    const newView = { name: viewName.trim(), columnState, filterModel, sortModel };
     const updatedViews: any = [...savedViews, newView];
     setSavedViews(updatedViews);
-    if (saveLocalStorage) {
-      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
-    } else if (stateDS) {
+    if (statesDS) {
+      statesDS.setValue(null, updatedViews);
+    }
+    if (stateDS) {
       stateDS.getValue().then((currentData: any) => {
-        const gridData = {
-          ...currentData,
-          savedViews: updatedViews,
-        };
-        stateDS.setValue(null, gridData);
+        const base = currentData && typeof currentData === 'object' ? { ...currentData } : {};
+        if (statesDS) {
+          delete (base as any).savedViews;
+          stateDS.setValue(null, {
+            ...base,
+            columnState,
+            filterModel,
+            sortModel,
+          });
+        } else {
+          stateDS.setValue(null, { ...base, savedViews: updatedViews });
+        }
       });
     }
+    emit('onsavestate', {
+      columnState,
+      filterModel,
+      sortModel,
+      name: newView.name,
+      view: newView,
+    });
     setViewName('');
   };
 
   const loadView = () => {
-    const view: any = savedViews.find((view) => view.name === selectedView);
+    const view: any = savedViews.find(
+      (v) =>
+        v.name === selectedView ||
+        v.title === selectedView ||
+        (v.id != null && String(v.id) === selectedView),
+    );
     if (!view) return;
     if (gridRef.current?.api) {
       if (view.columnState) {
@@ -1328,46 +1378,67 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   };
 
-  const deleteView = () => {
-    const updatedViews = savedViews.filter((view) => view.name !== selectedView);
-    setSavedViews(updatedViews);
-    if (saveLocalStorage) {
-      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
-    } else if (stateDS) {
-      stateDS.getValue().then((currentData: any) => {
-        const gridData = {
-          ...currentData,
-          savedViews: updatedViews,
-        };
-        stateDS.setValue(null, gridData);
-      });
-    }
-    resetColumnview();
+  /** Emits only — dev removes the row (e.g. server + refresh `states` datasource). */
+  const requestDeleteView = () => {
+    if (!selectedView.trim()) return;
+    const view = savedViews.find(
+      (v) =>
+        v.name === selectedView ||
+        v.title === selectedView ||
+        (v.id != null && String(v.id) === selectedView),
+    );
+    emit('ondeletestate', { selectedView, view });
   };
 
   const updateView = () => {
+    if (!selectedView.trim()) return;
     const rawState = gridRef.current?.api?.getColumnState() ?? [];
     const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
     const filterModel = gridRef.current?.api?.getFilterModel();
     const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
     const updatedViews = savedViews.map((view) => {
-      if (view.name === selectedView) {
-        return { ...view, columnState, filterModel, sortModel };
+      const matches =
+        view.name === selectedView ||
+        view.title === selectedView ||
+        (view.id != null && String(view.id) === selectedView);
+      if (matches) {
+        return { ...view, name: view.name || view.title || String(view.id), columnState, filterModel, sortModel };
       }
       return view;
     });
     setSavedViews(updatedViews);
-    if (saveLocalStorage) {
-      localStorage.setItem(`savedViews_${nodeID}`, JSON.stringify(updatedViews));
-    } else if (stateDS) {
+    if (statesDS) {
+      statesDS.setValue(null, updatedViews);
+    }
+    if (stateDS) {
       stateDS.getValue().then((currentData: any) => {
-        const gridData = {
-          ...currentData,
-          savedViews: updatedViews,
-        };
-        stateDS.setValue(null, gridData);
+        const base = currentData && typeof currentData === 'object' ? { ...currentData } : {};
+        if (statesDS) {
+          delete (base as any).savedViews;
+          stateDS.setValue(null, {
+            ...base,
+            columnState,
+            filterModel,
+            sortModel,
+          });
+        } else {
+          stateDS.setValue(null, { ...base, savedViews: updatedViews });
+        }
       });
     }
+    const updatedRow = updatedViews.find(
+      (v) =>
+        v.name === selectedView ||
+        v.title === selectedView ||
+        (v.id != null && String(v.id) === selectedView),
+    );
+    emit('onupdatestate', {
+      columnState,
+      filterModel,
+      sortModel,
+      selectedView,
+      view: updatedRow,
+    });
   };
 
   const normalizedColumns = useMemo(
@@ -1684,7 +1755,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   color: '#44444C',
                                 }}
                               >
-                                {translation('Overwrite')}
+                                {translation('Update')}
                               </button>
                               <button
                                 className="header-button-trash inline-flex items-center justify-center rounded-lg border"
@@ -1696,7 +1767,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderColor: '#EC7B80',
                                   backgroundColor: '#EC7B8033',
                                 }}
-                                onClick={() => deleteView()}
+                                onClick={() => requestDeleteView()}
                               >
                                 <GoTrash size={14} />
                               </button>

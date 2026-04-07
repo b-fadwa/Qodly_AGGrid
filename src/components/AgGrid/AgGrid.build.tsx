@@ -267,7 +267,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderColor: "#0000001A",
                                   color: "#44444C",
                                 }}
-                              >{translation("Overwrite")}</button>
+                              >{translation("Update")}</button>
                               <button
                                 className="header-button-trash inline-flex items-center justify-center border"
                                 style={{
