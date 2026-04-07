@@ -54,6 +54,7 @@ export default {
         { name: 'datasource', require: true, isDatasource: true },
         { name: 'currentElement', require: false, isDatasource: false },
         { name: 'state', require: false, isDatasource: false },
+        { name: 'states', require: false, isDatasource: false },
       ],
     },
     displayName: 'AgGrid',
@@ -97,18 +98,42 @@ export default {
         value: 'oncellmousedown',
       },
       {
-        label: 'On SaveState',
+        label: 'On Save State (Save new view)',
         value: 'onsavestate',
+      },
+      {
+        label: 'On Load State (Load saved view)',
+        value: 'onloadstate',
+      },
+      {
+        label: 'On Update State',
+        value: 'onupdatestate',
+      },
+      {
+        label: 'On Delete State (saved view)',
+        value: 'ondeletestate',
       },
     ],
     datasources: {
       declarations: (props) => {
-        const { columns, currentElement = '', datasource = '' } = props;
+        const {
+          columns,
+          currentElement = '',
+          datasource = '',
+          state = '',
+          states = '',
+        } = props as IExostiveElementProps & { state?: string; states?: string };
         const declarations: T4DComponentDatasourceDeclaration[] = [
           { path: datasource, iterable: true },
         ];
         if (currentElement) {
           declarations.push({ path: currentElement });
+        }
+        if (state) {
+          declarations.push({ path: state });
+        }
+        if (states) {
+          declarations.push({ path: states, iterable: true });
         }
         if (columns) {
           const { id: ds, namespace } = splitDatasourceID(datasource?.trim()) || {};
@@ -210,9 +235,9 @@ export default {
   defaultProps: {
     columns: [],
     state: '',
+    states: '',
     currentSelection: '',
     multiSelection: false,
-    saveLocalStorage: false,
     style: {
       height: '600px',
     },
@@ -243,15 +268,18 @@ export default {
     showToolbarSorting: true,
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
+    showRecordCount: true,
   },
 } as T4DComponentConfig<IAgGridProps>;
 
 export interface IAgGridProps extends webforms.ComponentProps {
   columns: IColumn[];
+  /** Scalar object: live columnState / filterModel / sortModel (+ optional embedded savedViews). */
   state?: string;
+  /** Scalar array: catalog of saved grid states (e.g. from server); separate from `state`. */
+  states?: string;
   currentSelection?: string;
   multiSelection: boolean;
-  saveLocalStorage: boolean;
   spacing: string;
   accentColor: string;
   backgroundColor: string;
@@ -285,6 +313,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarSaveView?: boolean;
   /** Toolbar: Load / overwrite / delete saved views */
   showToolbarSavedViews?: boolean;
+  /** Show total row count below the toolbar (matches active filter / clone when filtering). */
+  showRecordCount?: boolean;
   rowCssField?: string;
 }
 

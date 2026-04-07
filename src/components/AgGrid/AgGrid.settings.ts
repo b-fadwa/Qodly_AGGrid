@@ -126,6 +126,12 @@ const dataAccessSettings: TSetting[] = [
     key: 'showCopyActions',
   },
   {
+    label: 'Show record count',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showRecordCount',
+  },
+  {
     label: 'Toolbar: Actions',
     defaultValue: true,
     type: ESetting.CHECKBOX,
@@ -157,14 +163,13 @@ const dataAccessSettings: TSetting[] = [
   },
   {
     key: 'state',
-    label: 'State Source',
+    label: 'Grid state (current)',
     type: ESetting.DS_AUTO_SUGGEST,
   },
   {
-    key: 'saveLocalStorage',
-    label: 'Save In Local Storage',
-    type: ESetting.CHECKBOX,
-    defaultValue: false,
+    key: 'states',
+    label: 'Saved states list',
+    type: ESetting.DS_AUTO_SUGGEST,
   },
   {
     key: 'rowCssField',
