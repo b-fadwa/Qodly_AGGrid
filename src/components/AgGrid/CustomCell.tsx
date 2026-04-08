@@ -11,13 +11,13 @@ const CustomCell = ({
   format: any;
   dataType: string;
   value: any;
-  colDef?: { field?: string; headerName?: string };
+  colDef?: { field?: string; headerName?: string; source?: string };
 }) => {
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
 
   const translateFromHeader = (input: any): any => {
-    const headerKey = colDef?.headerName ?? colDef?.field ?? '';
+    const headerKey = colDef?.source ?? colDef?.headerName ?? colDef?.field ?? '';
     const match = typeof headerKey === 'string' ? headerKey.match(/_r_(16\d{3})/i) : null;
     if (!match || input === undefined || input === null || input === '') {
       return input;
