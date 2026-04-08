@@ -105,6 +105,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     () =>
       columns.map((col) => ({
         field: col.title,
+        source: col.source,
         hide: !!col.hidden,
         editable: !disabled && col.editable === true,
         sortable: !!col.sorting,
