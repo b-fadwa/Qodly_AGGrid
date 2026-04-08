@@ -495,6 +495,7 @@ const AgGrid: FC<IAgGridProps> = ({
       const isBooleanColumn = isBooleanLikeColumn(col);
       return {
         field: col.title,
+        source: col.source,
         hide: colState.isHidden,
         pinned: colState.pinned,
         cellRendererParams: {
