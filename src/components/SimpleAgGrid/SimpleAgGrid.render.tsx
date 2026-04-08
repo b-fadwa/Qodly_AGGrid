@@ -224,6 +224,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   const colDefs: ColDef[] = useMemo(() => {
     const dataCols = columns.map((col) => ({
       field: col.title,
+      source: col.source,
       hide: !!col.hidden,
       editable: (params: any) =>
         enableAddNewRow && col.editable !== false && !!params.data?.__isInputRow,
