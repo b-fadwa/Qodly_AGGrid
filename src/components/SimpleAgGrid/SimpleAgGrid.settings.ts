@@ -112,6 +112,12 @@ const dataAccessSettings: TSetting[] = [
     defaultValue: true,
   },
   {
+    key: 'showRowNumbers',
+    label: 'Show row numbers',
+    type: ESetting.CHECKBOX,
+    defaultValue: false,
+  },
+  {
     key: 'serverSideRef',
     label: 'Server Side',
     type: ESetting.TEXT_FIELD,

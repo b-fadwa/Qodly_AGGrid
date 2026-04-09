@@ -197,6 +197,7 @@ export default {
     enableAddNewRow: true,
     showFooter: true,
     enableRowDrag: true,
+    showRowNumbers: false,
   },
 } as T4DComponentConfig<ISimpleAgGridProps>;
 
@@ -221,6 +222,8 @@ export interface ISimpleAgGridProps extends webforms.ComponentProps {
   showFooter: boolean;
   /** When false, row reorder drag-and-drop is disabled. */
   enableRowDrag: boolean;
+  /** Pinned left row index column (not part of Columns). */
+  showRowNumbers?: boolean;
 }
 
 export interface ISimpleColumn {

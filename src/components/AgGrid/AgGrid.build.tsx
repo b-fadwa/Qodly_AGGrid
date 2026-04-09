@@ -43,6 +43,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
   showRecordCount = true,
+  showRowNumbers = false,
   style,
   className,
   classNames = [],
@@ -52,7 +53,27 @@ const AgGrid: FC<IAgGridProps> = ({
   } = useEnhancedNode();
   const { resolver } = useEnhancedEditor(selectResolver);
 
-  const colDefs: ColDef[] = columns.map((col) => ({ field: col.title }));
+  const colDefs: ColDef[] = useMemo(() => {
+    const userCols = columns.map((col) => ({ field: col.title }));
+    if (!showRowNumbers) return userCols;
+    return [
+      {
+        colId: '__qodlyRowNumber',
+        headerName: '#',
+        valueGetter: (p: any) =>
+          typeof p.node?.rowIndex === 'number' ? p.node.rowIndex + 1 : '',
+        width: 58,
+        maxWidth: 72,
+        flex: 0,
+        pinned: 'left' as const,
+        lockPinned: true,
+        lockPosition: 'left' as const,
+        suppressMovable: true,
+        sortable: false,
+      },
+      ...userCols,
+    ];
+  }, [columns, showRowNumbers]);
   const defaultColDef = useMemo<ColDef>(() => {
     return {
       flex: 1,

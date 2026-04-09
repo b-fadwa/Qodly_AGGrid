@@ -29,6 +29,7 @@ import {
   buildManualSelectedCellsClipboardText,
   buildSelectedCellRangesClipboardText,
   buildSelectedRowsClipboardText,
+  getFirstDataColumnForCopy,
   isEditableTarget,
   isCopyShortcut,
   type TManualSelectedCell,
@@ -44,6 +45,7 @@ import {
   ColDef,
   GridApi,
   GridReadyEvent,
+  ICellRendererParams,
   IGetRowsParams,
   SortModelItem,
   StateUpdatedEvent,
@@ -81,6 +83,18 @@ ModuleRegistry.registerModules([
   NumberFilterModule,
   DateFilterModule,
 ]);
+
+/** Synthetic row index column — excluded from Columns config and persisted grid state. */
+const ROW_NUMBER_COL_ID = '__qodlyRowNumber';
+
+function withoutSyntheticRowColumnState(columnState: any[] | undefined | null): any[] {
+  if (!Array.isArray(columnState)) return [];
+  return columnState.filter((s) => s && s.colId !== ROW_NUMBER_COL_ID);
+}
+
+const RowNumberCell: FC<ICellRendererParams> = (params) => (
+  <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>{params.value ?? ''}</span>
+);
 
 function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
   const bySource = cols.find((c) => c.source === field);
@@ -205,6 +219,7 @@ const AgGrid: FC<IAgGridProps> = ({
   classNames = [],
   showCopyActions,
   showRecordCount = true,
+  showRowNumbers = false,
 }) => {
   const { connect, emit } = useRenderer({
     autoBindEvents: !disabled,
@@ -311,9 +326,9 @@ const AgGrid: FC<IAgGridProps> = ({
     [multiSelection, i18n, lang, showSelectAllHeaderCheckbox],
   );
 
-  const [copyMode, setCopyMode] = useState<CopyMode>('cells');
+  const [copyMode, setCopyMode] = useState<CopyMode>('none');
   const [showCopyModeDialog, setShowCopyModeDialog] = useState(false);
-  const [copyModeDraft, setCopyModeDraft] = useState<CopyMode>('cells');
+  const [copyModeDraft, setCopyModeDraft] = useState<CopyMode>('none');
   const [manualSelectedCells, setManualSelectedCells] = useState<TManualSelectedCell[]>([]);
   const [cellRangeSelectionActive, setCellRangeSelectionActive] = useState(false);
   const [isCellSelectionAvailable, setIsCellSelectionAvailable] = useState(false);
@@ -400,6 +415,25 @@ const AgGrid: FC<IAgGridProps> = ({
     gridRef.current?.api?.refreshCells({ force: true });
   }, [copyMode, isCellSelectionAvailable, manualSelectedCells, showCopyActions]);
 
+  /** After copy mode changes, restore grid cell focus so Ctrl+C works without re-clicking (dialog steals focus; row # col has no `field`). */
+  useEffect(() => {
+    if (!showCopyActions || copyMode === 'none') return;
+    const api = gridRef.current?.api;
+    if (!api) return;
+    const t = window.setTimeout(() => {
+      const selected = api.getSelectedNodes().filter((n: any) => n?.data);
+      if (!selected.length) return;
+      const rowIndex = selected[selected.length - 1]?.rowIndex;
+      if (typeof rowIndex !== 'number') return;
+      const col = getFirstDataColumnForCopy(api);
+      if (!col) return;
+      // Rows mode uses selection for TSV; single-row has no multi checkbox flow. Cells mode needs a focused data cell.
+      if (copyMode === 'rows' && !multiSelection) return;
+      api.setFocusedCell(rowIndex, col);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [copyMode, showCopyActions, multiSelection, isCellSelectionAvailable]);
+
   // Load saved views: prefer `states` datasource; migrate legacy `state.savedViews` once.
   useEffect(() => {
     let cancelled = false;
@@ -455,13 +489,17 @@ const AgGrid: FC<IAgGridProps> = ({
     };
   }, [statesDS]);
 
-  //to deselct if current selection ds value is cleared from outside
+  // Multi-select only: if "Selected Selection" is cleared externally, clear grid checkboxes.
+  // In single-row mode, `currentSelection` may be emptied on row click; must not deselectAll or the highlight is lost.
+  // In Cells copy mode, we intentionally clear `currentSelection` but keep grid row selection for context.
   useEffect(() => {
     if (!currentSelectionDS) return;
 
     const listener = async (/* event */) => {
+      if (!multiSelection) return;
       const value = await currentSelectionDS.getValue();
-      if (value.length === 0) {
+      if (Array.isArray(value) && value.length === 0) {
+        if (showCopyActions && copyMode === 'cells') return;
         gridRef.current?.api?.deselectAll();
       }
     };
@@ -470,7 +508,7 @@ const AgGrid: FC<IAgGridProps> = ({
     return () => {
       currentSelectionDS.removeListener('changed', listener);
     };
-  }, [currentSelectionDS]);
+  }, [currentSelectionDS, multiSelection, copyMode, showCopyActions]);
 
   //very initial state of columns
   const initialColumnVisibility = useMemo(
@@ -485,6 +523,34 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const [columnVisibility, setColumnVisibility] = useState<any[]>(initialColumnVisibility);
   const [initialColumnState, setInitialColumnState] = useState<any>(null); // Store the initial AG Grid column state
+
+  const rowNumberColDef = useMemo<ColDef>(
+    () => ({
+      colId: ROW_NUMBER_COL_ID,
+      headerName: '#',
+      valueGetter: (params) => {
+        const idx = params.node?.rowIndex;
+        if (typeof idx !== 'number') return '';
+        return idx + 1;
+      },
+      width: 58,
+      maxWidth: 72,
+      flex: 0,
+      minWidth: 48,
+      pinned: 'left',
+      lockPinned: true,
+      lockPosition: 'left',
+      suppressMovable: true,
+      sortable: false,
+      filter: false,
+      resizable: false,
+      editable: false,
+      suppressHeaderMenuButton: true,
+      suppressHeaderFilterButton: true,
+      cellRenderer: RowNumberCell,
+    }),
+    [],
+  );
 
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map((col) => {
@@ -537,6 +603,11 @@ const AgGrid: FC<IAgGridProps> = ({
     manualSelectedCellKeySet,
     showCopyActions,
   ]);
+
+  const gridColumnDefs = useMemo(
+    () => (showRowNumbers ? [rowNumberColDef, ...colDefs] : colDefs),
+    [showRowNumbers, rowNumberColDef, colDefs],
+  );
 
   const defaultColDef = useMemo<ColDef>(() => {
     return {
@@ -633,8 +704,9 @@ const AgGrid: FC<IAgGridProps> = ({
     (api: GridApi, dsValue: any): boolean => {
       if (!dsValue || typeof dsValue !== 'object') return false;
       const cols = columnsRef.current;
-      if (hasMeaningfulColumnState(dsValue.columnState)) {
-        const mergedForSort = enrichColumnStateWithSource(dsValue.columnState, cols);
+      const persistedColumnState = withoutSyntheticRowColumnState(dsValue.columnState);
+      if (hasMeaningfulColumnState(persistedColumnState)) {
+        const mergedForSort = enrichColumnStateWithSource(persistedColumnState, cols);
         api.applyColumnState({
           state: columnStateForAgGridApply(mergedForSort),
           applyOrder: true,
@@ -647,7 +719,7 @@ const AgGrid: FC<IAgGridProps> = ({
           : buildSortModelFromColumnState(mergedForSort);
         setAdvancedSortModel(stateSortModel);
         prevSortModelRef.current = stateSortModel;
-        const updatedVisibility = dsValue.columnState.map((col: any) => ({
+        const updatedVisibility = persistedColumnState.map((col: any) => ({
           field: col.colId,
           isHidden: col.hide || false,
           pinned: col.pinned || null,
@@ -781,9 +853,9 @@ const AgGrid: FC<IAgGridProps> = ({
   const focusRowForCopy = useCallback(
     (api: GridApi | undefined, rowIndex: number) => {
       if (!api || !showCopyActions || copyMode !== 'rows' || rowIndex < 0) return;
-      const firstColumn = api.getAllDisplayedColumns()?.[0];
-      if (!firstColumn) return;
-      api.setFocusedCell(rowIndex, firstColumn);
+      const col = getFirstDataColumnForCopy(api);
+      if (!col) return;
+      api.setFocusedCell(rowIndex, col);
     },
     [copyMode, showCopyActions],
   );
@@ -797,13 +869,16 @@ const AgGrid: FC<IAgGridProps> = ({
         emit('onrowclick');
         return;
       }
+      if (currentSelectionDS) {
+        await currentSelectionDS.setValue(null, []);
+      }
       await updateCurrentDsValue({
         index: event.rowIndex,
       });
       focusRowForCopy(event.api ?? gridRef.current?.api, event.rowIndex);
       emit('onrowclick');
     },
-    [ds, multiSelection, updateCurrentDsValue, emit, focusRowForCopy],
+    [ds, multiSelection, currentSelectionDS, updateCurrentDsValue, emit, focusRowForCopy],
   );
 
   const onRowDoubleClicked = useCallback(
@@ -816,6 +891,8 @@ const AgGrid: FC<IAgGridProps> = ({
         if (currentSelectionDS) {
           await currentSelectionDS.setValue(null, event.data ? [sanitizeRow(event.data)] : []);
         }
+      } else if (currentSelectionDS) {
+        await currentSelectionDS.setValue(null, []);
       }
       await updateCurrentDsValue({
         index: event.rowIndex,
@@ -901,7 +978,6 @@ const AgGrid: FC<IAgGridProps> = ({
       if (copyMode === 'rows') {
         event.preventDefault?.();
         event.stopPropagation?.();
-        if (!multiSelection) return true;
         const text = buildSelectedRowsClipboardText(api);
         if (!text) return true;
         void writeTextToClipboard(text);
@@ -955,7 +1031,8 @@ const AgGrid: FC<IAgGridProps> = ({
       }
 
       if (multiSelection) {
-        if (currentSelectionDS) {
+        // Cells copy mode uses row checkboxes for range context only; do not drive Selected Selection.
+        if (currentSelectionDS && copyMode !== 'cells') {
           const sanitized = selectedNodes.map((n: any) => sanitizeRow(n.data || {}));
           await currentSelectionDS.setValue(null, sanitized);
         }
@@ -966,7 +1043,10 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const persistGridState = useCallback(
     (columnState: any[], filterModel: any, sortModel: SortModelItem[]) => {
-      const enriched = enrichColumnStateWithSource(columnState, columnsRef.current);
+      const enriched = enrichColumnStateWithSource(
+        withoutSyntheticRowColumnState(columnState),
+        columnsRef.current,
+      );
       if (stateDS) {
         stateDS.getValue().then((currentData: any) => {
           const gridData = {
@@ -990,7 +1070,7 @@ const AgGrid: FC<IAgGridProps> = ({
       if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
       if (applyingExternalStateRef.current) return;
       if (params.type === 'stateUpdated' && !params.sources.includes('gridInitializing')) {
-        const columnState = params.api.getColumnState();
+        const columnState = withoutSyntheticRowColumnState(params.api.getColumnState());
         const filterModel = params.api.getFilterModel();
         const sortModel = buildSortModelFromColumnState(columnState);
         setAdvancedSortModel(sortModel);
@@ -1003,7 +1083,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const getState = useCallback(
     async (params: any) => {
       const seedInitialPersist = () => {
-        const columnState = params.api.getColumnState();
+        const columnState = withoutSyntheticRowColumnState(params.api.getColumnState());
         const filterModel = params.api.getFilterModel() ?? {};
         const sortModel = buildSortModelFromColumnState(columnState);
         setAdvancedSortModel(sortModel);
@@ -1085,6 +1165,40 @@ const AgGrid: FC<IAgGridProps> = ({
     });
     return result;
   };
+
+  const prevCopyModeRef = useRef<CopyMode | null>(null);
+  useEffect(() => {
+    if (!showCopyActions || !currentSelectionDS) {
+      prevCopyModeRef.current = copyMode;
+      return;
+    }
+
+    const prev = prevCopyModeRef.current;
+    prevCopyModeRef.current = copyMode;
+
+    let cancel: (() => void) | undefined;
+
+    // Cells: always clear Selected Selection when entering this mode (defer so it wins over grid churn).
+    if (copyMode === 'cells' && prev !== 'cells') {
+      const t = window.setTimeout(() => {
+        void currentSelectionDS.setValue(null, []);
+      }, 0);
+      cancel = () => clearTimeout(t);
+    } else if (copyMode === 'rows' && prev !== 'rows' && multiSelection) {
+      // Rows: never push [] on mode change — that was wiping Selected Selection. Only sync when grid has rows checked.
+      const t = window.setTimeout(() => {
+        const api = gridRef.current?.api;
+        if (!api) return;
+        const selectedNodes = api.getSelectedNodes().filter((n: any) => n?.data);
+        if (selectedNodes.length === 0) return;
+        const sanitized = selectedNodes.map((n: any) => sanitizeRow(n.data || {}));
+        void currentSelectionDS.setValue(null, sanitized);
+      }, 0);
+      cancel = () => clearTimeout(t);
+    }
+
+    return () => cancel?.();
+  }, [copyMode, showCopyActions, currentSelectionDS, multiSelection, columns]);
 
   const onGridKeyDownCapture = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1326,7 +1440,7 @@ const AgGrid: FC<IAgGridProps> = ({
   // views actions
   const saveNewView = () => {
     if (!viewName.trim()) return;
-    const rawState = gridRef.current?.api?.getColumnState() ?? [];
+    const rawState = withoutSyntheticRowColumnState(gridRef.current?.api?.getColumnState() ?? []);
     const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
     const filterModel = gridRef.current?.api?.getFilterModel();
     const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
@@ -1372,7 +1486,10 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!view) return;
     if (gridRef.current?.api) {
       if (view.columnState) {
-        const merged = enrichColumnStateWithSource(view.columnState, columnsRef.current);
+        const merged = enrichColumnStateWithSource(
+          withoutSyntheticRowColumnState(view.columnState),
+          columnsRef.current,
+        );
         gridRef.current.api.applyColumnState({
           state: columnStateForAgGridApply(merged),
           applyOrder: true,
@@ -1388,7 +1505,7 @@ const AgGrid: FC<IAgGridProps> = ({
         setAdvancedSortModel(normalizeSortModel(buildSortModelFromColumnState(view.columnState)));
       }
       if (view.columnState) {
-        const updatedVisibility = view.columnState.map((col: any) => ({
+        const updatedVisibility = withoutSyntheticRowColumnState(view.columnState).map((col: any) => ({
           field: col.colId,
           isHidden: col.hide || false,
           pinned: col.pinned || null,
@@ -1419,7 +1536,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const updateView = () => {
     if (!selectedView.trim()) return;
-    const rawState = gridRef.current?.api?.getColumnState() ?? [];
+    const rawState = withoutSyntheticRowColumnState(gridRef.current?.api?.getColumnState() ?? []);
     const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
     const filterModel = gridRef.current?.api?.getFilterModel();
     const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
@@ -1469,7 +1586,11 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const normalizedColumns = useMemo(
-    () => columnVisibility.filter((column) => column.field !== 'ag-Grid-SelectionColumn'),
+    () =>
+      columnVisibility.filter(
+        (column) =>
+          column.field !== 'ag-Grid-SelectionColumn' && column.field !== ROW_NUMBER_COL_ID,
+      ),
     [columnVisibility],
   );
 
@@ -2256,7 +2377,11 @@ const AgGrid: FC<IAgGridProps> = ({
                       fontSize: '12px',
                     }}
                     onClick={() => {
-                      setCopyMode(copyModeDraft);
+                      const next = copyModeDraft;
+                      setCopyMode(next);
+                      if (currentSelectionDS && showCopyActions && next === 'cells') {
+                        void currentSelectionDS.setValue(null, []);
+                      }
                       setShowCopyModeDialog(false);
                     }}
                   >
@@ -2279,7 +2404,7 @@ const AgGrid: FC<IAgGridProps> = ({
           <div className="h-full">
             <AgGridReact
               ref={gridRef}
-              columnDefs={colDefs}
+              columnDefs={gridColumnDefs}
               maintainColumnOrder
               defaultColDef={defaultColDef}
               onRowClicked={onRowClicked}

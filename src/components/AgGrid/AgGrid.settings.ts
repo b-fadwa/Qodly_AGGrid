@@ -132,6 +132,12 @@ const dataAccessSettings: TSetting[] = [
     key: 'showRecordCount',
   },
   {
+    label: 'Show row numbers',
+    defaultValue: false,
+    type: ESetting.CHECKBOX,
+    key: 'showRowNumbers',
+  },
+  {
     label: 'Toolbar: Actions',
     defaultValue: true,
     type: ESetting.CHECKBOX,

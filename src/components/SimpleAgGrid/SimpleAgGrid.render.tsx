@@ -18,7 +18,14 @@ import {
   CellValueChangedEvent,
   RowClassParams,
   themeQuartz,
+  ICellRendererParams,
 } from 'ag-grid-community';
+
+const ROW_NUMBER_COL_ID = '__qodlyRowNumber';
+
+const RowNumberCell: FC<ICellRendererParams> = (params) => (
+  <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>{params.value ?? ''}</span>
+);
 const SaveActionRenderer: FC<any> = (params: any) => {
   if (!params.data?.__isInputRow) return null;
   return (
@@ -70,6 +77,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   enableAddNewRow = true,
   showFooter = true,
   enableRowDrag = true,
+  showRowNumbers = false,
   className,
   classNames = [],
 }) => {
@@ -221,6 +229,35 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
 
   const gridContext = useMemo(() => ({ onSaveRow }), [onSaveRow]);
 
+  const rowNumberColDef = useMemo<ColDef>(
+    () => ({
+      colId: ROW_NUMBER_COL_ID,
+      headerName: '#',
+      valueGetter: (params) => {
+        if (params.data?.__isInputRow) return '';
+        const idx = params.node?.rowIndex;
+        if (typeof idx !== 'number') return '';
+        return idx + 1;
+      },
+      width: 58,
+      maxWidth: 72,
+      flex: 0,
+      minWidth: 48,
+      pinned: 'left',
+      lockPinned: true,
+      lockPosition: 'left',
+      suppressMovable: true,
+      sortable: false,
+      filter: false,
+      resizable: false,
+      editable: false,
+      suppressHeaderMenuButton: true,
+      suppressHeaderFilterButton: true,
+      cellRenderer: RowNumberCell,
+    }),
+    [],
+  );
+
   const colDefs: ColDef[] = useMemo(() => {
     const dataCols = columns.map((col) => ({
       field: col.title,
@@ -237,6 +274,9 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       },
     }));
     const base: ColDef[] = [];
+    if (showRowNumbers) {
+      base.push(rowNumberColDef);
+    }
     if (enableRowDrag) {
       base.push({
         headerName: '',
@@ -263,7 +303,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       });
     }
     return base;
-  }, [columns, enableAddNewRow, enableRowDrag]);
+  }, [columns, enableAddNewRow, enableRowDrag, rowNumberColDef, showRowNumbers]);
 
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -331,6 +371,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
 
   const onCellValueChanged = useCallback(
     (event: CellValueChangedEvent) => {
+      if (event.column?.getColId?.() === ROW_NUMBER_COL_ID) return;
       const cols = columnsRef.current;
       const col = cols.find((c) => c.title === event.colDef.field);
       const isInputRow = !!event.data?.__isInputRow;

@@ -24,6 +24,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   enableAddNewRow = true,
   showFooter = true,
   enableRowDrag = true,
+  showRowNumbers = false,
   style,
   className,
   classNames = [],
@@ -42,6 +43,26 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       flex: col.flex,
     }));
     const base: ColDef[] = [];
+    if (showRowNumbers) {
+      base.push({
+        colId: '__qodlyRowNumber',
+        headerName: '#',
+        valueGetter: (params: any) => {
+          if (params.data?.__isInputRow) return '';
+          const idx = params.node?.rowIndex;
+          return typeof idx === 'number' ? idx + 1 : '';
+        },
+        width: 58,
+        maxWidth: 72,
+        flex: 0,
+        pinned: 'left',
+        lockPinned: true,
+        lockPosition: 'left',
+        suppressMovable: true,
+        sortable: false,
+        editable: false,
+      });
+    }
     if (enableRowDrag) {
       base.push({
         headerName: '',
@@ -88,7 +109,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       });
     }
     return base;
-  }, [columns, enableAddNewRow, enableRowDrag]);
+  }, [columns, enableAddNewRow, enableRowDrag, showRowNumbers]);
 
   // No CustomCell here: design canvas lacks useI18n / useLocalization providers (runtime uses CustomCell in .render).
   const defaultColDef = useMemo<ColDef>(() => ({ flex: 1, minWidth: 80 }), []);
