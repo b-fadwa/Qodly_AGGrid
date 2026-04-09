@@ -93,7 +93,9 @@ function withoutSyntheticRowColumnState(columnState: any[] | undefined | null): 
 }
 
 const RowNumberCell: FC<ICellRendererParams> = (params) => (
-  <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>{params.value ?? ''}</span>
+  <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+    {params.value ?? ''}
+  </span>
 );
 
 function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
@@ -740,11 +742,7 @@ const AgGrid: FC<IAgGridProps> = ({
       prevSortModelRef.current = stateSortModel;
       return false;
     },
-    [
-      applySortModelToGrid,
-      buildSortModelFromColumnState,
-      normalizeSortModel,
-    ],
+    [applySortModelToGrid, buildSortModelFromColumnState, normalizeSortModel],
   );
 
   // Re-apply column/sort/filter when `state` is updated externally (e.g. 4D after onLoadState).
@@ -1505,11 +1503,13 @@ const AgGrid: FC<IAgGridProps> = ({
         setAdvancedSortModel(normalizeSortModel(buildSortModelFromColumnState(view.columnState)));
       }
       if (view.columnState) {
-        const updatedVisibility = withoutSyntheticRowColumnState(view.columnState).map((col: any) => ({
-          field: col.colId,
-          isHidden: col.hide || false,
-          pinned: col.pinned || null,
-        }));
+        const updatedVisibility = withoutSyntheticRowColumnState(view.columnState).map(
+          (col: any) => ({
+            field: col.colId,
+            isHidden: col.hide || false,
+            pinned: col.pinned || null,
+          }),
+        );
         setColumnVisibility(updatedVisibility);
       }
       emit('onloadstate', {
@@ -1546,7 +1546,13 @@ const AgGrid: FC<IAgGridProps> = ({
         view.title === selectedView ||
         (view.id != null && String(view.id) === selectedView);
       if (matches) {
-        return { ...view, name: view.name || view.title || String(view.id), columnState, filterModel, sortModel };
+        return {
+          ...view,
+          name: view.name || view.title || String(view.id),
+          columnState,
+          filterModel,
+          sortModel,
+        };
       }
       return view;
     });
@@ -1837,6 +1843,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                 borderRadius: '6px',
                                 borderColor: '#0000001A',
                                 color: '#44444C',
+                                fontSize: '12px',
+                                fontWeight: 500,
                               }}
                             />
                             <button
@@ -1847,6 +1855,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                 borderRadius: '6px',
                                 borderColor: '#0000001A',
                                 color: '#44444C',
+                                fontSize: '12px',
+                                fontWeight: 500,
                               }}
                             >
                               {translation('Save new')}
@@ -1874,6 +1884,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: '6px',
                                   borderColor: '#0000001A',
                                   color: '#44444C',
+                                  fontSize: '12px',
+                                  fontWeight: 500,
                                 }}
                               >
                                 <option value="">{translation('Select view')}</option>
@@ -1889,6 +1901,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: '6px',
                                   borderColor: '#0000001A',
                                   color: '#44444C',
+                                  fontSize: '12px',
+                                  fontWeight: 500,
                                 }}
                               >
                                 {translation('Load')}
@@ -1901,6 +1915,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderRadius: '6px',
                                   borderColor: '#0000001A',
                                   color: '#44444C',
+                                  fontSize: '12px',
+                                  fontWeight: 500,
                                 }}
                               >
                                 {translation('Update')}
