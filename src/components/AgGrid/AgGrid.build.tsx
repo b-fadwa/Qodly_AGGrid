@@ -11,7 +11,7 @@ import { FaTableColumns } from "react-icons/fa6";
 import { FaClockRotateLeft } from "react-icons/fa6";
 import { GoTrash } from "react-icons/go";
 import { IoMdClose } from "react-icons/io";
-import { FaSortAmountDown } from "react-icons/fa";
+import { FaCalculator, FaSortAmountDown } from "react-icons/fa";
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -40,6 +40,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarActions = true,
   showToolbarView = true,
   showToolbarSorting = true,
+  showToolbarStatistics = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
   showRecordCount = true,
@@ -114,6 +115,7 @@ const AgGrid: FC<IAgGridProps> = ({
   useDatasourceSub();
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
+  const [showStatisticsDialog, setShowStatisticsDialog] = useState(false);
   const [sortRules, setSortRules] = useState<{ field: string; sort: 'asc' | 'desc' }[]>([]);
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
@@ -159,6 +161,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarActions ||
     showToolbarView ||
     showToolbarSorting ||
+    showToolbarStatistics ||
     showToolbarSaveView ||
     showToolbarSavedViews;
 
@@ -183,6 +186,24 @@ const AgGrid: FC<IAgGridProps> = ({
                               canvas
                             ></Element>
                           </div>
+                          {showToolbarStatistics && (
+                            <div className="statistics-section flex flex-col gap-2 mr-4 bg-white px-4 py-2">
+                              <button
+                                type="button"
+                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                onClick={() => setShowStatisticsDialog(true)}
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}
+                                disabled={columns.length === 0}
+                              >
+                                <FaCalculator />
+                              </button>
+                            </div>
+                          )}
                           {showToolbarSorting && (
                             <div className="sorting-section flex flex-col gap-2 mr-4  bg-white px-4 py-2">
                               <button
@@ -407,6 +428,44 @@ const AgGrid: FC<IAgGridProps> = ({
                             );
                           })
                         )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {showToolbarStatistics && showStatisticsDialog && (
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onClick={() => setShowStatisticsDialog(false)}
+                  >
+                    <div
+                      className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-slate-200 px-5 py-4">
+                        <div>
+                          <span
+                            className="text-sm tracking-wide"
+                            style={{ color: "#0A0A0A", fontSize: "21px", fontWeight: 500 }}
+                          >
+                            {translation("Calculs statistique")}
+                          </span>
+                          <span className="mt-1 block text-sm" style={{ color: "#4A5565", fontSize: "14px" }}>
+                            {translation(
+                              "Choose a numeric column and an aggregation. The result is returned by your server event.",
+                            )}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center"
+                          style={{ color: "#6A7282" }}
+                          onClick={() => setShowStatisticsDialog(false)}
+                        >
+                          <IoMdClose />
+                        </button>
+                      </div>
+                      <div className="p-5 text-sm text-slate-600">
+                        {translation("Preview — bind On Calculs statistique in Studio to handle the request.")}
                       </div>
                     </div>
                   </div>

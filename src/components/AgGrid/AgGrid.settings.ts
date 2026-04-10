@@ -156,6 +156,12 @@ const dataAccessSettings: TSetting[] = [
     key: 'showToolbarSorting',
   },
   {
+    label: 'Toolbar: Calculs statistique',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarStatistics',
+  },
+  {
     label: 'Toolbar: Save view',
     defaultValue: true,
     type: ESetting.CHECKBOX,
@@ -175,6 +181,11 @@ const dataAccessSettings: TSetting[] = [
   {
     key: 'states',
     label: 'Saved states list',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'calculStatistiqueResult',
+    label: 'Calculs statistique result (scalar)',
     type: ESetting.DS_AUTO_SUGGEST,
   },
   {
