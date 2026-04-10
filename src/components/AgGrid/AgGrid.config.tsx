@@ -269,6 +269,7 @@ export default {
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
     showRecordCount: true,
+    showRowNumbers: false,
   },
 } as T4DComponentConfig<IAgGridProps>;
 
@@ -315,6 +316,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarSavedViews?: boolean;
   /** Show total row count below the toolbar (matches active filter / clone when filtering). */
   showRecordCount?: boolean;
+  /** Pinned left row index column (not part of Columns / saved colDef). */
+  showRowNumbers?: boolean;
   rowCssField?: string;
 }
 

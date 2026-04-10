@@ -60,6 +60,12 @@ const getCopyColumns = (api: GridApi): any[] => {
     .filter((column: any) => !!column.getColDef?.()?.field);
 };
 
+/** First displayed column that has a `field` (excludes row #, selection, etc.) — use for focus so copy sees a real cell. */
+export const getFirstDataColumnForCopy = (api: GridApi): any | undefined => {
+  const cols = getCopyColumns(api);
+  return cols[0];
+};
+
 export const buildSelectedRowsClipboardText = (api: GridApi): string => {
   const selectedNodes = [...api.getSelectedNodes()].filter((node: any) => !!node?.data);
   if (!selectedNodes.length) return '';
