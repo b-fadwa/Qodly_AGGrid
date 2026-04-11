@@ -136,6 +136,16 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   const [lastCalculations, setLastCalculations] = useState<StatisticCalculationItem[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [columnSearchQuery, setColumnSearchQuery] = useState('');
+
+  const filteredStatisticsColumns = useMemo(() => {
+    const q = columnSearchQuery.trim().toLowerCase();
+    if (!q) return statisticsColumns;
+    return statisticsColumns.filter(
+      (c) =>
+        c.label.toLowerCase().includes(q) || c.colId.toLowerCase().includes(q),
+    );
+  }, [statisticsColumns, columnSearchQuery]);
 
   const operationLabel = useCallback(
     (op: StatsOperation) => {
@@ -191,7 +201,12 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   };
 
   const selectAllColumns = () => {
-    setSelectedColumnIds(statisticsColumns.map((c) => c.colId));
+    if (columnSearchQuery.trim()) {
+      const ids = new Set(filteredStatisticsColumns.map((c) => c.colId));
+      setSelectedColumnIds((prev) => Array.from(new Set([...prev, ...ids])));
+    } else {
+      setSelectedColumnIds(statisticsColumns.map((c) => c.colId));
+    }
   };
 
   const clearColumns = () => setSelectedColumnIds([]);
@@ -202,6 +217,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   const clearOperations = () => setSelectedOperations([]);
 
   const openCalculsStatistiqueDialog = () => {
+    setColumnSearchQuery('');
     setStatsError(null);
     setStatsResponse(null);
     setLastCalculations([]);
@@ -213,6 +229,14 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
       setSelectedOperations([]);
     }
     setShowStatisticsDialog(true);
+  };
+
+  const closeCalculsStatistiqueDialog = () => {
+    setShowStatisticsDialog(false);
+    setStatsResponse(null);
+    setLastCalculations([]);
+    setStatsError(null);
+    setStatsLoading(false);
   };
 
   const runCalculsStatistique = async () => {
@@ -273,7 +297,8 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
       void sync();
     };
 
-    void sync();
+    /* Do not call sync() on attach: open() clears UI state; reading the scalar here would
+       immediately refill the table with the previous server value after close/reopen. */
     calculStatistiqueResultDS.addListener('changed', onChanged);
     return () => {
       disposed = true;
@@ -313,7 +338,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
       {showStatisticsDialog && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setShowStatisticsDialog(false)}
+          onClick={closeCalculsStatistiqueDialog}
         >
           <div
             className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white shadow-xl"
@@ -340,7 +365,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                 type="button"
                 className="inline-flex items-center justify-center"
                 style={{ color: '#6A7282' }}
-                onClick={() => setShowStatisticsDialog(false)}
+                onClick={closeCalculsStatistiqueDialog}
               >
                 <IoMdClose />
               </button>
@@ -383,22 +408,41 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                           </button>
                         </div>
                       </div>
-                      <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border border-slate-200 bg-slate-50/80 p-3">
-                        {statisticsColumns.map((column) => (
-                          <label
-                            key={column.colId}
-                            className="flex cursor-pointer items-center gap-2 text-sm"
-                            style={{ color: '#44444C' }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedColumnIds.includes(column.colId)}
-                              onChange={() => toggleColumn(column.colId)}
-                              className="rounded border-slate-300"
-                            />
-                            <span>{column.label}</span>
-                          </label>
-                        ))}
+                      <input
+                        type="search"
+                        value={columnSearchQuery}
+                        onChange={(e) => setColumnSearchQuery(e.target.value)}
+                        placeholder={translation('Search field')}
+                        autoComplete="off"
+                        className="mb-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+                        aria-label={translation('Search field')}
+                      />
+                      <div className="max-h-[min(50vh,360px)] overflow-y-auto rounded-md border border-slate-200 bg-slate-50/80 p-3">
+                        {filteredStatisticsColumns.length === 0 ? (
+                          <p className="py-4 text-center text-sm text-slate-500">
+                            {translation('No fields match your filter')}
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+                            {filteredStatisticsColumns.map((column) => (
+                              <label
+                                key={column.colId}
+                                className="flex min-w-0 cursor-pointer items-center gap-2 text-sm"
+                                style={{ color: '#44444C' }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedColumnIds.includes(column.colId)}
+                                  onChange={() => toggleColumn(column.colId)}
+                                  className="shrink-0 rounded border-slate-300"
+                                />
+                                <span className="min-w-0 truncate" title={column.label}>
+                                  {column.label}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div>
