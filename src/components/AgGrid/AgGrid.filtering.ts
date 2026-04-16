@@ -2,6 +2,9 @@ import { format } from 'date-fns';
 
 export const MAX_FILTER_CONDITIONS = 10;
 
+/** Columns whose `source` contains this marker (case-insensitive, e.g. `_R_` or `_r_`) use the ref-backed select filter. */
+export const REF_SOURCE_MARKER = '_R_';
+
 const NUMERIC_DATA_TYPES = new Set(['word', 'short', 'long', 'number', 'long64', 'duration']);
 const TEXT_DATA_TYPES = new Set(['text', 'string', 'uuid']);
 const NON_FILTERABLE_DATA_TYPES = new Set(['image', 'object', 'blob']);
@@ -36,8 +39,29 @@ export const isBooleanLikeColumn = (column: any): boolean =>
   (normalizeDataType(column?.dataType) === 'number' &&
     ['checkbox', 'icon', 'boolean'].includes(column?.format));
 
+export const extractRefDatasetKeyFromSource = (source: string | undefined): string | null => {
+  if (!source) return null;
+  const lower = source.toLowerCase();
+  const needle = REF_SOURCE_MARKER.toLowerCase();
+  const i = lower.indexOf(needle);
+  if (i === -1) return null;
+  const key = source.slice(i + REF_SOURCE_MARKER.length).trim();
+  return key || null;
+};
+
+/** i18n path `keys.<key>` where key is `refDatasetKey` + option index (e.g. `16069` + `1` → `160691`). */
+export const refOptionI18nCompositeKey = (refDatasetKey: string, optionIndex: number): string =>
+  `${String(refDatasetKey).trim()}${optionIndex}`;
+
+export const isRefBackedSourceColumn = (column: any): boolean =>
+  extractRefDatasetKeyFromSource(column?.source) !== null;
+
+/** Stored in the grid filter model for ref-backed columns; used by `buildFilterQuery`. */
+export const QODLY_REF_SELECT_FILTER_TYPE = 'qodlyRefSelect' as const;
+
 export const getColumnFilterType = (column: any, isBooleanColumn: boolean): string | false => {
   if (!column?.filtering) return false;
+  if (isRefBackedSourceColumn(column)) return 'qodlyRefSelectFilter';
   if (isBooleanColumn) return 'agNumberColumnFilter';
   if (isTextDataType(column?.dataType)) return 'agTextColumnFilter';
   if (isNumericDataType(column?.dataType)) return 'agTextColumnFilter';
@@ -53,18 +77,16 @@ export const getColumnFilterParams = (column: any, isBooleanColumn: boolean) => 
         'empty',
         {
           displayKey: 'isTrue',
-          displayName: 'true',
+          displayName: 'True',
           predicate: (_: any[], cellValue: any) => cellValue === true,
           numberOfInputs: 0,
         },
         {
           displayKey: 'isFalse',
-          displayName: 'false',
+          displayName: 'False',
           predicate: (_: any[], cellValue: any) => cellValue === false,
           numberOfInputs: 0,
         },
-        'blank',
-        'notBlank',
       ]
     : isTextDataType(column?.dataType)
       ? [
@@ -187,8 +209,13 @@ export const getColumnFilterParams = (column: any, isBooleanColumn: boolean) => 
 
   return {
     filterOptions,
-    defaultOption: isBooleanColumn ? 'empty' : 'equals',
+    defaultOption: isBooleanColumn
+      ? 'empty'
+      : isTextDataType(column?.dataType)
+        ? 'contains'
+        : 'equals',
     maxNumConditions: isBooleanColumn ? 1 : MAX_FILTER_CONDITIONS,
+    buttons: ['apply'],
   };
 };
 
@@ -347,6 +374,12 @@ export const buildFilterQuery = (filter: any, source: string, column?: any): str
         default:
           return '';
       }
+    }
+    case QODLY_REF_SELECT_FILTER_TYPE: {
+      const raw = filter.value ?? filter.filter;
+      const num = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
+      if (!Number.isFinite(num)) return '';
+      return `${source} == ${num}`;
     }
     default:
       return '';

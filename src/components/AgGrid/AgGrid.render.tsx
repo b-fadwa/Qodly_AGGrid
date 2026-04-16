@@ -37,16 +37,21 @@ import {
 } from './AgGrid.clipboard';
 import {
   buildFilterQueries,
+  extractRefDatasetKeyFromSource,
   getColumnFilterParams,
   getColumnFilterType,
   isBooleanLikeColumn,
+  refOptionI18nCompositeKey,
 } from './AgGrid.filtering';
+import { QodlyRefSelectFilter } from './AgGridRefSelectFilter';
 import {
   ColDef,
+  FilterChangedEvent,
   GridApi,
   GridReadyEvent,
   ICellRendererParams,
   IGetRowsParams,
+  PostProcessPopupParams,
   SortModelItem,
   StateUpdatedEvent,
   ModuleRegistry,
@@ -153,7 +158,9 @@ function normalizeAgGridFilterModel(model: any): any {
 function applyGridFilterModel(api: GridApi, filterModel: any): void {
   const desired = normalizeAgGridFilterModel(filterModel);
   const current = normalizeAgGridFilterModel(api.getFilterModel());
-  if (isEqual(current, desired)) return;
+  if (isEqual(current, desired)) {
+    return;
+  }
   api.setFilterModel(desired === null ? null : filterModel);
 }
 
@@ -567,6 +574,11 @@ const AgGrid: FC<IAgGridProps> = ({
     [],
   );
 
+  const agGridFilterComponents = useMemo(
+    () => ({ qodlyRefSelectFilter: QodlyRefSelectFilter }),
+    [],
+  );
+
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map((col) => {
       const colState = columnVisibility.find((c) => c.field === col.title) || {
@@ -574,6 +586,8 @@ const AgGrid: FC<IAgGridProps> = ({
         pinned: null,
       };
       const isBooleanColumn = isBooleanLikeColumn(col);
+      const refKey = extractRefDatasetKeyFromSource(col.source);
+      const isRefSource = refKey != null;
       return {
         field: col.title,
         source: col.source,
@@ -606,15 +620,29 @@ const AgGrid: FC<IAgGridProps> = ({
         resizable: col.sizing,
         width: col.width,
         flex: col.flex,
-        filter: getColumnFilterType(col, isBooleanColumn),
-        filterParams: getColumnFilterParams(col, isBooleanColumn),
+        filter: isRefSource ? 'qodlyRefSelectFilter' : getColumnFilterType(col, isBooleanColumn),
+        filterParams: isRefSource
+          ? {
+              refDatasetKey: refKey,
+              maxOptions: 256,
+              placeholderLabel: translation('Choose one'),
+              applyButtonLabel: translation('Apply'),
+              resolveOptionLabel: (index: number) => {
+                const composite = refOptionI18nCompositeKey(refKey, index);
+                const fromLang = lang ? get(i18n, `keys.${composite}.${lang}`) : undefined;
+                return String(fromLang ?? get(i18n, `keys.${composite}.default`, '') ?? '');
+              },
+            }
+          : getColumnFilterParams(col, isBooleanColumn),
       };
     });
   }, [
     columns,
     columnVisibility,
     copyMode,
+    i18n,
     isCellSelectionAvailable,
+    lang,
     manualSelectedCellKeySet,
     showCopyActions,
   ]);
@@ -1081,6 +1109,83 @@ const AgGrid: FC<IAgGridProps> = ({
     [stateDS, statesDS],
   );
 
+  /** Extra control in the column filter footer (built-in Apply/Reset cannot clear other columns). */
+  const postProcessPopup = useCallback(
+    (params: PostProcessPopupParams) => {
+      const panel = params.ePopup.querySelector<HTMLElement>('.ag-filter-apply-panel');
+      if (!panel || !params.ePopup.querySelector('.ag-filter')) return;
+      if (panel.querySelector('[data-qodly-clear-all-filters-button]')) return;
+
+      Object.assign(panel.style, {
+        display: 'flex',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+        gap: '8px',
+        borderTop: '1px solid rgb(229, 231, 235)',
+        padding: '16px',
+      });
+
+      const secondaryBtn: Partial<CSSStyleDeclaration> = {
+        boxSizing: 'border-box',
+        height: '32px',
+        borderRadius: '6px',
+        fontSize: '12px',
+        padding: '0 12px',
+        margin: '0px',
+        border: '1px solid rgba(0, 0, 0, 0.1)',
+        color: 'rgb(68, 68, 76)',
+        background: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        cursor: 'pointer',
+      };
+
+      const primaryBtn: Partial<CSSStyleDeclaration> = {
+        boxSizing: 'border-box',
+        height: '31px',
+        borderRadius: '6px',
+        fontSize: '12px',
+        padding: '0 12px',
+        margin: '0px',
+        background: 'rgb(43, 87, 151)',
+        color: '#fff',
+        border: '1px solid rgb(43, 87, 151)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+        cursor: 'pointer',
+      };
+
+      panel.querySelectorAll('button').forEach((el) => {
+        if (el.getAttribute('data-qodly-clear-all-filters-button')) return;
+        Object.assign(el.style, primaryBtn);
+      });
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-qodly-clear-all-filters-button', '1');
+      btn.textContent = translation('Clear result');
+      Object.assign(btn.style, secondaryBtn);
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const { api } = params;
+        api.setFilterModel(null);
+        const columnState = withoutSyntheticRowColumnState(api.getColumnState());
+        const filterModel = api.getFilterModel() ?? {};
+        const sortModel = buildSortModelFromColumnState(columnState);
+        persistGridState(columnState, filterModel, sortModel);
+      });
+
+      panel.insertBefore(btn, panel.firstChild);
+    },
+    [buildSortModelFromColumnState, persistGridState, translation],
+  );
+
   const onStateUpdated = useCallback(
     (params: StateUpdatedEvent) => {
       if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
@@ -1095,6 +1200,10 @@ const AgGrid: FC<IAgGridProps> = ({
     },
     [buildSortModelFromColumnState, persistGridState],
   );
+
+  const onFilterChanged = useCallback((event: FilterChangedEvent) => {
+    event.api.refreshInfiniteCache();
+  }, []);
 
   const getState = useCallback(
     async (params: any) => {
@@ -1127,7 +1236,9 @@ const AgGrid: FC<IAgGridProps> = ({
         setAdvancedSortModel([]);
         return;
       }
-      if (isEqual(params.sortModel, prevSortModelRef.current)) return;
+      if (isEqual(params.sortModel, prevSortModelRef.current)) {
+        return;
+      }
 
       const sortInstructions = params.sortModel
         .map((sort) => {
@@ -1139,10 +1250,13 @@ const AgGrid: FC<IAgGridProps> = ({
         })
         .filter(Boolean);
 
-      if (!sortInstructions.length) return;
+      if (!sortInstructions.length) {
+        return;
+      }
       prevSortModelRef.current = params.sortModel;
       setAdvancedSortModel(normalizeSortModel(params.sortModel));
-      await ds.orderBy(sortInstructions.join(', '));
+      const orderBy = sortInstructions.join(', ');
+      await ds.orderBy(orderBy);
     },
     [normalizeSortModel],
   );
@@ -1252,12 +1366,14 @@ const AgGrid: FC<IAgGridProps> = ({
   }, [isCellSelectionAvailable]);
 
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
-    const entities = await fetchCallback(params.startRow, params.endRow - params.startRow);
+    const count = params.endRow - params.startRow;
+    const cols = columnsRef.current;
+    const entities = await fetchCallback(params.startRow, count);
     const rowData = entities.map((data: any) => {
       const row: any = {
         __entity: data,
       };
-      columns.forEach((col) => {
+      cols.forEach((col) => {
         row[col.title] = data[col.source];
       });
       return row;
@@ -1313,10 +1429,17 @@ const AgGrid: FC<IAgGridProps> = ({
     setInitialColumnState(params.api.getColumnState());
     params.api.setGridOption('datasource', {
       getRows: async (rowParams: IGetRowsParams) => {
+        const rowFm = rowParams.filterModel ?? {};
+        const apiFm = params.api.getFilterModel() ?? {};
+        /** Infinite row model can call `getRows` before `rowParams.filterModel` is synced after `refreshInfiniteCache`; `api.getFilterModel()` is the source of truth. */
+        const effectiveFilterModel = !isEqual(rowFm, {}) ? rowFm : apiFm;
+        const hasActiveFilter = normalizeAgGridFilterModel(effectiveFilterModel) != null;
+
         let entities = null;
         let length = 0;
         let rowData: any[] = [];
-        if (!isEqual(rowParams.filterModel, {})) {
+        const cols = columnsRef.current;
+        if (hasActiveFilter) {
           // Unfiltered getRows uses `ds` only; `searchDs.entitysel` would stay narrowed after a prior
           // filter. Re-sync from the main DS so each filter applies to the full current selection.
           if (ds && searchDs) {
@@ -1326,7 +1449,7 @@ const AgGrid: FC<IAgGridProps> = ({
             }
           }
 
-          const filterQueries = buildFilterQueries(rowParams.filterModel, columns);
+          const filterQueries = buildFilterQueries(effectiveFilterModel, cols);
           const queryStr = filterQueries.filter(Boolean).join(' AND ');
 
           const { entitysel } = searchDs as any;
@@ -1336,14 +1459,14 @@ const AgGrid: FC<IAgGridProps> = ({
             filterAttributes: searchDs.filterAttributesText || searchDs._private.filterAttributes,
           });
 
-          await applySorting(rowParams, columns, searchDs);
+          await applySorting(rowParams, cols, searchDs);
 
           const result = await fetchData(fetchClone, rowParams);
           entities = result.entities;
           rowData = result.rowData;
           length = searchDs.entitysel._private.selLength;
         } else {
-          await applySorting(rowParams, columns, ds);
+          await applySorting(rowParams, cols, ds);
 
           const result = await fetchData(fetchPage, rowParams);
           entities = result.entities;
@@ -2454,12 +2577,15 @@ const AgGrid: FC<IAgGridProps> = ({
             <AgGridReact
               ref={gridRef}
               columnDefs={gridColumnDefs}
+              components={agGridFilterComponents}
               maintainColumnOrder
               defaultColDef={defaultColDef}
+              postProcessPopup={postProcessPopup}
               onRowClicked={onRowClicked}
               onSelectionChanged={onSelectionChanged}
               onRowDoubleClicked={onRowDoubleClicked}
               onGridReady={onGridReady}
+              onFilterChanged={onFilterChanged}
               rowModelType="infinite"
               rowSelection={{
                 mode: multiSelection ? 'multiRow' : 'singleRow',
