@@ -55,6 +55,7 @@ export default {
         { name: 'currentElement', require: false, isDatasource: false },
         { name: 'state', require: false, isDatasource: false },
         { name: 'states', require: false, isDatasource: false },
+        { name: 'calculStatistiqueResult', require: false, isDatasource: false },
       ],
     },
     displayName: 'AgGrid',
@@ -113,6 +114,10 @@ export default {
         label: 'On Delete State (saved view)',
         value: 'ondeletestate',
       },
+      {
+        label: 'On Calculs statistique',
+        value: 'oncalculstatistique',
+      },
     ],
     datasources: {
       declarations: (props) => {
@@ -122,7 +127,12 @@ export default {
           datasource = '',
           state = '',
           states = '',
-        } = props as IExostiveElementProps & { state?: string; states?: string };
+          calculStatistiqueResult = '',
+        } = props as IExostiveElementProps & {
+          state?: string;
+          states?: string;
+          calculStatistiqueResult?: string;
+        };
         const declarations: T4DComponentDatasourceDeclaration[] = [
           { path: datasource, iterable: true },
         ];
@@ -134,6 +144,9 @@ export default {
         }
         if (states) {
           declarations.push({ path: states, iterable: true });
+        }
+        if (calculStatistiqueResult?.trim()) {
+          declarations.push({ path: calculStatistiqueResult.trim() });
         }
         if (columns) {
           const { id: ds, namespace } = splitDatasourceID(datasource?.trim()) || {};
@@ -236,6 +249,7 @@ export default {
     columns: [],
     state: '',
     states: '',
+    calculStatistiqueResult: '',
     currentSelection: '',
     multiSelection: false,
     style: {
@@ -266,6 +280,7 @@ export default {
     showToolbarActions: true,
     showToolbarView: true,
     showToolbarSorting: true,
+    showToolbarStatistics: true,
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
     showRecordCount: true,
@@ -279,6 +294,11 @@ export interface IAgGridProps extends webforms.ComponentProps {
   state?: string;
   /** Scalar array: catalog of saved grid states (e.g. from server); separate from `state`. */
   states?: string;
+  /**
+   * Scalar datasource that receives the **On Calculs statistique** method result (same binding as the event’s return in Studio).
+   * `emit()` does not return the server value; the grid reads it from this source after the event runs.
+   */
+  calculStatistiqueResult?: string;
   currentSelection?: string;
   multiSelection: boolean;
   spacing: string;
@@ -310,6 +330,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarView?: boolean;
   /** Toolbar: Advanced sorting */
   showToolbarSorting?: boolean;
+  /** Toolbar: Calculs statistique (numeric column aggregates) */
+  showToolbarStatistics?: boolean;
   /** Toolbar: Save new view */
   showToolbarSaveView?: boolean;
   /** Toolbar: Load / overwrite / delete saved views */

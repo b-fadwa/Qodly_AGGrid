@@ -64,6 +64,11 @@ import isEqual from 'lodash/isEqual';
 import cloneDeep from 'lodash/cloneDeep';
 import CustomCell from './CustomCell';
 import AgGridSelectionHeader from './AgGridSelectionHeader';
+import {
+  AgGridCalculsStatistique,
+  type CalculsStatistiqueResultDatasource,
+} from './AgGridCalculsStatistique';
+import { StatisticCalculations } from './StatisticCalculations';
 import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
@@ -185,6 +190,7 @@ const AgGrid: FC<IAgGridProps> = ({
   columns,
   state = '',
   states = '',
+  calculStatistiqueResult = '',
   currentSelection = '',
   spacing,
   accentColor,
@@ -215,6 +221,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarActions = true,
   showToolbarView = true,
   showToolbarSorting = true,
+  showToolbarStatistics = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
   className,
@@ -239,6 +246,7 @@ const AgGrid: FC<IAgGridProps> = ({
       'onloadstate',
       'onupdatestate',
       'ondeletestate',
+      'oncalculstatistique',
     ],
   });
   const { resolver } = useEnhancedEditor(selectResolver);
@@ -302,6 +310,11 @@ const AgGrid: FC<IAgGridProps> = ({
   const path = useWebformPath();
   const stateDS = window.DataSource.getSource(state, path);
   const statesDS = states ? window.DataSource.getSource(states, path) : null;
+  const calculStatistiqueResultDS = useMemo(() => {
+    const id = calculStatistiqueResult?.trim();
+    if (!id) return null;
+    return window.DataSource.getSource(id, path);
+  }, [calculStatistiqueResult, path]);
   const currentSelectionDS = window.DataSource.getSource(currentSelection, path);
 
   const [selected, setSelected] = useState(-1);
@@ -627,6 +640,11 @@ const AgGrid: FC<IAgGridProps> = ({
           colId: col.title,
           label: col.title,
         })),
+    [columns],
+  );
+
+  const statisticsColumns = useMemo(
+    () => StatisticCalculations.fromAgGridColumns(columns),
     [columns],
   );
 
@@ -1647,6 +1665,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarActions ||
     showToolbarView ||
     showToolbarSorting ||
+    showToolbarStatistics ||
     showToolbarSaveView ||
     showToolbarSavedViews;
 
@@ -1732,6 +1751,20 @@ const AgGrid: FC<IAgGridProps> = ({
                         <div className="flex gap-2">
                           <Element id="agGridActions" is={resolver.StyleBox} canvas />
                         </div>
+                        <AgGridCalculsStatistique
+                          translation={translation}
+                          showToolbarStatistics={showToolbarStatistics}
+                          statisticsColumns={statisticsColumns}
+                          columnsRef={columnsRef}
+                          gridRef={gridRef}
+                          emit={emit}
+                          calculStatistiqueResultDS={
+                            calculStatistiqueResultDS as
+                              | CalculsStatistiqueResultDatasource
+                              | null
+                              | undefined
+                          }
+                        />
                         {showToolbarSorting && (
                           <div className="sorting-section ">
                             <button
