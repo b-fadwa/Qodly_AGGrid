@@ -157,7 +157,7 @@ const dataAccessSettings: TSetting[] = [
   },
   {
     label: 'Toolbar: Calculs statistique',
-    defaultValue: true,
+    defaultValue: false,
     type: ESetting.CHECKBOX,
     key: 'showToolbarStatistics',
   },

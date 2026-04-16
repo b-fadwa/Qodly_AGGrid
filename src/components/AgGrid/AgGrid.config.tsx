@@ -221,19 +221,19 @@ export default {
                     id: generate(),
                     ...(item.attribute.type === 'image'
                       ? {
-                        dataType: item.attribute.type,
-                      }
+                          dataType: item.attribute.type,
+                        }
                       : item.attribute.type === 'bool'
                         ? {
-                          dataType: item.attribute.type,
-                          format: 'boolean',
-                        }
+                            dataType: item.attribute.type,
+                            format: 'boolean',
+                          }
                         : ['blob', 'object'].includes(item.attribute.type)
                           ? {}
                           : {
-                            format: '',
-                            dataType: item.attribute.type,
-                          }),
+                              format: '',
+                              dataType: item.attribute.type,
+                            }),
                   } as any,
                 ];
             }
@@ -280,7 +280,7 @@ export default {
     showToolbarActions: true,
     showToolbarView: true,
     showToolbarSorting: true,
-    showToolbarStatistics: true,
+    showToolbarStatistics: false,
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
     showRecordCount: true,
