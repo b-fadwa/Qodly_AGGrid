@@ -55,6 +55,7 @@ export default {
         { name: 'currentElement', require: false, isDatasource: false },
         { name: 'state', require: false, isDatasource: false },
         { name: 'states', require: false, isDatasource: false },
+        { name: 'dateFinancial', require: false, isDatasource: true },
         { name: 'calculStatistiqueResult', require: false, isDatasource: false },
       ],
     },
@@ -127,10 +128,12 @@ export default {
           datasource = '',
           state = '',
           states = '',
+          dateFinancial = '',
           calculStatistiqueResult = '',
         } = props as IExostiveElementProps & {
           state?: string;
           states?: string;
+          dateFinancial?: string;
           calculStatistiqueResult?: string;
         };
         const declarations: T4DComponentDatasourceDeclaration[] = [
@@ -144,6 +147,9 @@ export default {
         }
         if (states) {
           declarations.push({ path: states, iterable: true });
+        }
+        if (dateFinancial?.trim()) {
+          declarations.push({ path: dateFinancial.trim() });
         }
         if (calculStatistiqueResult?.trim()) {
           declarations.push({ path: calculStatistiqueResult.trim() });
@@ -249,6 +255,7 @@ export default {
     columns: [],
     state: '',
     states: '',
+    dateFinancial: '',
     calculStatistiqueResult: '',
     currentSelection: '',
     multiSelection: false,
@@ -294,6 +301,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   state?: string;
   /** Scalar array: catalog of saved grid states (e.g. from server); separate from `state`. */
   states?: string;
+  /** Scalar datasource (4D Date): used to add `Date_Document >= Date_Financial` to server queries when valid. */
+  dateFinancial?: string;
   /**
    * Scalar datasource that receives the **On Calculs statistique** method result (same binding as the event’s return in Studio).
    * `emit()` does not return the server value; the grid reads it from this source after the event runs.

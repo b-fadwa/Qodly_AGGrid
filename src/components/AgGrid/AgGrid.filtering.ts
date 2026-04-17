@@ -403,8 +403,8 @@ export const buildFilterQueries = (filterModel: any, columns: any[]): string[] =
       return conditionQueries.length === 1
         ? conditionQueries[0]
         : `(${conditionQueries.join(` ${filter.operator} `)})`;
+    } else {
+      return buildFilterQuery(filter, source, column);
     }
-
-    return buildFilterQuery(filter, source, column);
   });
 };

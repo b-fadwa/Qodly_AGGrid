@@ -132,6 +132,11 @@ const dataAccessSettings: TSetting[] = [
     key: 'showRecordCount',
   },
   {
+    key: 'dateFinancial',
+    label: 'Date_Financial (4D Date)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
     label: 'Show row numbers',
     defaultValue: false,
     type: ESetting.CHECKBOX,

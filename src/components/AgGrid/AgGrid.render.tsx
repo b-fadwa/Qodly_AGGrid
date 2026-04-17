@@ -76,6 +76,7 @@ import {
 import { StatisticCalculations } from './StatisticCalculations';
 import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
+import { format } from 'date-fns';
 import { get } from 'lodash';
 import { FaTableColumns } from 'react-icons/fa6';
 import { FaClockRotateLeft } from 'react-icons/fa6';
@@ -96,6 +97,28 @@ ModuleRegistry.registerModules([
 
 /** Synthetic row index column — excluded from Columns config and persisted grid state. */
 const ROW_NUMBER_COL_ID = '__qodlyRowNumber';
+
+/**
+ * After "Clear result" calls `setFilterModel(null)`, the filter popup can close (especially in
+ * hosted / MF builds). AG Grid supports reopening via `showColumnFilter` — schedule a few passes
+ * so it runs after internal teardown + async refresh.
+ * @see https://www.ag-grid.com/react-data-grid/filter-api/#launching-filters
+ */
+function scheduleReopenColumnFilterAfterClear(api: GridApi, colId: string | undefined): void {
+  if (!colId || colId === ROW_NUMBER_COL_ID) return;
+  const reopen = () => {
+    try {
+      (api as unknown as { showColumnFilter?: (key: string) => void }).showColumnFilter?.(colId);
+    } catch {
+      // Older typings or host wrappers
+    }
+  };
+  queueMicrotask(reopen);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(reopen);
+  });
+  window.setTimeout(reopen, 120);
+}
 
 function withoutSyntheticRowColumnState(columnState: any[] | undefined | null): any[] {
   if (!Array.isArray(columnState)) return [];
@@ -197,6 +220,7 @@ const AgGrid: FC<IAgGridProps> = ({
   columns,
   state = '',
   states = '',
+  dateFinancial = '',
   calculStatistiqueResult = '',
   currentSelection = '',
   spacing,
@@ -269,6 +293,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const gridRef = useRef<AgGridReact>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState<number | null>(null);
+  const dateFinancialRef = useRef<Date | null>(null);
+  const dateFinancialEnabledRef = useRef<boolean>(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -317,12 +343,52 @@ const AgGrid: FC<IAgGridProps> = ({
   const path = useWebformPath();
   const stateDS = window.DataSource.getSource(state, path);
   const statesDS = states ? window.DataSource.getSource(states, path) : null;
+  const dateFinancialDS = useMemo(() => {
+    const id = dateFinancial?.trim();
+    if (!id) return null;
+    return window.DataSource.getSource(id, path);
+  }, [dateFinancial, path]);
   const calculStatistiqueResultDS = useMemo(() => {
     const id = calculStatistiqueResult?.trim();
     if (!id) return null;
     return window.DataSource.getSource(id, path);
   }, [calculStatistiqueResult, path]);
   const currentSelectionDS = window.DataSource.getSource(currentSelection, path);
+
+  const parseDateFinancial = useCallback((raw: any): Date | null => {
+    if (raw == null || raw === '') return null;
+    if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, []);
+
+  useEffect(() => {
+    if (!dateFinancialDS) {
+      dateFinancialRef.current = null;
+      dateFinancialEnabledRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    const syncNow = async () => {
+      try {
+        const v = await dateFinancialDS.getValue();
+        if (cancelled) return;
+        dateFinancialRef.current = parseDateFinancial(v);
+      } catch {
+        if (!cancelled) dateFinancialRef.current = null;
+      }
+    };
+    void syncNow();
+    const listener = async () => {
+      await syncNow();
+      gridRef.current?.api?.refreshInfiniteCache();
+    };
+    dateFinancialDS.addListener('changed', listener);
+    return () => {
+      cancelled = true;
+      dateFinancialDS.removeListener('changed', listener);
+    };
+  }, [dateFinancialDS, parseDateFinancial]);
 
   const [selected, setSelected] = useState(-1);
   const [scrollIndex, setScrollIndex] = useState(0);
@@ -751,6 +817,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const applyPersistedStateFromDsValue = useCallback(
     (api: GridApi, dsValue: any): boolean => {
       if (!dsValue || typeof dsValue !== 'object') return false;
+      dateFinancialEnabledRef.current = Boolean((dsValue as any).dateFinancialFilterEnabled);
       const cols = columnsRef.current;
       const persistedColumnState = withoutSyntheticRowColumnState(dsValue.columnState);
       if (hasMeaningfulColumnState(persistedColumnState)) {
@@ -1098,6 +1165,7 @@ const AgGrid: FC<IAgGridProps> = ({
             columnState: enriched,
             filterModel,
             sortModel,
+            dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
           };
           if (statesDS) {
             delete (gridData as any).savedViews;
@@ -1115,6 +1183,82 @@ const AgGrid: FC<IAgGridProps> = ({
       const panel = params.ePopup.querySelector<HTMLElement>('.ag-filter-apply-panel');
       if (!panel || !params.ePopup.querySelector('.ag-filter')) return;
       if (panel.querySelector('[data-qodly-clear-all-filters-button]')) return;
+
+      const financialDate = dateFinancialRef.current;
+      if (financialDate && !params.ePopup.querySelector('[data-qodly-date-financial-row]')) {
+        const labelText = get(
+          i18n,
+          `keys.filter_by_fiscal_year.${lang}`,
+          get(i18n, 'keys.filter_by_fiscal_year.default', 'Filtrer sur exercice(s)'),
+        );
+
+        const row = document.createElement('div');
+        row.setAttribute('data-qodly-date-financial-row', '1');
+        Object.assign(row.style, {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          gap: '8px',
+          padding: '10px 16px',
+          borderTop: '1px solid rgb(229, 231, 235)',
+          fontSize: '12px',
+          color: 'rgb(68, 68, 76)',
+        });
+
+        const labelEl = document.createElement('label');
+        Object.assign(labelEl.style, {
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          cursor: 'pointer',
+          margin: '0',
+          userSelect: 'none',
+        });
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = Boolean(dateFinancialEnabledRef.current);
+
+        const span = document.createElement('span');
+        span.textContent = String(labelText);
+
+        labelEl.appendChild(input);
+        labelEl.appendChild(span);
+        row.appendChild(labelEl);
+
+        // Do NOT apply immediately; only sync this control when the user clicks the filter Apply button.
+        input.addEventListener('change', () => {
+          // keep UI state only
+        });
+        panel.parentElement?.insertBefore(row, panel);
+      }
+
+      // Hook the built-in filter Apply button so the Date_Financial checkbox is applied only on Apply.
+      if (!panel.getAttribute('data-qodly-date-financial-apply-hook')) {
+        panel.setAttribute('data-qodly-date-financial-apply-hook', '1');
+        panel.addEventListener(
+          'click',
+          (ev) => {
+            const target = ev.target as HTMLElement | null;
+            const btnEl = target?.closest?.('button') as HTMLButtonElement | null;
+            if (!btnEl) return;
+            if (btnEl.getAttribute('data-qodly-clear-all-filters-button')) return;
+
+            const finInput = params.ePopup.querySelector<HTMLInputElement>(
+              '[data-qodly-date-financial-row] input[type="checkbox"]',
+            );
+            if (finInput) {
+              dateFinancialEnabledRef.current = Boolean(finInput.checked);
+              params.api.refreshInfiniteCache();
+              const columnState = withoutSyntheticRowColumnState(params.api.getColumnState());
+              const filterModel = params.api.getFilterModel() ?? {};
+              const sortModel = buildSortModelFromColumnState(columnState);
+              persistGridState(columnState, filterModel, sortModel);
+            }
+          },
+          true,
+        );
+      }
 
       Object.assign(panel.style, {
         display: 'flex',
@@ -1174,16 +1318,24 @@ const AgGrid: FC<IAgGridProps> = ({
         e.preventDefault();
         e.stopPropagation();
         const { api } = params;
+        const filterColId = params.column?.getColId?.();
+        // Reset Date_Financial toggle on clear.
+        dateFinancialEnabledRef.current = false;
+        const finInput = params.ePopup.querySelector<HTMLInputElement>(
+          '[data-qodly-date-financial-row] input[type="checkbox"]',
+        );
+        if (finInput) finInput.checked = false;
         api.setFilterModel(null);
         const columnState = withoutSyntheticRowColumnState(api.getColumnState());
         const filterModel = api.getFilterModel() ?? {};
         const sortModel = buildSortModelFromColumnState(columnState);
         persistGridState(columnState, filterModel, sortModel);
+        scheduleReopenColumnFilterAfterClear(api, filterColId);
       });
 
       panel.insertBefore(btn, panel.firstChild);
     },
-    [buildSortModelFromColumnState, persistGridState, translation],
+    [buildSortModelFromColumnState, i18n, lang, persistGridState, translation],
   );
 
   const onStateUpdated = useCallback(
@@ -1433,7 +1585,10 @@ const AgGrid: FC<IAgGridProps> = ({
         const apiFm = params.api.getFilterModel() ?? {};
         /** Infinite row model can call `getRows` before `rowParams.filterModel` is synced after `refreshInfiniteCache`; `api.getFilterModel()` is the source of truth. */
         const effectiveFilterModel = !isEqual(rowFm, {}) ? rowFm : apiFm;
-        const hasActiveFilter = normalizeAgGridFilterModel(effectiveFilterModel) != null;
+        const financialDate = dateFinancialRef.current;
+        const hasFinancialFilter = financialDate != null && dateFinancialEnabledRef.current;
+        const hasColumnFilters = normalizeAgGridFilterModel(effectiveFilterModel) != null;
+        const hasActiveFilter = hasColumnFilters || hasFinancialFilter;
 
         let entities = null;
         let length = 0;
@@ -1450,7 +1605,11 @@ const AgGrid: FC<IAgGridProps> = ({
           }
 
           const filterQueries = buildFilterQueries(effectiveFilterModel, cols);
-          const queryStr = filterQueries.filter(Boolean).join(' AND ');
+          const extra =
+            hasFinancialFilter && financialDate
+              ? `Date_Document >= ${format(financialDate, 'yyyy-MM-dd')}`
+              : '';
+          const queryStr = [...filterQueries.filter(Boolean), extra].filter(Boolean).join(' AND ');
 
           const { entitysel } = searchDs as any;
           const dataSetName = entitysel?.getServerRef();
@@ -1583,7 +1742,13 @@ const AgGrid: FC<IAgGridProps> = ({
     const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
     const filterModel = gridRef.current?.api?.getFilterModel();
     const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
-    const newView = { name: viewName.trim(), columnState, filterModel, sortModel };
+    const newView = {
+      name: viewName.trim(),
+      columnState,
+      filterModel,
+      sortModel,
+      dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+    };
     const updatedViews: any = [...savedViews, newView];
     setSavedViews(updatedViews);
     if (statesDS) {
@@ -1599,6 +1764,7 @@ const AgGrid: FC<IAgGridProps> = ({
             columnState,
             filterModel,
             sortModel,
+            dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
           });
         } else {
           stateDS.setValue(null, { ...base, savedViews: updatedViews });
@@ -1623,6 +1789,9 @@ const AgGrid: FC<IAgGridProps> = ({
         (v.id != null && String(v.id) === selectedView),
     );
     if (!view) return;
+    if ('dateFinancialFilterEnabled' in view) {
+      dateFinancialEnabledRef.current = Boolean((view as any).dateFinancialFilterEnabled);
+    }
     if (gridRef.current?.api) {
       if (view.columnState) {
         const merged = enrichColumnStateWithSource(
@@ -1693,6 +1862,7 @@ const AgGrid: FC<IAgGridProps> = ({
           columnState,
           filterModel,
           sortModel,
+          dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
         };
       }
       return view;
@@ -1711,6 +1881,7 @@ const AgGrid: FC<IAgGridProps> = ({
             columnState,
             filterModel,
             sortModel,
+            dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
           });
         } else {
           stateDS.setValue(null, { ...base, savedViews: updatedViews });
