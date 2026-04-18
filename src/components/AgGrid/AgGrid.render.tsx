@@ -99,6 +99,15 @@ ModuleRegistry.registerModules([
 const ROW_NUMBER_COL_ID = '__qodlyRowNumber';
 
 /**
+ * Stable AG Grid `field` / `colId`: datasource attribute `source`.
+ * Row objects use this key; `title` stays free to change with i18n without breaking cell values.
+ */
+function agGridColumnField(col: IColumn): string {
+  const s = typeof col.source === 'string' ? col.source.trim() : '';
+  return s || col.title;
+}
+
+/**
  * After "Clear result" calls `setFilterModel(null)`, the filter popup can close (especially in
  * hosted / MF builds). AG Grid supports reopening via `showColumnFilter` — schedule a few passes
  * so it runs after internal teardown + async refresh.
@@ -120,6 +129,50 @@ function scheduleReopenColumnFilterAfterClear(api: GridApi, colId: string | unde
   window.setTimeout(reopen, 120);
 }
 
+/**
+ * Condition-type `AgSelect` renders its option list in a separate layered popup. A mousedown there
+ * can be treated as "outside" the column filter panel, so the panel closes before Apply — especially
+ * when there are no value inputs (`numberOfInputs: 0`, e.g. boolean True/False on a number filter).
+ * Marking the open list lets AG Grid treat those clicks as part of the filter UI flow.
+ */
+function attachColumnFilterNestedSelectPopupWorkaround(ePopup: HTMLElement): void {
+  if (ePopup.getAttribute('data-qodly-nested-select-popup-fix') === '1') return;
+  if (!ePopup.querySelector('.ag-filter')) return;
+  ePopup.setAttribute('data-qodly-nested-select-popup-fix', '1');
+
+  const markListFromEvent = (eventTarget: EventTarget | null) => {
+    const list = (eventTarget as HTMLElement | null)?.closest?.('.ag-select-list');
+    if (list) list.classList.add('ag-custom-component-popup');
+  };
+
+  const onPointerDownCapture = (e: Event) => {
+    if (!ePopup.isConnected) {
+      cleanup();
+      return;
+    }
+    markListFromEvent(e.target);
+  };
+
+  let detachInterval: number | undefined;
+  const cleanup = () => {
+    document.removeEventListener('mousedown', onPointerDownCapture, true);
+    document.removeEventListener('touchstart', onPointerDownCapture, true);
+    if (detachInterval != null) {
+      window.clearInterval(detachInterval);
+      detachInterval = undefined;
+    }
+  };
+
+  document.addEventListener('mousedown', onPointerDownCapture, true);
+  document.addEventListener('touchstart', onPointerDownCapture, true);
+
+  detachInterval = window.setInterval(() => {
+    if (!ePopup.isConnected) {
+      cleanup();
+    }
+  }, 500);
+}
+
 function withoutSyntheticRowColumnState(columnState: any[] | undefined | null): any[] {
   if (!Array.isArray(columnState)) return [];
   return columnState.filter((s) => s && s.colId !== ROW_NUMBER_COL_ID);
@@ -132,12 +185,25 @@ const RowNumberCell: FC<ICellRendererParams> = (params) => (
 );
 
 function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
+  if (data[field] !== undefined && data[field] !== null) {
+    return data[field];
+  }
   const bySource = cols.find((c) => c.source === field);
-  if (bySource && data[bySource.title] !== undefined && data[bySource.title] !== null) {
-    return data[bySource.title];
+  if (bySource) {
+    const stable = agGridColumnField(bySource);
+    const v = data[stable];
+    if (v !== undefined && v !== null) return v;
+    if (data[bySource.title] !== undefined && data[bySource.title] !== null) {
+      return data[bySource.title];
+    }
   }
   const byTitle = cols.find((c) => c.title === field);
-  if (byTitle) return data[byTitle.title];
+  if (byTitle) {
+    const stable = agGridColumnField(byTitle);
+    const v = data[stable];
+    if (v !== undefined && v !== null) return v;
+    return data[byTitle.title];
+  }
   return undefined;
 }
 
@@ -145,16 +211,25 @@ function hasMeaningfulColumnState(columnState: unknown): boolean {
   return Array.isArray(columnState) && columnState.length > 0;
 }
 
-/** Merge Qodly attribute path onto AG Grid column state (match by colId === column title). */
+/** Merge Qodly attribute path onto AG Grid column state (resolve colId → stable field, attach source). */
 function enrichColumnStateWithSource(
   columnState: any[] | undefined | null,
   columns: IColumn[],
 ): any[] {
   if (!Array.isArray(columnState)) return [];
-  const byTitle = new Map(columns.map((c) => [c.title, c]));
+  const byKey = new Map<string, IColumn>();
+  columns.forEach((c) => {
+    byKey.set(c.title, c);
+    if (c.source?.trim()) byKey.set(c.source, c);
+    byKey.set(agGridColumnField(c), c);
+  });
   return columnState.map((cs: any) => {
-    const col = cs?.colId != null ? byTitle.get(cs.colId) : undefined;
-    return col?.source != null ? { ...cs, source: col.source } : { ...cs };
+    const col = cs?.colId != null ? byKey.get(cs.colId) : undefined;
+    if (!col) return { ...cs };
+    const stableColId = agGridColumnField(col);
+    return col.source != null
+      ? { ...cs, colId: stableColId, source: col.source }
+      : { ...cs, colId: stableColId };
   });
 }
 
@@ -409,6 +484,14 @@ const AgGrid: FC<IAgGridProps> = ({
             },
             suppressHeaderMenuButton: true,
             width: 48,
+            minWidth: 48,
+            maxWidth: 56,
+            flex: 0,
+            pinned: 'left' as const,
+            lockPinned: true,
+            lockPosition: 'left' as const,
+            suppressMovable: true,
+            resizable: false,
           }
         : undefined,
     [multiSelection, i18n, lang, showSelectAllHeaderCheckbox],
@@ -602,7 +685,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const initialColumnVisibility = useMemo(
     () =>
       columns.map((col) => ({
-        field: col.title,
+        field: agGridColumnField(col),
         isHidden: col.hidden || false, // use col.hidden directly from properties
         pinned: null as 'left' | 'right' | null,
       })),
@@ -647,7 +730,8 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const colDefs: ColDef[] = useMemo(() => {
     return columns.map((col) => {
-      const colState = columnVisibility.find((c) => c.field === col.title) || {
+      const stableField = agGridColumnField(col);
+      const colState = columnVisibility.find((c) => c.field === stableField) || {
         isHidden: false,
         pinned: null,
       };
@@ -655,7 +739,8 @@ const AgGrid: FC<IAgGridProps> = ({
       const refKey = extractRefDatasetKeyFromSource(col.source);
       const isRefSource = refKey != null;
       return {
-        field: col.title,
+        field: stableField,
+        headerName: col.title,
         source: col.source,
         hide: colState.isHidden,
         pinned: colState.pinned,
@@ -731,7 +816,7 @@ const AgGrid: FC<IAgGridProps> = ({
       columns
         .filter((col) => col.dataType !== 'image' && col.dataType !== 'object' && col.sorting)
         .map((col) => ({
-          colId: col.title,
+          colId: agGridColumnField(col),
           label: col.title,
         })),
     [columns],
@@ -742,6 +827,15 @@ const AgGrid: FC<IAgGridProps> = ({
     [columns],
   );
 
+  /** Toolbar column list: show translated `title`, while `field` stays the stable datasource key. */
+  const columnLabelByStableField = useMemo(() => {
+    const m = new Map<string, string>();
+    columns.forEach((c) => {
+      m.set(agGridColumnField(c), c.title);
+    });
+    return m;
+  }, [columns]);
+
   const isSortDirection = useCallback((sort: any): sort is 'asc' | 'desc' => {
     return sort === 'asc' || sort === 'desc';
   }, []);
@@ -749,9 +843,21 @@ const AgGrid: FC<IAgGridProps> = ({
   const normalizeSortModel = useCallback(
     (sortModel: SortModelItem[] | undefined | null): SortModelItem[] => {
       if (!Array.isArray(sortModel)) return [];
+      const resolveSortColId = (raw: string): string => {
+        const byStable = columns.find((c) => agGridColumnField(c) === raw);
+        if (byStable) return agGridColumnField(byStable);
+        const byTitle = columns.find((c) => c.title === raw);
+        if (byTitle) return agGridColumnField(byTitle);
+        const bySource = columns.find((c) => c.source === raw);
+        if (bySource) return agGridColumnField(bySource);
+        return raw;
+      };
       const seen = new Set<string>();
       const allowedColumns = new Set(sortableColumns.map((column) => column.colId));
       return sortModel
+        .map((rule) =>
+          rule?.colId ? { colId: resolveSortColId(rule.colId), sort: rule.sort } : rule,
+        )
         .filter(
           (rule): rule is SortModelItem =>
             !!rule?.colId && isSortDirection(rule.sort) && allowedColumns.has(rule.colId),
@@ -763,7 +869,7 @@ const AgGrid: FC<IAgGridProps> = ({
         })
         .map((rule) => ({ colId: rule.colId, sort: rule.sort }));
     },
-    [isSortDirection, sortableColumns],
+    [columns, isSortDirection, sortableColumns],
   );
 
   const buildSortModelFromColumnState = useCallback(
@@ -1182,6 +1288,7 @@ const AgGrid: FC<IAgGridProps> = ({
     (params: PostProcessPopupParams) => {
       const panel = params.ePopup.querySelector<HTMLElement>('.ag-filter-apply-panel');
       if (!panel || !params.ePopup.querySelector('.ag-filter')) return;
+      attachColumnFilterNestedSelectPopupWorkaround(params.ePopup);
       if (panel.querySelector('[data-qodly-clear-all-filters-button]')) return;
 
       const financialDate = dateFinancialRef.current;
@@ -1442,7 +1549,8 @@ const AgGrid: FC<IAgGridProps> = ({
     const result: any = {};
     (columns || []).forEach((col: any) => {
       const key = col.source ?? col.title;
-      const raw = row?.[col.title] ?? row?.__entity?.[col.source];
+      const stable = agGridColumnField(col);
+      const raw = row?.[stable] ?? row?.[col.title] ?? row?.__entity?.[col.source];
       result[key] = sanitizeValue(raw);
     });
     return result;
@@ -1526,7 +1634,7 @@ const AgGrid: FC<IAgGridProps> = ({
         __entity: data,
       };
       cols.forEach((col) => {
-        row[col.title] = data[col.source];
+        row[agGridColumnField(col)] = data[col.source];
       });
       return row;
     });
@@ -1928,11 +2036,19 @@ const AgGrid: FC<IAgGridProps> = ({
         if (showVisibleOnly && !isVisible) return false;
         if (!rawSearch) return true;
 
+        const displayLabel = columnLabelByStableField.get(column.field) ?? column.field;
         const field = column.field.toLowerCase();
+        const label = String(displayLabel).toLowerCase();
         const compactField = field.replace(/[_\s]+/g, '');
-        return field.includes(rawSearch) || compactField.includes(compactSearch);
+        const compactLabel = label.replace(/[_\s]+/g, '');
+        return (
+          field.includes(rawSearch) ||
+          compactField.includes(compactSearch) ||
+          label.includes(rawSearch) ||
+          compactLabel.includes(compactSearch)
+        );
       });
-  }, [normalizedColumns, propertySearch, showVisibleOnly]);
+  }, [columnLabelByStableField, normalizedColumns, propertySearch, showVisibleOnly]);
 
   const setFilteredColumnsVisible = (visible: boolean) => {
     filteredColumns.forEach((column) => {
@@ -2417,7 +2533,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                           isVisible ? 'text-gray-700' : 'text-slate-400'
                                         }`}
                                       >
-                                        {column.field}
+                                        {columnLabelByStableField.get(column.field) ?? column.field}
                                       </span>
                                     </label>
 
@@ -2550,7 +2666,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                           type="button"
                                           className=" border bg-white px-2 py-1"
                                           style={{
-                                            height: '32px',
+                                            height: '36px',
                                             borderColor: '#0000001A',
                                             borderRadius: '8px',
                                             fontSize: '12px',

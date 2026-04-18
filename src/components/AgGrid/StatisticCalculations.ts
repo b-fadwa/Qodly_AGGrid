@@ -12,7 +12,7 @@ export type StatisticCalculationItem = {
 
 /** Generic numeric field — use for any dataclass / entity / custom catalogue (not only Ag Grid). */
 export type StatisticFieldDescriptor = {
-  /** Stable id used for selection and as `columnTitle` in the event payload. */
+  /** Stable id used for selection (matches datasource field / grid colId). */
   id: string;
   label: string;
   source: string;
@@ -62,13 +62,20 @@ export class StatisticCalculations {
         .toLowerCase() === 'number' && !isBooleanLikeColumn(col);
     return columns
       .filter((col) => isNumberType(col))
-      .map((col) => ({
-        id: col.title,
-        colId: col.title,
-        label: col.title,
-        source: col.source,
-        dataType: col.dataType,
-      }));
+      .map((col) => {
+        const stableId =
+          String(col.source ?? '')
+            .trim() !== ''
+            ? col.source
+            : col.title;
+        return {
+          id: stableId,
+          colId: stableId,
+          label: col.title,
+          source: col.source,
+          dataType: col.dataType,
+        };
+      });
   }
 
   /** Convert generic fields to Ag Grid column shape (id duplicated as colId). */
@@ -106,7 +113,7 @@ export class StatisticCalculations {
       for (const op of StatisticCalculations.ALL_OPERATIONS) {
         if (!opSet.has(op)) continue;
         out.push({
-          columnTitle: f.id,
+          columnTitle: f.label,
           columnSource: f.source,
           dataType: f.dataType,
           operation: op,

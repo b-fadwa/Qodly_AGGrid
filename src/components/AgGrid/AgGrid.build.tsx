@@ -13,6 +13,11 @@ import { GoTrash } from "react-icons/go";
 import { IoMdClose } from "react-icons/io";
 import { FaCalculator, FaSortAmountDown } from "react-icons/fa";
 
+function agGridColumnField(col: { title: string; source: string }): string {
+  const s = typeof col.source === 'string' ? col.source.trim() : '';
+  return s || col.title;
+}
+
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
   columns,
@@ -55,7 +60,10 @@ const AgGrid: FC<IAgGridProps> = ({
   const { resolver } = useEnhancedEditor(selectResolver);
 
   const colDefs: ColDef[] = useMemo(() => {
-    const userCols = columns.map((col) => ({ field: col.title }));
+    const userCols = columns.map((col) => ({
+      field: agGridColumnField(col),
+      headerName: col.title,
+    }));
     if (!showRowNumbers) return userCols;
     return [
       {
@@ -84,7 +92,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const rowData: any[] = Array.from({ length: 20 }, () => {
     const row: any = {};
     columns.forEach((col) => {
-      row[col.title] = col.source;
+      row[agGridColumnField(col)] = col.source;
     });
     return row;
   });
