@@ -31,7 +31,6 @@ export interface SortsManager {
   loadSort: (key: string) => void;
   updateSort: (key: string) => void;
   deleteSort: (key: string) => void;
-  loadSortsList: () => void;
   /** Apply a given sort model to the grid and persist it (shared with the advanced-sorting dialog). */
   applySortModelToGrid: (sortModel: SortModelItem[]) => void;
 }
@@ -194,10 +193,6 @@ export function useSortsManager({
     [emit],
   );
 
-  const loadSortsList = useCallback(() => {
-    emit('onloadsorts');
-  }, [emit]);
-
   return {
     savedSorts,
     refreshSavedSorts,
@@ -207,7 +202,6 @@ export function useSortsManager({
     loadSort,
     updateSort,
     deleteSort,
-    loadSortsList,
     applySortModelToGrid,
   };
 }

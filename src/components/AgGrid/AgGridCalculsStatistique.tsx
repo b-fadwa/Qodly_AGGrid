@@ -357,7 +357,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                   style={{ color: '#4A5565', fontSize: '14px' }}
                 >
                   {translation(
-                    'Select one or more columns and one or more calculation modes. The server receives every combination. Bind Calculs statistique result to the scalar datasource used as the event return.',
+                    'Select one or more columns and one or more calculation modes, the server receives every combination, bind Calculs statistique result to the scalar datasource used as the event return',
                   )}
                 </span>
               </div>
@@ -496,11 +496,6 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                         ))}
                       </div>
                     </div>
-                    {calculations.length > 0 && (
-                      <p className="text-xs text-slate-500">
-                        {translation('Combinations')}: {calculations.length}
-                      </p>
-                    )}
                     {(statsLoading ||
                       statsError != null ||
                       statsResponse != null ||

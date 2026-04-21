@@ -1,52 +1,25 @@
-import { FC, useMemo, useState } from 'react';
+import { FC, useState } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
 import type { SavedFilter } from '../state/types';
 import type { Translation } from '../state/sorts';
+import { QueryBuilder } from './QueryBuilder';
 
 interface FilterDialogProps {
   open: boolean;
   onClose: () => void;
   translation: Translation;
   columns: IColumn[];
-  /** Current live filter model as read from the grid, used for the preview panel. */
-  currentFilterModel: any;
-  /** Clear every column filter in the grid. */
-  onClear: () => void;
+  /** AG Grid `getFilterModel()` snapshot — kept in sync with the header filter via `onFilterChanged`. */
+  filterModel: any;
+  /** Push a new filterModel back to AG Grid (typically `gridApi.setFilterModel`). */
+  setFilterModel: (next: any) => void;
   savedFilters: SavedFilter[];
   saveFilter: (name: string) => void;
   loadFilter: (key: string) => void;
   updateFilter: (key: string) => void;
   deleteFilter: (key: string) => void;
-  loadFiltersList: () => void;
-}
-
-/**
- * Summarize a single column-filter-model entry as a human string.
- * This dialog is not a column-filter editor (use the per-column filter popup for that) —
- * it manages _named_ filter sets built out of the grid's current state.
- */
-function formatFilterEntry(filter: any): string {
-  if (!filter || typeof filter !== 'object') return '';
-  if (Array.isArray(filter.conditions)) {
-    const op = filter.operator ? ` ${filter.operator} ` : ' AND ';
-    return filter.conditions.map((c: any) => formatSingleCondition(c)).filter(Boolean).join(op);
-  }
-  return formatSingleCondition(filter);
-}
-
-function formatSingleCondition(filter: any): string {
-  if (!filter || typeof filter !== 'object') return '';
-  const type = filter.type ?? '';
-  const filterType = filter.filterType ?? '';
-  const value =
-    filter.filter ?? filter.dateFrom ?? filter.value ?? '';
-  const valueTo = filter.filterTo ?? filter.dateTo ?? '';
-  const label = type || filterType || '';
-  if (valueTo) return `${label} [${value} → ${valueTo}]`;
-  if (value !== '' && value != null) return `${label} "${value}"`;
-  return label;
 }
 
 export const FilterDialog: FC<FilterDialogProps> = ({
@@ -54,32 +27,16 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   onClose,
   translation,
   columns,
-  currentFilterModel,
-  onClear,
+  filterModel,
+  setFilterModel,
   savedFilters,
   saveFilter,
   loadFilter,
   updateFilter,
   deleteFilter,
-  loadFiltersList,
 }) => {
   const [filterName, setFilterName] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('');
-
-  const activeEntries = useMemo(() => {
-    const model = currentFilterModel;
-    if (!model || typeof model !== 'object') return [];
-    return Object.keys(model).map((colKey) => {
-      const col = columns.find(
-        (c) => c.title === colKey || c.source === colKey || String(c.id ?? '') === colKey,
-      );
-      return {
-        colKey,
-        label: col?.title ?? colKey,
-        summary: formatFilterEntry(model[colKey]),
-      };
-    });
-  }, [columns, currentFilterModel]);
 
   if (!open) return null;
 
@@ -89,8 +46,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
+        className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
+        style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 rounded-t-xl">
           <div>
@@ -104,9 +62,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               className="mt-1 block text-sm"
               style={{ color: '#4A5565', fontSize: '14px' }}
             >
-              {translation(
-                'Review current column filters and manage named filter sets',
-              )}
+              {translation('Edit the same filters as the column popups')}
             </span>
           </div>
           <button
@@ -118,45 +74,20 @@ export const FilterDialog: FC<FilterDialogProps> = ({
           </button>
         </div>
 
-        <div className="px-5 py-4">
-          <div
-            className="rounded-lg border p-3"
-            style={{ borderColor: '#D1D5DC', backgroundColor: '#FAFAFA' }}
-          >
-            <div
-              className="mb-2"
-              style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
-            >
-              {translation('Current filter')}
-            </div>
-            {activeEntries.length === 0 ? (
-              <div className="text-sm text-slate-600">
-                {translation('No active column filters')}
-              </div>
-            ) : (
-              <ul className="space-y-1">
-                {activeEntries.map((entry) => (
-                  <li
-                    key={entry.colKey}
-                    className="flex items-center justify-between text-sm"
-                    style={{ color: '#364153' }}
-                  >
-                    <span className="font-medium">{entry.label}</span>
-                    <span className="text-slate-500">{entry.summary}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+        <div className="px-5 py-4" style={{ overflowY: 'auto' }}>
+          <QueryBuilder
+            translation={translation}
+            columns={columns}
+            filterModel={filterModel}
+            onChange={setFilterModel}
+          />
         </div>
 
         <div
           className="px-5 py-3 flex flex-col gap-3"
           style={{ borderTop: '1px solid #E5E7EB' }}
         >
-          <span
-            style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
-          >
+          <span style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}>
             {translation('Saved filters')}
           </span>
           <div className="flex flex-wrap items-center gap-2">
@@ -236,21 +167,6 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             </button>
             <button
               type="button"
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1"
-              style={{
-                height: '31px',
-                borderRadius: '6px',
-                borderColor: '#0000001A',
-                color: '#44444C',
-                fontSize: '12px',
-              }}
-              onClick={loadFiltersList}
-              title={translation('Reload list')}
-            >
-              {translation('Load list')}
-            </button>
-            <button
-              type="button"
               className="inline-flex items-center justify-center rounded-lg border"
               style={{
                 width: '31px',
@@ -285,9 +201,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               color: '#44444C',
               fontSize: '12px',
             }}
-            onClick={() => {
-              onClear();
-            }}
+            onClick={() => setFilterModel(null)}
           >
             {translation('Clear')}
           </button>

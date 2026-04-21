@@ -28,7 +28,6 @@ export interface FiltersManager {
   loadFilter: (key: string) => void;
   updateFilter: (key: string) => void;
   deleteFilter: (key: string) => void;
-  loadFiltersList: () => void;
 }
 
 export function useFiltersManager({
@@ -197,10 +196,6 @@ export function useFiltersManager({
     [emit],
   );
 
-  const loadFiltersList = useCallback(() => {
-    emit('onloadfilters');
-  }, [emit]);
-
   return {
     savedFilters,
     refreshSavedFilters,
@@ -210,6 +205,5 @@ export function useFiltersManager({
     loadFilter,
     updateFilter,
     deleteFilter,
-    loadFiltersList,
   };
 }

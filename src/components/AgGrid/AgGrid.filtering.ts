@@ -386,6 +386,103 @@ export const buildFilterQuery = (filter: any, source: string, column?: any): str
   }
 };
 
+/* ------------------------------------------------------------------ *
+ * Operator descriptors used by the advanced-filter modal.
+ *
+ * The modal must offer the *exact same* operators as the per-column
+ * filter popups (so toggling between header and modal stays consistent).
+ * We derive the descriptors from `getColumnFilterParams(...).filterOptions`
+ * so the source of truth stays in this file.
+ * ------------------------------------------------------------------ */
+
+export interface FilterOperatorDescriptor {
+  /** Matches AG Grid's `filterModel[col].type` (built-in name or custom `displayKey`). */
+  key: string;
+  /** Display label (English; localized via `useI18n` at the call site if desired). */
+  label: string;
+  /** Number of value inputs to render (0, 1 or 2). */
+  inputs: 0 | 1 | 2;
+}
+
+const BUILT_IN_OPERATOR_LABEL: Record<string, string> = {
+  contains: 'Contains',
+  notContains: 'Does not contain',
+  equals: 'Equals',
+  notEqual: 'Not equal',
+  startsWith: 'Starts with',
+  endsWith: 'Ends with',
+  greaterThan: 'Greater than',
+  greaterThanOrEqual: 'Greater than or equal',
+  lessThan: 'Less than',
+  lessThanOrEqual: 'Less than or equal',
+  inRange: 'Between',
+  blank: 'Is empty',
+  notBlank: 'Is not empty',
+  empty: 'Choose one',
+};
+
+const BUILT_IN_OPERATOR_INPUTS: Record<string, 0 | 1 | 2> = {
+  contains: 1,
+  notContains: 1,
+  equals: 1,
+  notEqual: 1,
+  startsWith: 1,
+  endsWith: 1,
+  greaterThan: 1,
+  greaterThanOrEqual: 1,
+  lessThan: 1,
+  lessThanOrEqual: 1,
+  inRange: 2,
+  blank: 0,
+  notBlank: 0,
+  empty: 0,
+};
+
+export const getColumnFilterOperators = (column: any): FilterOperatorDescriptor[] => {
+  const isBoolean = isBooleanLikeColumn(column);
+  const params = getColumnFilterParams(column, isBoolean);
+  return ((params.filterOptions ?? []) as any[])
+    .map((option): FilterOperatorDescriptor | null => {
+      if (typeof option === 'string') {
+        if (option === 'empty') return null; // the AG Grid placeholder, not a real operator
+        return {
+          key: option,
+          label: BUILT_IN_OPERATOR_LABEL[option] ?? option,
+          inputs: BUILT_IN_OPERATOR_INPUTS[option] ?? 1,
+        };
+      }
+      if (option && typeof option === 'object' && option.displayKey) {
+        return {
+          key: option.displayKey,
+          label: option.displayName ?? option.displayKey,
+          inputs: ((option.numberOfInputs ?? 1) as 0 | 1 | 2),
+        };
+      }
+      return null;
+    })
+    .filter((d): d is FilterOperatorDescriptor => d !== null);
+};
+
+/** AG Grid `filterModel` `filterType` discriminator for a given column. */
+export const getColumnAgGridFilterType = (
+  column: any,
+): 'text' | 'number' | 'date' | typeof QODLY_REF_SELECT_FILTER_TYPE | null => {
+  const isBoolean = isBooleanLikeColumn(column);
+  const filterComponent = getColumnFilterType(column, isBoolean);
+  switch (filterComponent) {
+    case 'agTextColumnFilter':
+      return 'text';
+    case 'agNumberColumnFilter':
+      return 'number';
+    case 'agDateColumnFilter':
+      return 'date';
+    case 'qodlyRefSelectFilter':
+      return QODLY_REF_SELECT_FILTER_TYPE;
+    default:
+      return null;
+  }
+};
+
 export const buildFilterQueries = (filterModel: any, columns: any[]): string[] => {
   return Object.keys(filterModel).map((key) => {
     const filter = filterModel[key];

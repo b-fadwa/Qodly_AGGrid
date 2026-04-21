@@ -25,7 +25,6 @@ interface SortingDialogProps {
   loadSort: (key: string) => void;
   updateSort: (key: string) => void;
   deleteSort: (key: string) => void;
-  loadSortsList: () => void;
 }
 
 export const SortingDialog: FC<SortingDialogProps> = ({
@@ -41,7 +40,6 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   loadSort,
   updateSort,
   deleteSort,
-  loadSortsList,
 }) => {
   const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
   const [sortName, setSortName] = useState('');
@@ -249,7 +247,6 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                   if (!selectedSort) return;
                   deleteSort(selectedSort);
                 }}
-                onLoadList={loadSortsList}
               />
 
               <div
@@ -302,7 +299,6 @@ interface SavedSortsSectionProps {
   onLoad: (key: string) => void;
   onUpdate: () => void;
   onDelete: () => void;
-  onLoadList: () => void;
 }
 
 const SavedSortsSection: FC<SavedSortsSectionProps> = ({
@@ -316,7 +312,6 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
   onLoad,
   onUpdate,
   onDelete,
-  onLoadList,
 }) => {
   const inputStyle = {
     height: '31px',
@@ -387,15 +382,6 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
           onClick={onUpdate}
         >
           {translation('Update')}
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-gray-300 bg-white px-2 py-1"
-          style={buttonStyle}
-          onClick={onLoadList}
-          title={translation('Reload list')}
-        >
-          {translation('Load list')}
         </button>
         <button
           type="button"

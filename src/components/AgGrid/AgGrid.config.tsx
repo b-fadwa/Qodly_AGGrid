@@ -79,19 +79,16 @@ export default {
 
       { label: 'On Save View', value: 'onsaveview' },
       { label: 'On Load View', value: 'onloadview' },
-      { label: 'On Load Views (list)', value: 'onloadviews' },
       { label: 'On Update View', value: 'onupdateview' },
       { label: 'On Delete View', value: 'ondeleteview' },
 
       { label: 'On Save Filter', value: 'onsavefilter' },
       { label: 'On Load Filter', value: 'onloadfilter' },
-      { label: 'On Load Filters (list)', value: 'onloadfilters' },
       { label: 'On Update Filter', value: 'onupdatefilter' },
       { label: 'On Delete Filter', value: 'ondeletefilter' },
 
       { label: 'On Save Sort', value: 'onsavesort' },
       { label: 'On Load Sort', value: 'onloadsort' },
-      { label: 'On Load Sorts (list)', value: 'onloadsorts' },
       { label: 'On Update Sort', value: 'onupdatesort' },
       { label: 'On Delete Sort', value: 'ondeletesort' },
 

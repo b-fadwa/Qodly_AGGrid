@@ -269,17 +269,14 @@ const AgGrid: FC<IAgGridProps> = ({
       'oncellmousedown',
       'onsaveview',
       'onloadview',
-      'onloadviews',
       'onupdateview',
       'ondeleteview',
       'onsavefilter',
       'onloadfilter',
-      'onloadfilters',
       'onupdatefilter',
       'ondeletefilter',
       'onsavesort',
       'onloadsort',
-      'onloadsorts',
       'onupdatesort',
       'ondeletesort',
       'oncalculstatistique',
@@ -458,8 +455,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
+  const [liveFilterModel, setLiveFilterModel] = useState<any>({});
   const [sortDialogInitialModel, setSortDialogInitialModel] = useState<SortModelItem[]>([]);
-  const [filterDialogModelSnapshot, setFilterDialogModelSnapshot] = useState<any>(null);
 
   // view management (toolbar UI state)
   const [viewName, setViewName] = useState<string>('');
@@ -638,7 +635,7 @@ const AgGrid: FC<IAgGridProps> = ({
       return {
         field: stableField,
         headerName: col.title,
-        source: col.source,
+        context: { source: col.source },
         hide: colState.isHidden,
         pinned: colState.pinned,
         cellRendererParams: {
@@ -1297,6 +1294,7 @@ const AgGrid: FC<IAgGridProps> = ({
   );
 
   const onFilterChanged = useCallback((event: FilterChangedEvent) => {
+    setLiveFilterModel(event.api.getFilterModel() ?? {});
     event.api.refreshInfiniteCache();
   }, []);
 
@@ -1662,7 +1660,7 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const openAdvancedFilterDialog = () => {
-    setFilterDialogModelSnapshot(gridRef.current?.api?.getFilterModel() ?? {});
+    setLiveFilterModel(gridRef.current?.api?.getFilterModel() ?? {});
     setShowFilterDialog(true);
   };
 
@@ -1812,7 +1810,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       >
                         {translation('Actions')}
                       </span>
-                      <div className="flex flex-row gap-2">
+                      <div className="flex flex-row gap-1">
                         <div className="flex gap-2">
                           <Element id="agGridActions" is={resolver.StyleBox} canvas />
                         </div>
@@ -2035,21 +2033,6 @@ const AgGrid: FC<IAgGridProps> = ({
                                 {translation('Update')}
                               </button>
                               <button
-                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                                onClick={() => viewsManager.loadViewsList()}
-                                style={{
-                                  height: '31px',
-                                  borderRadius: '6px',
-                                  borderColor: '#0000001A',
-                                  color: '#44444C',
-                                  fontSize: '12px',
-                                  fontWeight: 500,
-                                }}
-                                title={translation('Reload list')}
-                              >
-                                {translation('Load list')}
-                              </button>
-                              <button
                                 className="header-button-trash inline-flex items-center justify-center rounded-lg border"
                                 style={{
                                   width: '31px',
@@ -2264,7 +2247,6 @@ const AgGrid: FC<IAgGridProps> = ({
                       loadSort={sortsManager.loadSort}
                       updateSort={sortsManager.updateSort}
                       deleteSort={sortsManager.deleteSort}
-                      loadSortsList={sortsManager.loadSortsList}
                     />
                   )}
                   {showToolbarFiltering && (
@@ -2273,22 +2255,16 @@ const AgGrid: FC<IAgGridProps> = ({
                       onClose={() => setShowFilterDialog(false)}
                       translation={translation}
                       columns={columns}
-                      currentFilterModel={filterDialogModelSnapshot}
-                      onClear={() => {
-                        gridRef.current?.api?.setFilterModel(null);
-                        setFilterDialogModelSnapshot({});
+                      filterModel={liveFilterModel}
+                      setFilterModel={(next) => {
+                        gridRef.current?.api?.setFilterModel(next ?? null);
+                        setLiveFilterModel(next ?? {});
                       }}
                       savedFilters={filtersManager.savedFilters}
                       saveFilter={filtersManager.saveFilter}
-                      loadFilter={(key) => {
-                        filtersManager.loadFilter(key);
-                        setFilterDialogModelSnapshot(
-                          gridRef.current?.api?.getFilterModel() ?? {},
-                        );
-                      }}
+                      loadFilter={filtersManager.loadFilter}
                       updateFilter={filtersManager.updateFilter}
                       deleteFilter={filtersManager.deleteFilter}
-                      loadFiltersList={filtersManager.loadFiltersList}
                     />
                   )}
                 </div>

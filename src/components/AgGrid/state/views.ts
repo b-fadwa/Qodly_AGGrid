@@ -38,8 +38,6 @@ export interface ViewsManager {
   updateView: (key: string) => void;
   /** Ask the host to delete the saved view `key` — emits `ondeleteview`. */
   deleteView: (key: string) => void;
-  /** Emit `onloadviews` so the host can refresh the `views` datasource from its backend. */
-  loadViewsList: () => void;
 }
 
 export function useViewsManager({
@@ -202,10 +200,6 @@ export function useViewsManager({
     [emit],
   );
 
-  const loadViewsList = useCallback(() => {
-    emit('onloadviews');
-  }, [emit]);
-
   return {
     savedViews,
     refreshSavedViews,
@@ -215,6 +209,5 @@ export function useViewsManager({
     loadView,
     updateView,
     deleteView,
-    loadViewsList,
   };
 }
