@@ -78,12 +78,24 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { format } from 'date-fns';
 import { get } from 'lodash';
-import { FaTableColumns } from 'react-icons/fa6';
+import { FaTableColumns, FaCopy } from 'react-icons/fa6';
 import { FaClockRotateLeft } from 'react-icons/fa6';
-import { GoTrash } from 'react-icons/go';
 import { IoMdClose } from 'react-icons/io';
-import { FaSortAmountDown } from 'react-icons/fa';
-import { FaCopy } from 'react-icons/fa6';
+import { FaSortAmountDown, FaFilter } from 'react-icons/fa';
+import { GoTrash } from 'react-icons/go';
+import {
+  ROW_NUMBER_COL_ID,
+  agGridColumnField,
+  buildSortModelFromColumnState,
+  normalizeAgGridFilterModel,
+  normalizeSortModel,
+  withoutSyntheticRowColumnState,
+} from './state/gridState';
+import { useViewsManager } from './state/views';
+import { useFiltersManager } from './state/filters';
+import { useSortsManager } from './state/sorts';
+import { SortingDialog } from './dialogs/SortingDialog';
+import { FilterDialog } from './dialogs/FilterDialog';
 
 ModuleRegistry.registerModules([
   ColumnHoverModule,
@@ -94,18 +106,6 @@ ModuleRegistry.registerModules([
   NumberFilterModule,
   DateFilterModule,
 ]);
-
-/** Synthetic row index column — excluded from Columns config and persisted grid state. */
-const ROW_NUMBER_COL_ID = '__qodlyRowNumber';
-
-/**
- * Stable AG Grid `field` / `colId`: datasource attribute `source`.
- * Row objects use this key; `title` stays free to change with i18n without breaking cell values.
- */
-function agGridColumnField(col: IColumn): string {
-  const s = typeof col.source === 'string' ? col.source.trim() : '';
-  return s || col.title;
-}
 
 /**
  * After "Clear result" calls `setFilterModel(null)`, the filter popup can close (especially in
@@ -173,11 +173,6 @@ function attachColumnFilterNestedSelectPopupWorkaround(ePopup: HTMLElement): voi
   }, 500);
 }
 
-function withoutSyntheticRowColumnState(columnState: any[] | undefined | null): any[] {
-  if (!Array.isArray(columnState)) return [];
-  return columnState.filter((s) => s && s.colId !== ROW_NUMBER_COL_ID);
-}
-
 const RowNumberCell: FC<ICellRendererParams> = (params) => (
   <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
     {params.value ?? ''}
@@ -207,94 +202,17 @@ function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
   return undefined;
 }
 
-function hasMeaningfulColumnState(columnState: unknown): boolean {
-  return Array.isArray(columnState) && columnState.length > 0;
-}
-
-/** Merge Qodly attribute path onto AG Grid column state (resolve colId → stable field, attach source). */
-function enrichColumnStateWithSource(
-  columnState: any[] | undefined | null,
-  columns: IColumn[],
-): any[] {
-  if (!Array.isArray(columnState)) return [];
-  const byKey = new Map<string, IColumn>();
-  columns.forEach((c) => {
-    byKey.set(c.title, c);
-    if (c.source?.trim()) byKey.set(c.source, c);
-    byKey.set(agGridColumnField(c), c);
-  });
-  return columnState.map((cs: any) => {
-    const col = cs?.colId != null ? byKey.get(cs.colId) : undefined;
-    if (!col) return { ...cs };
-    const stableColId = agGridColumnField(col);
-    return col.source != null
-      ? { ...cs, colId: stableColId, source: col.source }
-      : { ...cs, colId: stableColId };
-  });
-}
-
-/** Strip custom keys before applyColumnState (AG Grid only uses its own column state shape). */
-function columnStateForAgGridApply(columnState: any[] | undefined | null): any[] {
-  if (!Array.isArray(columnState)) return [];
-  return columnState.map((s: any) => {
-    if (s && typeof s === 'object' && 'source' in s) {
-      const next = { ...s };
-      delete next.source;
-      return next;
-    }
-    return s;
-  });
-}
-
-/** AG Grid ignores `{}` for clearing; use `null` to reset all column filters. */
-function normalizeAgGridFilterModel(model: any): any {
-  if (model == null) return null;
-  if (typeof model !== 'object' || Array.isArray(model)) return model;
-  return Object.keys(model).length === 0 ? null : model;
-}
-
-function applyGridFilterModel(api: GridApi, filterModel: any): void {
-  const desired = normalizeAgGridFilterModel(filterModel);
-  const current = normalizeAgGridFilterModel(api.getFilterModel());
-  if (isEqual(current, desired)) {
-    return;
-  }
-  api.setFilterModel(desired === null ? null : filterModel);
-}
-
-/** Toolbar / saved-view row: unify `name` (toolbar) with backend `title` + `id`. */
-function normalizeToolbarView(raw: any): any | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const nameFromName = typeof raw.name === 'string' ? raw.name.trim() : '';
-  const nameFromTitle = typeof raw.title === 'string' ? raw.title.trim() : '';
-  const nameFromId = raw.id != null && raw.id !== '' ? String(raw.id) : '';
-  const name = nameFromName || nameFromTitle || nameFromId;
-  if (!name) return null;
-  return { ...raw, name };
-}
-
-function viewsListFromDatasourceValue(value: unknown): any[] {
-  if (!Array.isArray(value)) return [];
-  return value.map(normalizeToolbarView).filter(Boolean);
-}
-
 type CopyMode = 'cells' | 'rows' | 'none';
-
-/** Toolbar-saved row or backend metadata (`webListViews`) merged with optional grid snapshot. */
-type SavedGridView = {
-  name: string;
-  title?: string;
-  id?: string | number;
-  columnState?: any;
-  filterModel?: any;
-  sortModel?: SortModelItem[];
-};
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
   columns,
-  state = '',
-  states = '',
+  view = '',
+  views = '',
+  filter = '',
+  filters = '',
+  sort = '',
+  sorts = '',
   dateFinancial = '',
   calculStatistiqueResult = '',
   currentSelection = '',
@@ -327,6 +245,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarActions = true,
   showToolbarView = true,
   showToolbarSorting = true,
+  showToolbarFiltering = true,
   showToolbarStatistics = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
@@ -348,10 +267,21 @@ const AgGrid: FC<IAgGridProps> = ({
       'oncellmouseover',
       'oncellmouseout',
       'oncellmousedown',
-      'onsavestate',
-      'onloadstate',
-      'onupdatestate',
-      'ondeletestate',
+      'onsaveview',
+      'onloadview',
+      'onloadviews',
+      'onupdateview',
+      'ondeleteview',
+      'onsavefilter',
+      'onloadfilter',
+      'onloadfilters',
+      'onupdatefilter',
+      'ondeletefilter',
+      'onsavesort',
+      'onloadsort',
+      'onloadsorts',
+      'onupdatesort',
+      'ondeletesort',
       'oncalculstatistique',
     ],
   });
@@ -416,8 +346,30 @@ const AgGrid: FC<IAgGridProps> = ({
   });
 
   const path = useWebformPath();
-  const stateDS = window.DataSource.getSource(state, path);
-  const statesDS = states ? window.DataSource.getSource(states, path) : null;
+  const viewDs = useMemo(
+    () => (view ? window.DataSource.getSource(view, path) : null),
+    [view, path],
+  );
+  const viewsDs = useMemo(
+    () => (views ? window.DataSource.getSource(views, path) : null),
+    [views, path],
+  );
+  const filterDs = useMemo(
+    () => (filter ? window.DataSource.getSource(filter, path) : null),
+    [filter, path],
+  );
+  const filtersDs = useMemo(
+    () => (filters ? window.DataSource.getSource(filters, path) : null),
+    [filters, path],
+  );
+  const sortDs = useMemo(
+    () => (sort ? window.DataSource.getSource(sort, path) : null),
+    [sort, path],
+  );
+  const sortsDs = useMemo(
+    () => (sorts ? window.DataSource.getSource(sorts, path) : null),
+    [sorts, path],
+  );
   const dateFinancialDS = useMemo(() => {
     const id = dateFinancial?.trim();
     if (!id) return null;
@@ -505,15 +457,15 @@ const AgGrid: FC<IAgGridProps> = ({
   const [isCellSelectionAvailable, setIsCellSelectionAvailable] = useState(false);
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
-  // views management
-  const [viewName, setViewName] = useState<string>('');
-  // view = name + columnState + filterModel + sortModel
-  const [savedViews, setSavedViews] = useState<SavedGridView[]>([]);
-  const [selectedView, setSelectedView] = useState<string>('');
-  const [_advancedSortModel, setAdvancedSortModel] = useState<SortModelItem[]>([]);
-  const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
+  const [showFilterDialog, setShowFilterDialog] = useState(false);
+  const [sortDialogInitialModel, setSortDialogInitialModel] = useState<SortModelItem[]>([]);
+  const [filterDialogModelSnapshot, setFilterDialogModelSnapshot] = useState<any>(null);
 
-  // dialog
+  // view management (toolbar UI state)
+  const [viewName, setViewName] = useState<string>('');
+  const [selectedView, setSelectedView] = useState<string>('');
+
+  // columns dialog
   const [propertySearch, setPropertySearch] = useState('');
   const [showVisibleOnly, setShowVisibleOnly] = useState(false);
 
@@ -604,61 +556,6 @@ const AgGrid: FC<IAgGridProps> = ({
     }, 0);
     return () => clearTimeout(t);
   }, [copyMode, showCopyActions, multiSelection, isCellSelectionAvailable]);
-
-  // Load saved views: prefer `states` datasource; migrate legacy `state.savedViews` once.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (statesDS) {
-        try {
-          let list = await statesDS.getValue();
-          let views = viewsListFromDatasourceValue(list);
-          if (views.length === 0 && stateDS) {
-            const st = await stateDS.getValue();
-            const legacy = st?.savedViews;
-            if (Array.isArray(legacy) && legacy.length > 0) {
-              views = viewsListFromDatasourceValue(legacy);
-              await statesDS.setValue(null, views);
-              if (st && typeof st === 'object') {
-                const { savedViews: _removed, ...rest } = st as any;
-                await stateDS.setValue(null, rest);
-              }
-            }
-          }
-          if (!cancelled) setSavedViews(views);
-        } catch {
-          if (!cancelled) setSavedViews([]);
-        }
-      } else if (stateDS) {
-        try {
-          const data = await stateDS.getValue();
-          if (!cancelled && data?.savedViews) setSavedViews(data.savedViews);
-        } catch {
-          /* ignore */
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [stateDS, statesDS]);
-
-  // External updates to `states` (e.g. after 4D loadSavedViews).
-  useEffect(() => {
-    if (!statesDS) return;
-    const listener = async () => {
-      try {
-        const list = await statesDS.getValue();
-        setSavedViews(viewsListFromDatasourceValue(list));
-      } catch {
-        setSavedViews([]);
-      }
-    };
-    statesDS.addListener('changed', listener);
-    return () => {
-      statesDS.removeListener('changed', listener);
-    };
-  }, [statesDS]);
 
   // Multi-select only: if "Selected Selection" is cleared externally, clear grid checkboxes.
   // In single-row mode, `currentSelection` may be emptied on row click; must not deselectAll or the highlight is lost.
@@ -836,155 +733,110 @@ const AgGrid: FC<IAgGridProps> = ({
     return m;
   }, [columns]);
 
-  const isSortDirection = useCallback((sort: any): sort is 'asc' | 'desc' => {
-    return sort === 'asc' || sort === 'desc';
-  }, []);
+  const sortableColIdsRef = useRef<string[]>([]);
+  sortableColIdsRef.current = sortableColumns.map((c) => c.colId);
 
-  const normalizeSortModel = useCallback(
-    (sortModel: SortModelItem[] | undefined | null): SortModelItem[] => {
-      if (!Array.isArray(sortModel)) return [];
-      const resolveSortColId = (raw: string): string => {
-        const byStable = columns.find((c) => agGridColumnField(c) === raw);
-        if (byStable) return agGridColumnField(byStable);
-        const byTitle = columns.find((c) => c.title === raw);
-        if (byTitle) return agGridColumnField(byTitle);
-        const bySource = columns.find((c) => c.source === raw);
-        if (bySource) return agGridColumnField(bySource);
-        return raw;
-      };
-      const seen = new Set<string>();
-      const allowedColumns = new Set(sortableColumns.map((column) => column.colId));
-      return sortModel
-        .map((rule) =>
-          rule?.colId ? { colId: resolveSortColId(rule.colId), sort: rule.sort } : rule,
-        )
-        .filter(
-          (rule): rule is SortModelItem =>
-            !!rule?.colId && isSortDirection(rule.sort) && allowedColumns.has(rule.colId),
-        )
-        .filter((rule) => {
-          if (seen.has(rule.colId)) return false;
-          seen.add(rule.colId);
-          return true;
-        })
-        .map((rule) => ({ colId: rule.colId, sort: rule.sort }));
-    },
-    [columns, isSortDirection, sortableColumns],
-  );
+  const viewsManager = useViewsManager({
+    viewDs,
+    viewsDs,
+    gridRef,
+    columnsRef,
+    emit,
+    applyingExternalRef: applyingExternalStateRef,
+  });
 
-  const buildSortModelFromColumnState = useCallback(
-    (columnState: any[] | undefined | null): SortModelItem[] => {
-      if (!Array.isArray(columnState)) return [];
-      return columnState
-        .filter((column) => isSortDirection(column?.sort))
-        .sort((a, b) => {
-          const aSortIndex =
-            typeof a?.sortIndex === 'number' ? a.sortIndex : Number.MAX_SAFE_INTEGER;
-          const bSortIndex =
-            typeof b?.sortIndex === 'number' ? b.sortIndex : Number.MAX_SAFE_INTEGER;
-          return aSortIndex - bSortIndex;
-        })
-        .map((column) => ({ colId: column.colId, sort: column.sort as 'asc' | 'desc' }));
-    },
-    [isSortDirection],
-  );
+  const filtersManager = useFiltersManager({
+    filterDs,
+    filtersDs,
+    gridRef,
+    emit,
+    applyingExternalRef: applyingExternalStateRef,
+    dateFinancialEnabledRef,
+  });
 
-  const applySortModelToGrid = useCallback(
-    (sortModel: SortModelItem[] | undefined | null, api?: GridApi) => {
-      const gridApi = api ?? gridRef.current?.api;
-      if (!gridApi) return;
-      const normalizedSortModel = normalizeSortModel(sortModel);
-      const sortIndexByColId = new Map(
-        normalizedSortModel.map((rule, index) => [
-          rule.colId,
-          { sort: rule.sort, sortIndex: index },
-        ]),
-      );
-      const updatedColumnState = gridApi.getColumnState().map((columnState) => {
-        const sortState = sortIndexByColId.get(columnState.colId);
-        if (!sortState) {
-          return { ...columnState, sort: null, sortIndex: null };
-        }
-        return {
-          ...columnState,
-          sort: sortState.sort,
-          sortIndex: sortState.sortIndex,
-        };
-      });
-      gridApi.applyColumnState({ state: updatedColumnState, applyOrder: false });
-      prevSortModelRef.current = normalizedSortModel;
-      setAdvancedSortModel(normalizedSortModel);
-      gridApi.refreshInfiniteCache();
-    },
-    [normalizeSortModel],
-  );
+  const sortsManager = useSortsManager({
+    sortDs,
+    sortsDs,
+    gridRef,
+    columnsRef,
+    sortableColIdsRef,
+    emit,
+    applyingExternalRef: applyingExternalStateRef,
+  });
 
-  /** Apply `state` datasource snapshot to the grid (same rules as initial `getState`). Returns whether columnState from store was applied. */
-  const applyPersistedStateFromDsValue = useCallback(
-    (api: GridApi, dsValue: any): boolean => {
-      if (!dsValue || typeof dsValue !== 'object') return false;
-      dateFinancialEnabledRef.current = Boolean((dsValue as any).dateFinancialFilterEnabled);
-      const cols = columnsRef.current;
-      const persistedColumnState = withoutSyntheticRowColumnState(dsValue.columnState);
-      if (hasMeaningfulColumnState(persistedColumnState)) {
-        const mergedForSort = enrichColumnStateWithSource(persistedColumnState, cols);
-        api.applyColumnState({
-          state: columnStateForAgGridApply(mergedForSort),
-          applyOrder: true,
-        });
-        if ('filterModel' in dsValue) {
-          applyGridFilterModel(api, dsValue.filterModel);
-        }
-        const stateSortModel = dsValue.sortModel
-          ? normalizeSortModel(dsValue.sortModel)
-          : buildSortModelFromColumnState(mergedForSort);
-        setAdvancedSortModel(stateSortModel);
-        prevSortModelRef.current = stateSortModel;
-        const updatedVisibility = persistedColumnState.map((col: any) => ({
-          field: col.colId,
-          isHidden: col.hide || false,
-          pinned: col.pinned || null,
-        }));
-        setColumnVisibility(updatedVisibility);
-        return true;
-      }
-      if ('filterModel' in dsValue) {
-        applyGridFilterModel(api, dsValue.filterModel);
-      }
-      if (dsValue.sortModel) {
-        applySortModelToGrid(dsValue.sortModel, api);
-      }
-      const stateSortModel = dsValue.sortModel
-        ? normalizeSortModel(dsValue.sortModel)
-        : buildSortModelFromColumnState(api.getColumnState());
-      setAdvancedSortModel(stateSortModel);
-      prevSortModelRef.current = stateSortModel;
-      return false;
-    },
-    [applySortModelToGrid, buildSortModelFromColumnState, normalizeSortModel],
-  );
-
-  // Re-apply column/sort/filter when `state` is updated externally (e.g. 4D after onLoadState).
+  /** Re-apply grid state whenever one of the 3 live datasources changes externally. */
   useEffect(() => {
-    if (!stateDS) return;
+    if (!viewDs) return;
     const listener = async () => {
       const api = gridRef.current?.api;
       if (!api) return;
-      const data = await stateDS.getValue();
+      const data = await viewDs.getValue();
       applyingExternalStateRef.current = true;
       try {
-        applyPersistedStateFromDsValue(api, data);
+        const applied = viewsManager.applyPersistedValue(api, data);
+        if (applied && Array.isArray(data?.columnState)) {
+          setColumnVisibility(
+            withoutSyntheticRowColumnState(data.columnState).map((col: any) => ({
+              field: col.colId,
+              isHidden: col.hide || false,
+              pinned: col.pinned || null,
+            })),
+          );
+        }
       } finally {
         setTimeout(() => {
           applyingExternalStateRef.current = false;
         }, 0);
       }
     };
-    stateDS.addListener('changed', listener);
+    viewDs.addListener('changed', listener);
     return () => {
-      stateDS.removeListener('changed', listener);
+      viewDs.removeListener('changed', listener);
     };
-  }, [stateDS, applyPersistedStateFromDsValue]);
+  }, [viewDs, viewsManager]);
+
+  useEffect(() => {
+    if (!filterDs) return;
+    const listener = async () => {
+      const api = gridRef.current?.api;
+      if (!api) return;
+      const data = await filterDs.getValue();
+      applyingExternalStateRef.current = true;
+      try {
+        filtersManager.applyPersistedValue(api, data);
+        api.refreshInfiniteCache();
+      } finally {
+        setTimeout(() => {
+          applyingExternalStateRef.current = false;
+        }, 0);
+      }
+    };
+    filterDs.addListener('changed', listener);
+    return () => {
+      filterDs.removeListener('changed', listener);
+    };
+  }, [filterDs, filtersManager]);
+
+  useEffect(() => {
+    if (!sortDs) return;
+    const listener = async () => {
+      const api = gridRef.current?.api;
+      if (!api) return;
+      const data = await sortDs.getValue();
+      applyingExternalStateRef.current = true;
+      try {
+        sortsManager.applyPersistedValue(api, data);
+      } finally {
+        setTimeout(() => {
+          applyingExternalStateRef.current = false;
+        }, 0);
+      }
+    };
+    sortDs.addListener('changed', listener);
+    return () => {
+      sortDs.removeListener('changed', listener);
+    };
+  }, [sortDs, sortsManager]);
 
   const theme = themeQuartz.withParams({
     spacing,
@@ -1258,29 +1110,14 @@ const AgGrid: FC<IAgGridProps> = ({
     [copyMode, focusRowForCopy, multiSelection, currentSelectionDS, showCopyActions],
   );
 
+  /** Push the current column / filter / sort state to their respective live datasources. */
   const persistGridState = useCallback(
     (columnState: any[], filterModel: any, sortModel: SortModelItem[]) => {
-      const enriched = enrichColumnStateWithSource(
-        withoutSyntheticRowColumnState(columnState),
-        columnsRef.current,
-      );
-      if (stateDS) {
-        stateDS.getValue().then((currentData: any) => {
-          const gridData = {
-            ...(currentData && typeof currentData === 'object' ? currentData : {}),
-            columnState: enriched,
-            filterModel,
-            sortModel,
-            dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-          };
-          if (statesDS) {
-            delete (gridData as any).savedViews;
-          }
-          stateDS.setValue(null, gridData);
-        });
-      }
+      viewsManager.persistCurrent(columnState);
+      filtersManager.persistCurrent(filterModel);
+      sortsManager.persistCurrent(sortModel);
     },
-    [stateDS, statesDS],
+    [viewsManager, filtersManager, sortsManager],
   );
 
   /** Extra control in the column filter footer (built-in Apply/Reset cannot clear other columns). */
@@ -1442,7 +1279,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
       panel.insertBefore(btn, panel.firstChild);
     },
-    [buildSortModelFromColumnState, i18n, lang, persistGridState, translation],
+    [i18n, lang, persistGridState, translation],
   );
 
   const onStateUpdated = useCallback(
@@ -1453,11 +1290,10 @@ const AgGrid: FC<IAgGridProps> = ({
         const columnState = withoutSyntheticRowColumnState(params.api.getColumnState());
         const filterModel = params.api.getFilterModel();
         const sortModel = buildSortModelFromColumnState(columnState);
-        setAdvancedSortModel(sortModel);
         persistGridState(columnState, filterModel, sortModel);
       }
     },
-    [buildSortModelFromColumnState, persistGridState],
+    [persistGridState],
   );
 
   const onFilterChanged = useCallback((event: FilterChangedEvent) => {
@@ -1466,33 +1302,64 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const getState = useCallback(
     async (params: any) => {
-      const seedInitialPersist = () => {
-        const columnState = withoutSyntheticRowColumnState(params.api.getColumnState());
-        const filterModel = params.api.getFilterModel() ?? {};
+      const api: GridApi = params.api;
+      let applied = false;
+
+      if (viewDs) {
+        try {
+          const value = await viewDs.getValue();
+          if (viewsManager.applyPersistedValue(api, value)) {
+            applied = true;
+            if (value && Array.isArray(value.columnState)) {
+              setColumnVisibility(
+                withoutSyntheticRowColumnState(value.columnState).map((col: any) => ({
+                  field: col.colId,
+                  isHidden: col.hide || false,
+                  pinned: col.pinned || null,
+                })),
+              );
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (filterDs) {
+        try {
+          const value = await filterDs.getValue();
+          filtersManager.applyPersistedValue(api, value);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (sortDs) {
+        try {
+          const value = await sortDs.getValue();
+          sortsManager.applyPersistedValue(api, value);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (!applied) {
+        const columnState = withoutSyntheticRowColumnState(api.getColumnState());
+        const filterModel = api.getFilterModel() ?? {};
         const sortModel = buildSortModelFromColumnState(columnState);
-        setAdvancedSortModel(sortModel);
         prevSortModelRef.current = sortModel;
         persistGridState(columnState, filterModel, sortModel);
-      };
-
-      if (stateDS) {
-        const dsValue = await stateDS?.getValue();
-        const appliedFromStore = applyPersistedStateFromDsValue(params.api, dsValue);
-        if (!appliedFromStore) {
-          seedInitialPersist();
-        }
       } else {
-        seedInitialPersist();
+        prevSortModelRef.current = buildSortModelFromColumnState(api.getColumnState());
       }
     },
-    [applyPersistedStateFromDsValue, buildSortModelFromColumnState, persistGridState, stateDS],
+    [viewDs, filterDs, sortDs, viewsManager, filtersManager, sortsManager, persistGridState],
   );
 
   const applySorting = useCallback(
-    async (params: IGetRowsParams, columns: any[], ds: any) => {
+    async (params: IGetRowsParams, cols: IColumn[], activeDs: any) => {
       if (params.sortModel.length === 0) {
         prevSortModelRef.current = [];
-        setAdvancedSortModel([]);
         return;
       }
       if (isEqual(params.sortModel, prevSortModelRef.current)) {
@@ -1500,12 +1367,12 @@ const AgGrid: FC<IAgGridProps> = ({
       }
 
       const sortInstructions = params.sortModel
-        .map((sort) => {
-          const matchedColumn = columns.find(
-            (column) => column.title === sort.colId || column.source === sort.colId,
+        .map((rule) => {
+          const matchedColumn = cols.find(
+            (column) => column.title === rule.colId || column.source === rule.colId,
           );
-          if (!matchedColumn?.source || !sort.sort) return '';
-          return `${matchedColumn.source} ${sort.sort}`;
+          if (!matchedColumn?.source || !rule.sort) return '';
+          return `${matchedColumn.source} ${rule.sort}`;
         })
         .filter(Boolean);
 
@@ -1513,11 +1380,10 @@ const AgGrid: FC<IAgGridProps> = ({
         return;
       }
       prevSortModelRef.current = params.sortModel;
-      setAdvancedSortModel(normalizeSortModel(params.sortModel));
       const orderBy = sortInstructions.join(', ');
-      await ds.orderBy(orderBy);
+      await activeDs.orderBy(orderBy);
     },
-    [normalizeSortModel],
+    [],
   );
 
   // (fix bug when calling 4d function on aggrid that displayes related values)
@@ -1772,243 +1638,32 @@ const AgGrid: FC<IAgGridProps> = ({
     setSelectedView('');
     if (initialColumnState && gridRef.current?.api) {
       gridRef.current.api.applyColumnState({ state: initialColumnState, applyOrder: true });
-      // Clear all filters
       gridRef.current.api.setFilterModel(null);
-      applySortModelToGrid([], gridRef.current.api);
+      sortsManager.applySortModelToGrid([]);
     }
-    setAdvancedSortModel([]);
   };
 
   const handlePinChange = (colField: string, value: string) => {
     setColumnVisibility((prev) =>
       prev.map((col) => {
         if (col.field !== colField) return col;
-        //  pinnedValue : 'left' | 'right' | null
         const pinnedValue = value === 'unpinned' ? null : (value as 'left' | 'right');
-        return {
-          ...col,
-          pinned: pinnedValue,
-        };
+        return { ...col, pinned: pinnedValue };
       }),
     );
   };
 
   const openAdvancedSortingDialog = () => {
-    const sortModelFromGrid = buildSortModelFromColumnState(gridRef.current?.api?.getColumnState());
-    const normalizedSortModel = normalizeSortModel(sortModelFromGrid);
-    if (normalizedSortModel.length > 0) {
-      setSortDialogModel(normalizedSortModel);
-    } else if (sortableColumns.length > 0) {
-      setSortDialogModel([{ colId: sortableColumns[0].colId, sort: 'asc' }]);
-    } else {
-      setSortDialogModel([]);
-    }
+    const fromGrid = buildSortModelFromColumnState(gridRef.current?.api?.getColumnState());
+    setSortDialogInitialModel(
+      normalizeSortModel(fromGrid, columnsRef.current, sortableColIdsRef.current),
+    );
     setShowSortingDialog(true);
   };
 
-  const addSortLevel = () => {
-    if (sortableColumns.length === 0) return;
-    setSortDialogModel((prev) => {
-      const usedColumns = new Set(prev.map((rule) => rule.colId));
-      const nextColumn = sortableColumns.find((column) => !usedColumns.has(column.colId));
-      const fallbackColumn = nextColumn ?? sortableColumns[0];
-      return [...prev, { colId: fallbackColumn.colId, sort: 'asc' }];
-    });
-  };
-
-  const removeSortLevel = (indexToDelete: number) => {
-    setSortDialogModel((prev) => prev.filter((_, index) => index !== indexToDelete));
-  };
-
-  const updateSortLevelColumn = (indexToUpdate: number, colId: string) => {
-    setSortDialogModel((prev) =>
-      prev.map((rule, index) => (index === indexToUpdate ? { ...rule, colId } : rule)),
-    );
-  };
-
-  const updateSortLevelDirection = (indexToUpdate: number, sort: 'asc' | 'desc') => {
-    setSortDialogModel((prev) =>
-      prev.map((rule, index) => (index === indexToUpdate ? { ...rule, sort } : rule)),
-    );
-  };
-
-  const applyAdvancedSorting = () => {
-    applySortModelToGrid(sortDialogModel);
-    setShowSortingDialog(false);
-  };
-
-  const clearAdvancedSorting = () => {
-    setSortDialogModel([]);
-    applySortModelToGrid([]);
-    setShowSortingDialog(false);
-  };
-
-  // views actions
-  const saveNewView = () => {
-    if (!viewName.trim()) return;
-    const rawState = withoutSyntheticRowColumnState(gridRef.current?.api?.getColumnState() ?? []);
-    const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
-    const filterModel = gridRef.current?.api?.getFilterModel();
-    const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
-    const newView = {
-      name: viewName.trim(),
-      columnState,
-      filterModel,
-      sortModel,
-      dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-    };
-    const updatedViews: any = [...savedViews, newView];
-    setSavedViews(updatedViews);
-    if (statesDS) {
-      statesDS.setValue(null, updatedViews);
-    }
-    if (stateDS) {
-      stateDS.getValue().then((currentData: any) => {
-        const base = currentData && typeof currentData === 'object' ? { ...currentData } : {};
-        if (statesDS) {
-          delete (base as any).savedViews;
-          stateDS.setValue(null, {
-            ...base,
-            columnState,
-            filterModel,
-            sortModel,
-            dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-          });
-        } else {
-          stateDS.setValue(null, { ...base, savedViews: updatedViews });
-        }
-      });
-    }
-    emit('onsavestate', {
-      columnState,
-      filterModel,
-      sortModel,
-      name: newView.name,
-      view: newView,
-    });
-    setViewName('');
-  };
-
-  const loadView = () => {
-    const view: any = savedViews.find(
-      (v) =>
-        v.name === selectedView ||
-        v.title === selectedView ||
-        (v.id != null && String(v.id) === selectedView),
-    );
-    if (!view) return;
-    if ('dateFinancialFilterEnabled' in view) {
-      dateFinancialEnabledRef.current = Boolean((view as any).dateFinancialFilterEnabled);
-    }
-    if (gridRef.current?.api) {
-      if (view.columnState) {
-        const merged = enrichColumnStateWithSource(
-          withoutSyntheticRowColumnState(view.columnState),
-          columnsRef.current,
-        );
-        gridRef.current.api.applyColumnState({
-          state: columnStateForAgGridApply(merged),
-          applyOrder: true,
-        });
-      }
-      // Restore filter model of selected view (including clearing when empty / {})
-      if ('filterModel' in view) {
-        applyGridFilterModel(gridRef.current.api, view.filterModel);
-      }
-      if (view.sortModel) {
-        applySortModelToGrid(view.sortModel, gridRef.current.api);
-      } else if (view.columnState) {
-        setAdvancedSortModel(normalizeSortModel(buildSortModelFromColumnState(view.columnState)));
-      }
-      if (view.columnState) {
-        const updatedVisibility = withoutSyntheticRowColumnState(view.columnState).map(
-          (col: any) => ({
-            field: col.colId,
-            isHidden: col.hide || false,
-            pinned: col.pinned || null,
-          }),
-        );
-        setColumnVisibility(updatedVisibility);
-      }
-      emit('onloadstate', {
-        columnState: view.columnState,
-        filterModel: view.filterModel,
-        sortModel: view.sortModel,
-        selectedView,
-        view,
-      });
-    }
-  };
-
-  /** Emits only — dev removes the row (e.g. server + refresh `states` datasource). */
-  const requestDeleteView = () => {
-    if (!selectedView.trim()) return;
-    const view = savedViews.find(
-      (v) =>
-        v.name === selectedView ||
-        v.title === selectedView ||
-        (v.id != null && String(v.id) === selectedView),
-    );
-    emit('ondeletestate', { selectedView, view });
-  };
-
-  const updateView = () => {
-    if (!selectedView.trim()) return;
-    const rawState = withoutSyntheticRowColumnState(gridRef.current?.api?.getColumnState() ?? []);
-    const columnState = enrichColumnStateWithSource(rawState, columnsRef.current);
-    const filterModel = gridRef.current?.api?.getFilterModel();
-    const sortModel = normalizeSortModel(buildSortModelFromColumnState(columnState));
-    const updatedViews = savedViews.map((view) => {
-      const matches =
-        view.name === selectedView ||
-        view.title === selectedView ||
-        (view.id != null && String(view.id) === selectedView);
-      if (matches) {
-        return {
-          ...view,
-          name: view.name || view.title || String(view.id),
-          columnState,
-          filterModel,
-          sortModel,
-          dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-        };
-      }
-      return view;
-    });
-    setSavedViews(updatedViews);
-    if (statesDS) {
-      statesDS.setValue(null, updatedViews);
-    }
-    if (stateDS) {
-      stateDS.getValue().then((currentData: any) => {
-        const base = currentData && typeof currentData === 'object' ? { ...currentData } : {};
-        if (statesDS) {
-          delete (base as any).savedViews;
-          stateDS.setValue(null, {
-            ...base,
-            columnState,
-            filterModel,
-            sortModel,
-            dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-          });
-        } else {
-          stateDS.setValue(null, { ...base, savedViews: updatedViews });
-        }
-      });
-    }
-    const updatedRow = updatedViews.find(
-      (v) =>
-        v.name === selectedView ||
-        v.title === selectedView ||
-        (v.id != null && String(v.id) === selectedView),
-    );
-    emit('onupdatestate', {
-      columnState,
-      filterModel,
-      sortModel,
-      selectedView,
-      view: updatedRow,
-    });
+  const openAdvancedFilterDialog = () => {
+    setFilterDialogModelSnapshot(gridRef.current?.api?.getFilterModel() ?? {});
+    setShowFilterDialog(true);
   };
 
   const normalizedColumns = useMemo(
@@ -2187,9 +1842,27 @@ const AgGrid: FC<IAgGridProps> = ({
                                 borderColor: '#0000001A',
                                 color: '#44444C',
                               }}
-                              disabled={sortableColumns.length === 0}
+                              title={translation('Advanced sorting')}
                             >
                               <FaSortAmountDown />
+                            </button>
+                          </div>
+                        )}
+                        {showToolbarFiltering && (
+                          <div className="filtering-section ">
+                            <button
+                              onClick={openAdvancedFilterDialog}
+                              className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                              style={{
+                                width: '31px',
+                                height: '31px',
+                                borderRadius: '8px',
+                                borderColor: '#0000001A',
+                                color: '#44444C',
+                              }}
+                              title={translation('Advanced filtering')}
+                            >
+                              <FaFilter />
                             </button>
                           </div>
                         )}
@@ -2292,7 +1965,11 @@ const AgGrid: FC<IAgGridProps> = ({
                             />
                             <button
                               className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                              onClick={() => saveNewView()}
+                              onClick={() => {
+                                if (!viewName.trim()) return;
+                                viewsManager.saveView(viewName);
+                                setViewName('');
+                              }}
                               style={{
                                 height: '31px',
                                 borderRadius: '6px',
@@ -2320,7 +1997,9 @@ const AgGrid: FC<IAgGridProps> = ({
                                 value={selectedView}
                                 className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
                                 onChange={(e: any) => {
-                                  setSelectedView(e.target.value);
+                                  const next = e.target.value;
+                                  setSelectedView(next);
+                                  if (next) viewsManager.loadView(next);
                                 }}
                                 style={{
                                   height: '31px',
@@ -2332,27 +2011,18 @@ const AgGrid: FC<IAgGridProps> = ({
                                 }}
                               >
                                 <option value="">{translation('Select view')}</option>
-                                {savedViews.map((view, _) => (
-                                  <option value={view.name}>{view.name}</option>
+                                {viewsManager.savedViews.map((savedView) => (
+                                  <option key={savedView.name} value={savedView.name}>
+                                    {savedView.name}
+                                  </option>
                                 ))}
                               </select>
                               <button
                                 className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                                onClick={() => loadView()}
-                                style={{
-                                  height: '31px',
-                                  borderRadius: '6px',
-                                  borderColor: '#0000001A',
-                                  color: '#44444C',
-                                  fontSize: '12px',
-                                  fontWeight: 500,
+                                onClick={() => {
+                                  if (!selectedView) return;
+                                  viewsManager.updateView(selectedView);
                                 }}
-                              >
-                                {translation('Load')}
-                              </button>
-                              <button
-                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                                onClick={() => updateView()}
                                 style={{
                                   height: '31px',
                                   borderRadius: '6px',
@@ -2365,6 +2035,21 @@ const AgGrid: FC<IAgGridProps> = ({
                                 {translation('Update')}
                               </button>
                               <button
+                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                onClick={() => viewsManager.loadViewsList()}
+                                style={{
+                                  height: '31px',
+                                  borderRadius: '6px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                  fontSize: '12px',
+                                  fontWeight: 500,
+                                }}
+                                title={translation('Reload list')}
+                              >
+                                {translation('Load list')}
+                              </button>
+                              <button
                                 className="header-button-trash inline-flex items-center justify-center rounded-lg border"
                                 style={{
                                   width: '31px',
@@ -2374,7 +2059,10 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderColor: '#EC7B80',
                                   backgroundColor: '#EC7B8033',
                                 }}
-                                onClick={() => requestDeleteView()}
+                                onClick={() => {
+                                  if (!selectedView) return;
+                                  viewsManager.deleteView(selectedView);
+                                }}
                               >
                                 <GoTrash size={14} />
                               </button>
@@ -2558,182 +2246,50 @@ const AgGrid: FC<IAgGridProps> = ({
                       </div>
                     </div>
                   )}
-                  {showToolbarSorting && showSortingDialog && (
-                    <div
-                      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                      onClick={() => setShowSortingDialog(false)}
-                    >
-                      <div
-                        className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white shadow-xl"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-start justify-between gap-3 border-b border-slate-200  px-5 py-4 rounded-t-xl">
-                          <div>
-                            <span
-                              className="text-sm tracking-wide"
-                              style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
-                            >
-                              {translation('ADVANCED SORTING')}
-                            </span>
-                            <span
-                              className="mt-1 block text-sm"
-                              style={{ color: '#4A5565', fontSize: '14px' }}
-                            >
-                              {translation(
-                                'Choose one or multiple columns and define sort direction for each level',
-                              )}
-                            </span>
-                          </div>
-                          <button
-                            className=" inline-flex items-center justify-center"
-                            style={{
-                              color: '#6A7282',
-                            }}
-                            onClick={() => setShowSortingDialog(false)}
-                          >
-                            <IoMdClose />
-                          </button>
-                        </div>
-                        <div className="">
-                          {sortableColumns.length === 0 ? (
-                            <div
-                              className=" bg-slate-50 px-3 py-2 "
-                              style={{ color: '#4A5565', fontSize: '14px' }}
-                            >
-                              {translation('No sortable columns are enabled in grid properties')}
-                            </div>
-                          ) : (
-                            <>
-                              <div className="px-3 py-2 mb-4 ">
-                                <div className="space-y-2 max-h-80 overflow-y-auto">
-                                  {sortDialogModel.length === 0 ? (
-                                    <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600">
-                                      {translation('No sort level configured yet')}
-                                    </div>
-                                  ) : (
-                                    sortDialogModel.map((rule, index) => (
-                                      <div
-                                        key={`${rule.colId}-${index}`}
-                                        className="flex items-center gap-2 px-2 py-2"
-                                      >
-                                        <span
-                                          className="w-14"
-                                          style={{ color: '#364153', fontSize: '14px' }}
-                                        >
-                                          {translation('Level')} {index + 1}
-                                        </span>
-                                        <select
-                                          className="min-w-0 flex-1 px-2 py-1"
-                                          style={{
-                                            backgroundColor: '#F3F3F5',
-                                            borderRadius: '8px',
-                                            height: '36px',
-                                            fontSize: '14px',
-                                            width: '256px',
-                                          }}
-                                          value={rule.colId}
-                                          onChange={(e) =>
-                                            updateSortLevelColumn(index, e.target.value)
-                                          }
-                                        >
-                                          {sortableColumns.map((column) => (
-                                            <option key={column.colId} value={column.colId}>
-                                              {column.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <select
-                                          className="w-28 rounded-md"
-                                          style={{
-                                            backgroundColor: '#F3F3F5',
-                                            borderRadius: '8px',
-                                            height: '36px',
-                                            width: '128px',
-                                            fontSize: '14px',
-                                          }}
-                                          value={rule.sort}
-                                          onChange={(e) =>
-                                            updateSortLevelDirection(
-                                              index,
-                                              (e.target.value as 'asc' | 'desc') || 'asc',
-                                            )
-                                          }
-                                        >
-                                          <option value="asc">{translation('Asc')}</option>
-                                          <option value="desc">{translation('Desc')}</option>
-                                        </select>
-                                        <button
-                                          type="button"
-                                          className=" border bg-white px-2 py-1"
-                                          style={{
-                                            height: '36px',
-                                            borderColor: '#0000001A',
-                                            borderRadius: '8px',
-                                            fontSize: '12px',
-                                          }}
-                                          onClick={() => removeSortLevel(index)}
-                                        >
-                                          {translation('Remove')}
-                                        </button>
-                                      </div>
-                                    ))
-                                  )}
-                                </div>
-                                <div className="mt-3 flex items-center justify-between pb-4">
-                                  <button
-                                    type="button"
-                                    style={{
-                                      height: '31px',
-                                      borderRadius: '8px',
-                                      borderColor: '#0000001A',
-                                      color: '#44444C',
-                                      fontSize: '12px',
-                                      fontWeight: 500,
-                                    }}
-                                    className="rounded-md border px-3 py-2 flex items-center justify-center"
-                                    onClick={addSortLevel}
-                                    disabled={sortableColumns.length === 0}
-                                  >
-                                    {translation('Add level')}
-                                  </button>
-                                </div>
-                              </div>
-                              <div
-                                className="flex justify-end align-end items-center gap-2 w-full p-4 "
-                                style={{ borderTop: '1px solid #E5E7EB' }}
-                              >
-                                <button
-                                  type="button"
-                                  className="rounded-md border px-3 py-2 flex items-center justify-center "
-                                  style={{
-                                    height: '31px',
-                                    borderRadius: '6px',
-                                    borderColor: '#0000001A',
-                                    color: '#44444C',
-                                    fontSize: '12px',
-                                  }}
-                                  onClick={clearAdvancedSorting}
-                                >
-                                  {translation('Clear')}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-md border  px-3 py-2 text-sm text-white flex text-center items-center justify-center"
-                                  onClick={applyAdvancedSorting}
-                                  style={{
-                                    background: '#2B5797',
-                                    height: '31px',
-                                    fontSize: '12px',
-                                  }}
-                                >
-                                  {translation('Apply sorting')}
-                                </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                  {showToolbarSorting && (
+                    <SortingDialog
+                      open={showSortingDialog}
+                      onClose={() => setShowSortingDialog(false)}
+                      translation={translation}
+                      sortableColumns={sortableColumns}
+                      initialSortModel={sortDialogInitialModel}
+                      onApply={(model) => {
+                        sortsManager.applySortModelToGrid(model);
+                      }}
+                      onClear={() => {
+                        sortsManager.applySortModelToGrid([]);
+                      }}
+                      savedSorts={sortsManager.savedSorts}
+                      saveSort={sortsManager.saveSort}
+                      loadSort={sortsManager.loadSort}
+                      updateSort={sortsManager.updateSort}
+                      deleteSort={sortsManager.deleteSort}
+                      loadSortsList={sortsManager.loadSortsList}
+                    />
+                  )}
+                  {showToolbarFiltering && (
+                    <FilterDialog
+                      open={showFilterDialog}
+                      onClose={() => setShowFilterDialog(false)}
+                      translation={translation}
+                      columns={columns}
+                      currentFilterModel={filterDialogModelSnapshot}
+                      onClear={() => {
+                        gridRef.current?.api?.setFilterModel(null);
+                        setFilterDialogModelSnapshot({});
+                      }}
+                      savedFilters={filtersManager.savedFilters}
+                      saveFilter={filtersManager.saveFilter}
+                      loadFilter={(key) => {
+                        filtersManager.loadFilter(key);
+                        setFilterDialogModelSnapshot(
+                          gridRef.current?.api?.getFilterModel() ?? {},
+                        );
+                      }}
+                      updateFilter={filtersManager.updateFilter}
+                      deleteFilter={filtersManager.deleteFilter}
+                      loadFiltersList={filtersManager.loadFiltersList}
+                    />
                   )}
                 </div>
               )}

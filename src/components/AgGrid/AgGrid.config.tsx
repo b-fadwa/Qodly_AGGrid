@@ -53,8 +53,12 @@ export default {
       keys: [
         { name: 'datasource', require: true, isDatasource: true },
         { name: 'currentElement', require: false, isDatasource: false },
-        { name: 'state', require: false, isDatasource: false },
-        { name: 'states', require: false, isDatasource: false },
+        { name: 'view', require: false, isDatasource: false },
+        { name: 'views', require: false, isDatasource: false },
+        { name: 'filter', require: false, isDatasource: false },
+        { name: 'filters', require: false, isDatasource: false },
+        { name: 'sort', require: false, isDatasource: false },
+        { name: 'sorts', require: false, isDatasource: false },
         { name: 'dateFinancial', require: false, isDatasource: true },
         { name: 'calculStatistiqueResult', require: false, isDatasource: false },
       ],
@@ -63,62 +67,35 @@ export default {
     exposed: true,
     icon: MdOutlineGridOn,
     events: [
-      {
-        label: 'On Row Click',
-        value: 'onrowclick',
-      },
-      {
-        label: 'On Row Double Click',
-        value: 'onrowdblclick',
-      },
-      {
-        label: 'On Header Click',
-        value: 'onheaderclick',
-      },
-      {
-        label: 'On Cell Click',
-        value: 'oncellclick',
-      },
-      {
-        label: 'On Cell Double Click',
-        value: 'oncelldblclick',
-      },
-      {
-        label: 'On Cell Key Down',
-        value: 'oncellkeydown',
-      },
-      {
-        label: 'On Cell Mouse Over',
-        value: 'oncellmouseover',
-      },
-      {
-        label: 'On Cell Mouse Out',
-        value: 'oncellmouseout',
-      },
-      {
-        label: 'On Cell Mouse Down',
-        value: 'oncellmousedown',
-      },
-      {
-        label: 'On Save State (Save new view)',
-        value: 'onsavestate',
-      },
-      {
-        label: 'On Load State (Load saved view)',
-        value: 'onloadstate',
-      },
-      {
-        label: 'On Update State',
-        value: 'onupdatestate',
-      },
-      {
-        label: 'On Delete State (saved view)',
-        value: 'ondeletestate',
-      },
-      {
-        label: 'On Calculs statistique',
-        value: 'oncalculstatistique',
-      },
+      { label: 'On Row Click', value: 'onrowclick' },
+      { label: 'On Row Double Click', value: 'onrowdblclick' },
+      { label: 'On Header Click', value: 'onheaderclick' },
+      { label: 'On Cell Click', value: 'oncellclick' },
+      { label: 'On Cell Double Click', value: 'oncelldblclick' },
+      { label: 'On Cell Key Down', value: 'oncellkeydown' },
+      { label: 'On Cell Mouse Over', value: 'oncellmouseover' },
+      { label: 'On Cell Mouse Out', value: 'oncellmouseout' },
+      { label: 'On Cell Mouse Down', value: 'oncellmousedown' },
+
+      { label: 'On Save View', value: 'onsaveview' },
+      { label: 'On Load View', value: 'onloadview' },
+      { label: 'On Load Views (list)', value: 'onloadviews' },
+      { label: 'On Update View', value: 'onupdateview' },
+      { label: 'On Delete View', value: 'ondeleteview' },
+
+      { label: 'On Save Filter', value: 'onsavefilter' },
+      { label: 'On Load Filter', value: 'onloadfilter' },
+      { label: 'On Load Filters (list)', value: 'onloadfilters' },
+      { label: 'On Update Filter', value: 'onupdatefilter' },
+      { label: 'On Delete Filter', value: 'ondeletefilter' },
+
+      { label: 'On Save Sort', value: 'onsavesort' },
+      { label: 'On Load Sort', value: 'onloadsort' },
+      { label: 'On Load Sorts (list)', value: 'onloadsorts' },
+      { label: 'On Update Sort', value: 'onupdatesort' },
+      { label: 'On Delete Sort', value: 'ondeletesort' },
+
+      { label: 'On Calculs statistique', value: 'oncalculstatistique' },
     ],
     datasources: {
       declarations: (props) => {
@@ -126,13 +103,21 @@ export default {
           columns,
           currentElement = '',
           datasource = '',
-          state = '',
-          states = '',
+          view = '',
+          views = '',
+          filter = '',
+          filters = '',
+          sort = '',
+          sorts = '',
           dateFinancial = '',
           calculStatistiqueResult = '',
         } = props as IExostiveElementProps & {
-          state?: string;
-          states?: string;
+          view?: string;
+          views?: string;
+          filter?: string;
+          filters?: string;
+          sort?: string;
+          sorts?: string;
           dateFinancial?: string;
           calculStatistiqueResult?: string;
         };
@@ -142,12 +127,12 @@ export default {
         if (currentElement) {
           declarations.push({ path: currentElement });
         }
-        if (state) {
-          declarations.push({ path: state });
-        }
-        if (states) {
-          declarations.push({ path: states, iterable: true });
-        }
+        if (view) declarations.push({ path: view });
+        if (views) declarations.push({ path: views, iterable: true });
+        if (filter) declarations.push({ path: filter });
+        if (filters) declarations.push({ path: filters, iterable: true });
+        if (sort) declarations.push({ path: sort });
+        if (sorts) declarations.push({ path: sorts, iterable: true });
         if (dateFinancial?.trim()) {
           declarations.push({ path: dateFinancial.trim() });
         }
@@ -253,8 +238,12 @@ export default {
   },
   defaultProps: {
     columns: [],
-    state: '',
-    states: '',
+    view: '',
+    views: '',
+    filter: '',
+    filters: '',
+    sort: '',
+    sorts: '',
     dateFinancial: '',
     calculStatistiqueResult: '',
     currentSelection: '',
@@ -287,6 +276,7 @@ export default {
     showToolbarActions: true,
     showToolbarView: true,
     showToolbarSorting: true,
+    showToolbarFiltering: true,
     showToolbarStatistics: false,
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
@@ -297,10 +287,18 @@ export default {
 
 export interface IAgGridProps extends webforms.ComponentProps {
   columns: IColumn[];
-  /** Scalar object: live columnState / filterModel / sortModel (+ optional embedded savedViews). */
-  state?: string;
-  /** Scalar array: catalog of saved grid states (e.g. from server); separate from `state`. */
-  states?: string;
+  /** Scalar object: live `columnState` (order / width / pinning / hide). */
+  view?: string;
+  /** Scalar array: saved list of named views (columnState). */
+  views?: string;
+  /** Scalar object: live `filterModel` (+ fiscal-year toggle). */
+  filter?: string;
+  /** Scalar array: saved list of named filters. */
+  filters?: string;
+  /** Scalar object: live `sortModel`. */
+  sort?: string;
+  /** Scalar array: saved list of named sorts. */
+  sorts?: string;
   /** Scalar datasource (4D Date): used to add `Date_Document >= Date_Financial` to server queries when valid. */
   dateFinancial?: string;
   /**
@@ -339,6 +337,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarView?: boolean;
   /** Toolbar: Advanced sorting */
   showToolbarSorting?: boolean;
+  /** Toolbar: Advanced filtering (named filter sets) */
+  showToolbarFiltering?: boolean;
   /** Toolbar: Calculs statistique (numeric column aggregates) */
   showToolbarStatistics?: boolean;
   /** Toolbar: Save new view */
