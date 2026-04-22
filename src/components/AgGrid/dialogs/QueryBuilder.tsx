@@ -3,9 +3,13 @@ import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
 import type { Translation } from '../state/sorts';
 import {
+  buildAgGridFilterModelFromAdvancedRules,
+  getAdvancedRulesFromFilterModel,
   getColumnAgGridFilterType,
   getColumnFilterOperators,
   type FilterOperatorDescriptor,
+  type QodlyFilterCombinator,
+  withAdvancedRulesOnFilterModel,
 } from '../AgGrid.filtering';
 
 /**
@@ -24,7 +28,7 @@ const VALUE_DEBOUNCE_MS = 400;
  *  in lockstep. Two-way conversion lives in this file.
  * ------------------------------------------------------------------ */
 
-export type ColumnCombinator = 'AND' | 'OR';
+export type ColumnCombinator = QodlyFilterCombinator;
 
 export interface FilterRule {
   /** Stable id for React keys (UUIDish, not persisted). */
@@ -35,11 +39,7 @@ export interface FilterRule {
   operator: string;
   value: string;
   value2?: string;
-  /**
-   * Combinator joining this rule with the previous rule of the same column.
-   * AG Grid only supports AND/OR within a single column; rules on different
-   * columns are always implicitly ANDed together.
-   */
+  /** Combinator joining this rule with the previous global rule. */
   combinator?: ColumnCombinator;
 }
 
@@ -89,6 +89,22 @@ const readConditionValues = (
 /** Convert an AG Grid `filterModel` to the modal's flat rule list. */
 export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[] => {
   if (!model || typeof model !== 'object') return [];
+  const advancedRules = getAdvancedRulesFromFilterModel(model);
+  if (advancedRules.length) {
+    return advancedRules.map((rule, index) => {
+      const column = findColumnByKey(columns, rule.field);
+      const filterType = getColumnAgGridFilterType(column);
+      const { value, value2 } = readConditionValues(rule.condition, filterType);
+      return {
+        id: newId(),
+        field: rule.field,
+        operator: rule.condition?.type ?? '',
+        value,
+        value2,
+        combinator: index === 0 ? undefined : rule.combinator,
+      };
+    });
+  }
   const rules: FilterRule[] = [];
   for (const colKey of Object.keys(model)) {
     const entry = model[colKey];
@@ -123,36 +139,28 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
 
 /** Convert a flat rule list back to an AG Grid `filterModel`. Empty rules are dropped. */
 export const rulesToFilterModel = (rules: FilterRule[], columns: IColumn[]): any => {
-  const grouped = new Map<string, FilterRule[]>();
-  for (const rule of rules) {
-    if (!rule.field || !rule.operator) continue;
-    const list = grouped.get(rule.field) ?? [];
-    list.push(rule);
-    grouped.set(rule.field, list);
-  }
-
-  const model: Record<string, any> = {};
-  for (const [field, list] of grouped.entries()) {
-    const column = findColumnByKey(columns, field);
-    const filterType = getColumnAgGridFilterType(column);
-    if (!filterType) continue;
-    const conditions = list
-      .map((rule) => buildCondition(rule, filterType))
-      .filter((c): c is any => c !== null);
-    if (conditions.length === 0) continue;
-    if (conditions.length === 1) {
-      model[field] = conditions[0];
-    } else {
-      const combinator: ColumnCombinator =
-        list.find((r) => r.combinator === 'OR') ? 'OR' : 'AND';
-      model[field] = {
-        filterType,
-        operator: combinator,
-        conditions,
+  const compiled = rules
+    .map((rule, index) => ({ rule, index }))
+    .map(({ rule, index }) => {
+      if (!rule.field || !rule.operator) return null;
+      const column = findColumnByKey(columns, rule.field);
+      const filterType = getColumnAgGridFilterType(column);
+      if (!filterType) return null;
+      const condition = buildCondition(rule, filterType);
+      if (!condition) return null;
+      return {
+        field: rule.field,
+        condition,
+        combinator: (index === 0 ? 'AND' : (rule.combinator ?? 'AND')) as ColumnCombinator,
       };
-    }
-  }
-  return model;
+    })
+    .filter(
+      (
+        item,
+      ): item is { field: string; condition: any; combinator: ColumnCombinator } => item !== null,
+    );
+  const agMirror = buildAgGridFilterModelFromAdvancedRules(compiled);
+  return withAdvancedRulesOnFilterModel(agMirror, compiled);
 };
 
 const ZERO_INPUT_OPERATORS = new Set(['isTrue', 'isFalse', 'blank', 'notBlank']);
@@ -381,14 +389,11 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
       ) : (
         <div className="flex flex-col gap-2">
           {rules.map((rule, index) => {
-            const previous = index > 0 ? rules[index - 1] : null;
-            const sameColumnAsPrevious = previous && previous.field === rule.field;
             return (
               <div key={rule.id} className="flex flex-col gap-2">
                 {index > 0 && (
                   <CombinatorBadge
                     translation={translation}
-                    sameColumn={Boolean(sameColumnAsPrevious)}
                     value={rule.combinator ?? 'AND'}
                     onChange={(next) => updateRule(index, { combinator: next })}
                   />
@@ -413,28 +418,14 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
 
 interface CombinatorBadgeProps {
   translation: Translation;
-  /** Cross-column combinations are always AND in AG Grid; only same-column accepts OR. */
-  sameColumn: boolean;
   value: ColumnCombinator;
   onChange: (next: ColumnCombinator) => void;
 }
 
-const CombinatorBadge: FC<CombinatorBadgeProps> = ({
-  translation,
-  sameColumn,
-  value,
-  onChange,
-}) => {
-  if (!sameColumn) {
-    return (
-      <div className="flex items-center gap-2 pl-3" style={{ color: '#94A3B8', fontSize: '11px' }}>
-        <span>{translation('AND')}</span>
-      </div>
-    );
-  }
+const CombinatorBadge: FC<CombinatorBadgeProps> = ({ translation, value, onChange }) => {
   return (
     <div className="flex items-center gap-2 pl-3">
-      {(['AND', 'OR'] as ColumnCombinator[]).map((option) => (
+      {(['AND', 'OR', 'EXCEPT'] as ColumnCombinator[]).map((option) => (
         <button
           key={option}
           type="button"

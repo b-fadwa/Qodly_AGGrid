@@ -2,9 +2,13 @@ import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
 import {
+  buildAgGridFilterModelFromAdvancedRules,
+  getAdvancedRulesFromFilterModel,
   getColumnAgGridFilterType,
   getColumnFilterOperators,
   type FilterOperatorDescriptor,
+  type QodlyFilterCombinator,
+  withAdvancedRulesOnFilterModel,
 } from '../AgGrid.filtering';
 
 interface ConditionDraft {
@@ -20,191 +24,110 @@ interface HeaderFilterPopupProps {
   column: IColumn | null;
   colId: string | null;
   currentEntry: any;
+  currentModel: any;
   translation: (key: string) => string;
-  onApply: (nextEntry: any | null) => void;
+  onApply: (nextModel: any | null) => void;
   onClose: () => void;
 }
 
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  width: '250px',
-  maxWidth: 'calc(100vw - 24px)',
-  maxHeight: '70vh',
-  overflow: 'auto',
-  background: '#F3F4F6',
-  border: '1px solid #0000001A',
-  borderRadius: '8px',
-  boxShadow: '0 16px 24px rgba(0, 0, 0, 0.12)',
-  zIndex: 100001,
-};
-
-const selectStyle: React.CSSProperties = {
-  height: '32px',
-  borderRadius: '5px',
-  border: '1px solid #CBD5E1',
-  color: '#44444C',
-  fontSize: '13px',
-  padding: '0 12px',
-  background: '#FFFFFF',
-};
-
-const inputStyle: React.CSSProperties = {
-  ...selectStyle,
-  width: '100%',
-};
-
-const neutralBtn: React.CSSProperties = {
-  background: '#FFFFFF',
-  color: '#44444C',
-  borderRadius: '6px',
-  fontSize: '12px',
-  fontWeight: 500,
-  height: '31px',
-  padding: '0 12px',
-  border: '1px solid #0000001A',
-};
-
-const primaryBtn: React.CSSProperties = {
-  background: '#2B5797',
-  color: '#FFFFFF',
-  borderRadius: '6px',
-  fontSize: '12px',
-  fontWeight: 500,
-  height: '31px',
-  padding: '0 12px',
-  border: '1px solid #2B5797',
-};
-
-const trashBtnStyle: React.CSSProperties = {
-  width: '31px',
-  minWidth: '31px',
-  height: '31px',
-  borderRadius: '8px',
-  color: 'rgb(236, 123, 128)',
-  borderColor: 'rgb(236, 123, 128)',
-  backgroundColor: 'rgba(236, 123, 128, 0.2)',
-};
-
-const combinatorLabel: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  fontSize: '12px',
-  color: '#2D2D35',
-  cursor: 'pointer',
-};
-
 const ZERO_INPUT_OPERATORS = new Set(['isTrue', 'isFalse', 'blank', 'notBlank']);
+const mk = (): string => `h_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
+const boolOps = (ops: FilterOperatorDescriptor[]) =>
+  ops.some((o) => o.key === 'isTrue' || o.key === 'isFalse');
+const defaultOp = (ops: FilterOperatorDescriptor[]) => (boolOps(ops) ? '' : (ops[0]?.key ?? 'equals'));
 
-const newId = (): string => `h_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
-
-const getInputType = (column: IColumn | null): 'text' | 'number' | 'date' => {
-  const dt = String(column?.dataType ?? '')
-    .trim()
-    .toLowerCase();
-  if (dt === 'date') return 'date';
-  if (['word', 'short', 'long', 'number', 'long64', 'duration'].includes(dt)) return 'number';
-  return 'text';
-};
-
-const isBooleanOperatorList = (operators: FilterOperatorDescriptor[]): boolean =>
-  operators.some((op) => op.key === 'isTrue' || op.key === 'isFalse');
-
-const defaultOperatorFor = (operators: FilterOperatorDescriptor[]): string =>
-  isBooleanOperatorList(operators) ? '' : (operators[0]?.key ?? 'equals');
-
-const parseEntry = (entry: any, operators: FilterOperatorDescriptor[]): ConditionDraft[] => {
-  const fallbackOp = defaultOperatorFor(operators);
+const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft[] => {
+  const fallback = defaultOp(ops);
   if (!entry || typeof entry !== 'object') {
-    return [{ id: newId(), operator: fallbackOp, value: '', value2: '' }];
+    return [{ id: mk(), operator: fallback, value: '', value2: '' }];
   }
-  if (Array.isArray(entry.conditions)) {
-    const rows = entry.conditions.map((c: any) => ({
-      id: newId(),
-      operator: c?.type ?? fallbackOp,
-      value: c?.filter != null ? String(c.filter) : c?.dateFrom != null ? String(c.dateFrom) : '',
-      value2: c?.filterTo != null ? String(c.filterTo) : c?.dateTo != null ? String(c.dateTo) : '',
-    }));
-    return rows.length ? rows : [{ id: newId(), operator: fallbackOp, value: '', value2: '' }];
-  }
-  return [
-    {
-      id: newId(),
-      operator: entry?.type ?? fallbackOp,
-      value:
-        entry?.filter != null
-          ? String(entry.filter)
-          : entry?.dateFrom != null
-            ? String(entry.dateFrom)
+  const conditions = Array.isArray(entry.conditions) ? entry.conditions : [entry];
+  const rows = conditions.map((c: any) => ({
+    id: mk(),
+    operator: c?.type ?? fallback,
+    value:
+      c?.filter != null
+        ? String(c.filter)
+        : c?.dateFrom != null
+          ? String(c.dateFrom)
+          : c?.value != null
+            ? String(c.value)
             : '',
-      value2:
-        entry?.filterTo != null
-          ? String(entry.filterTo)
-          : entry?.dateTo != null
-            ? String(entry.dateTo)
-            : '',
-    },
-  ];
+    value2: c?.filterTo != null ? String(c.filterTo) : c?.dateTo != null ? String(c.dateTo) : '',
+  }));
+  return rows.length ? rows : [{ id: mk(), operator: fallback, value: '', value2: '' }];
 };
 
-const buildCondition = (
-  draft: ConditionDraft,
+const toCondition = (
+  row: ConditionDraft,
   filterType: 'text' | 'number' | 'date' | 'qodlyRefSelect',
 ): any | null => {
-  if (!draft.operator) return null;
-  if (ZERO_INPUT_OPERATORS.has(draft.operator)) {
-    return { filterType, type: draft.operator };
-  }
+  if (!row.operator) return null;
+  if (ZERO_INPUT_OPERATORS.has(row.operator)) return { filterType, type: row.operator };
   if (filterType === 'date') {
-    if (!draft.value) return null;
-    return {
-      filterType,
-      type: draft.operator,
-      dateFrom: draft.value,
-      dateTo: draft.value2 || null,
-    };
+    if (!row.value) return null;
+    return { filterType, type: row.operator, dateFrom: row.value, dateTo: row.value2 || null };
   }
   if (filterType === 'qodlyRefSelect') {
-    const num = Number(String(draft.value ?? '').trim());
+    const num = Number(String(row.value ?? '').trim());
     if (!Number.isFinite(num)) return null;
-    return { filterType, type: draft.operator, value: num };
+    return { filterType, type: row.operator, value: num };
   }
-  if (!draft.value) return null;
-  return {
-    filterType,
-    type: draft.operator,
-    filter: draft.value,
-    filterTo: draft.value2 || undefined,
-  };
+  if (!row.value) return null;
+  return { filterType, type: row.operator, filter: row.value, filterTo: row.value2 || undefined };
 };
 
-const isDraftFilled = (draft: ConditionDraft, operators: FilterOperatorDescriptor[]): boolean => {
-  const op = operators.find((candidate) => candidate.key === draft.operator) ?? null;
+const filled = (row: ConditionDraft, ops: FilterOperatorDescriptor[]) => {
+  const op = ops.find((o) => o.key === row.operator);
   const inputs = op?.inputs ?? 1;
   if (inputs === 0) return true;
-  if (inputs === 1) return String(draft.value ?? '').trim().length > 0;
-  return (
-    String(draft.value ?? '').trim().length > 0 && String(draft.value2 ?? '').trim().length > 0
-  );
+  if (inputs === 1) return String(row.value ?? '').trim().length > 0;
+  return String(row.value ?? '').trim().length > 0 && String(row.value2 ?? '').trim().length > 0;
 };
 
-const normalizeAutoConditionRows = (
-  drafts: ConditionDraft[],
-  operators: FilterOperatorDescriptor[],
-): ConditionDraft[] => {
-  const fallbackOp = defaultOperatorFor(operators);
-  const safe = drafts.length
-    ? drafts
-    : [{ id: newId(), operator: fallbackOp, value: '', value2: '' }];
-  const lastFilledIndex = [...safe]
-    .map((draft, index) => (isDraftFilled(draft, operators) ? index : -1))
-    .reduce((acc, index) => Math.max(acc, index), -1);
-  const desiredCount = Math.max(1, lastFilledIndex + 2);
-  const trimmed = safe.slice(0, desiredCount);
-  while (trimmed.length < desiredCount) {
-    trimmed.push({ id: newId(), operator: fallbackOp, value: '', value2: '' });
-  }
-  return trimmed;
+const normalize = (rows: ConditionDraft[], ops: FilterOperatorDescriptor[]): ConditionDraft[] => {
+  const fallback = defaultOp(ops);
+  const safe = rows.length ? rows : [{ id: mk(), operator: fallback, value: '', value2: '' }];
+  const lastFilled = [...safe]
+    .map((row, idx) => (filled(row, ops) ? idx : -1))
+    .reduce((acc, idx) => Math.max(acc, idx), -1);
+  const desired = Math.max(1, lastFilled + 2);
+  const next = safe.slice(0, desired);
+  while (next.length < desired) next.push({ id: mk(), operator: fallback, value: '', value2: '' });
+  return next;
+};
+
+const styles = {
+  panel: {
+    position: 'fixed',
+    width: '250px',
+    maxWidth: 'calc(100vw - 24px)',
+    maxHeight: '70vh',
+    overflow: 'auto',
+    background: '#F3F4F6',
+    border: '1px solid #0000001A',
+    borderRadius: '8px',
+    boxShadow: '0 16px 24px rgba(0, 0, 0, 0.12)',
+    zIndex: 100001,
+  } as React.CSSProperties,
+  control: {
+    height: '32px',
+    borderRadius: '5px',
+    border: '1px solid #CBD5E1',
+    color: '#44444C',
+    fontSize: '13px',
+    padding: '0 12px',
+    background: '#FFFFFF',
+  } as React.CSSProperties,
+  trash: {
+    width: '31px',
+    minWidth: '31px',
+    height: '31px',
+    borderRadius: '8px',
+    color: 'rgb(236, 123, 128)',
+    borderColor: 'rgb(236, 123, 128)',
+    backgroundColor: 'rgba(236, 123, 128, 0.2)',
+  } as React.CSSProperties,
 };
 
 export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
@@ -213,35 +136,50 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   column,
   colId,
   currentEntry,
+  currentModel,
   translation,
   onApply,
   onClose,
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
-  const inputType = getInputType(column);
   const operators = useMemo(() => (column ? getColumnFilterOperators(column) : []), [column]);
-  const filterType = useMemo(() => {
-    const t = getColumnAgGridFilterType(column);
-    return t === null ? null : t;
+  const filterType = useMemo(() => getColumnAgGridFilterType(column), [column]);
+  const inputType = useMemo(() => {
+    const dt = String(column?.dataType ?? '').trim().toLowerCase();
+    if (dt === 'date') return 'date';
+    if (['word', 'short', 'long', 'number', 'long64', 'duration'].includes(dt)) return 'number';
+    return 'text';
   }, [column]);
-  const isBooleanOnly = useMemo(() => isBooleanOperatorList(operators), [operators]);
-  const [joiner, setJoiner] = useState<'AND' | 'OR'>('AND');
-  const [conditions, setConditions] = useState<ConditionDraft[]>([]);
+  const activeRules = useMemo(() => getAdvancedRulesFromFilterModel(currentModel), [currentModel]);
+  const [rows, setRows] = useState<ConditionDraft[]>([]);
+  const [rowCombinator, setRowCombinator] = useState<QodlyFilterCombinator>('AND');
+  const [columnCombinator, setColumnCombinator] = useState<QodlyFilterCombinator>('AND');
+  const hasOtherColumns = useMemo(() => {
+    if (!colId) return false;
+    if (activeRules.some((r) => r.field !== colId)) return true;
+    return Object.keys(currentModel ?? {}).some((k) => k !== '__qodlyAdvancedRules' && k !== colId);
+  }, [activeRules, currentModel, colId]);
 
   useEffect(() => {
-    if (!open) return;
-    const next = normalizeAutoConditionRows(parseEntry(currentEntry, operators), operators);
-    setConditions(next);
-    setJoiner(currentEntry?.operator === 'OR' ? 'OR' : 'AND');
-  }, [open, currentEntry, operators]);
+    if (!open || !colId) return;
+    const forCol = activeRules.filter((r) => r.field === colId);
+    if (forCol.length) {
+      const parsed = forCol.map((r) => parseEntry(r.condition, operators)[0]);
+      setRows(normalize(parsed, operators));
+      setColumnCombinator(forCol[0]?.combinator ?? 'AND');
+      setRowCombinator(forCol[1]?.combinator ?? 'AND');
+      return;
+    }
+    setRows(normalize(parseEntry(currentEntry, operators), operators));
+    setColumnCombinator('AND');
+    setRowCombinator(currentEntry?.operator === 'OR' ? 'OR' : 'AND');
+  }, [open, colId, currentEntry, operators, activeRules]);
 
   useEffect(() => {
     if (!open) return;
     const onMouseDown = (e: MouseEvent) => {
       const panel = panelRef.current;
-      if (!panel) return;
-      if (panel.contains(e.target as Node)) return;
-      onClose();
+      if (panel && !panel.contains(e.target as Node)) onClose();
     };
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -257,66 +195,70 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   if (!open || !column || !colId || !anchorRect || !filterType) return null;
 
   const top = Math.min(anchorRect.bottom + 8, window.innerHeight - 20);
-  const left = Math.min(Math.max(12, anchorRect.left), Math.max(12, window.innerWidth - 360 - 12));
+  const left = Math.min(Math.max(12, anchorRect.left), Math.max(12, window.innerWidth - 372));
+
+  const applyRules = (
+    nextRules: Array<{ field: string; combinator: QodlyFilterCombinator; condition: any }>,
+  ) => {
+    const agMirror = buildAgGridFilterModelFromAdvancedRules(nextRules);
+    onApply(withAdvancedRulesOnFilterModel(agMirror, nextRules));
+  };
 
   return (
-    <div
-      ref={panelRef}
-      style={{
-        ...panelStyle,
-        top,
-        left,
-      }}
-    >
-      <div className="border-b border-[#D1D5DB] p-2">
+    <div ref={panelRef} style={{ ...styles.panel, top, left }}>
+      <div className="border-b border-[#D1D5DB] p-2 flex items-center justify-between gap-2">
         <div className="text-[12px] font-semibold text-[#111827]">{column.title}</div>
+        {hasOtherColumns ? (
+          <select
+            value={columnCombinator}
+            onChange={(e) => setColumnCombinator(e.target.value as QodlyFilterCombinator)}
+            style={{ ...styles.control, width: '120px', height: '28px', fontSize: '12px' }}
+          >
+            <option value="AND">{translation('AND')}</option>
+            <option value="OR">{translation('OR')}</option>
+            <option value="EXCEPT">{translation('EXCEPT')}</option>
+          </select>
+        ) : null}
       </div>
       <div className="flex flex-col gap-1 p-2">
-        {conditions.map((row, index) => {
-          const selectedOp =
-            operators.find((op) => op.key === row.operator) ?? operators[0] ?? null;
+        {rows.map((row, idx) => {
+          const selectedOp = operators.find((op) => op.key === row.operator) ?? operators[0] ?? null;
           const inputs = selectedOp?.inputs ?? 1;
-          const canRemoveQuickly = conditions.length > 1;
+          const canDelete = rows.length > 1;
           return (
             <div key={row.id}>
-              {index > 0 ? (
-                <div className="mb-3 flex items-center justify-center gap-8">
-                  <label style={combinatorLabel}>
-                    <input
-                      type="radio"
-                      checked={joiner === 'AND'}
-                      onChange={() => setJoiner('AND')}
-                    />
-                    <span>{translation('AND')}</span>
-                  </label>
-                  <label style={combinatorLabel}>
-                    <input
-                      type="radio"
-                      checked={joiner === 'OR'}
-                      onChange={() => setJoiner('OR')}
-                    />
-                    <span>{translation('OR')}</span>
-                  </label>
+              {idx > 0 ? (
+                <div className="mb-1 flex items-center justify-center gap-5 text-[12px] text-[#2D2D35]">
+                  {(['AND', 'OR', 'EXCEPT'] as QodlyFilterCombinator[]).map((option) => (
+                    <label key={option} className="inline-flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={rowCombinator === option}
+                        onChange={() => setRowCombinator(option)}
+                      />
+                      <span>{translation(option)}</span>
+                    </label>
+                  ))}
                 </div>
               ) : null}
-              <div className="mb-3 flex items-center gap-2">
+              <div className="mb-1 flex items-center gap-2">
                 <select
-                  style={{ ...selectStyle, width: '100%', flex: 1 }}
+                  style={{ ...styles.control, flex: 1 }}
                   value={row.operator}
                   onChange={(e) =>
-                    setConditions((prev) =>
-                      normalizeAutoConditionRows(
-                        prev.map((condition) =>
-                          condition.id === row.id
-                            ? { ...condition, operator: e.target.value, value: '', value2: '' }
-                            : condition,
+                    setRows((prev) =>
+                      normalize(
+                        prev.map((r) =>
+                          r.id === row.id
+                            ? { ...r, operator: e.target.value, value: '', value2: '' }
+                            : r,
                         ),
                         operators,
                       ),
                     )
                   }
                 >
-                  {isBooleanOnly ? (
+                  {boolOps(operators) ? (
                     <option value="" disabled>
                       {translation('Choose one')}
                     </option>
@@ -327,65 +269,43 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     </option>
                   ))}
                 </select>
-                {inputs === 0 && canRemoveQuickly ? (
+                {inputs === 0 && canDelete ? (
                   <button
                     type="button"
-                    className="header-button-trash inline-flex items-center justify-center rounded-lg border"
-                    style={trashBtnStyle}
+                    className="inline-flex items-center justify-center rounded-lg border"
+                    style={styles.trash}
                     onClick={() =>
-                      setConditions((prev) =>
-                        normalizeAutoConditionRows(
-                          prev.length > 1
-                            ? prev.filter((condition) => condition.id !== row.id)
-                            : prev,
-                          operators,
-                        ),
-                      )
+                      setRows((prev) => normalize(prev.filter((r) => r.id !== row.id), operators))
                     }
-                    title={translation('Delete')}
-                    aria-label={translation('Delete')}
                   >
                     <GoTrash size={14} />
                   </button>
                 ) : null}
               </div>
               {inputs >= 1 ? (
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-1 flex items-center gap-2">
                   <input
                     type={inputType}
                     value={row.value}
                     placeholder={translation('Filter...')}
+                    style={{ ...styles.control, width: '100%' }}
                     onChange={(e) =>
-                      setConditions((prev) =>
-                        normalizeAutoConditionRows(
-                          prev.map((condition) =>
-                            condition.id === row.id
-                              ? { ...condition, value: e.target.value }
-                              : condition,
-                          ),
+                      setRows((prev) =>
+                        normalize(
+                          prev.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r)),
                           operators,
                         ),
                       )
                     }
-                    style={inputStyle}
                   />
-                  {canRemoveQuickly ? (
+                  {canDelete ? (
                     <button
                       type="button"
-                      className="header-button-trash inline-flex items-center justify-center rounded-lg border"
-                      style={trashBtnStyle}
+                      className="inline-flex items-center justify-center rounded-lg border"
+                      style={styles.trash}
                       onClick={() =>
-                        setConditions((prev) =>
-                          normalizeAutoConditionRows(
-                            prev.length > 1
-                              ? prev.filter((condition) => condition.id !== row.id)
-                              : prev,
-                            operators,
-                          ),
-                        )
+                        setRows((prev) => normalize(prev.filter((r) => r.id !== row.id), operators))
                       }
-                      title={translation('Delete')}
-                      aria-label={translation('Delete')}
                     >
                       <GoTrash size={14} />
                     </button>
@@ -393,38 +313,31 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                 </div>
               ) : null}
               {inputs === 2 ? (
-                <div>
-                  <input
-                    type={inputType}
-                    value={row.value2}
-                    placeholder={translation('Filter...')}
-                    onChange={(e) =>
-                      setConditions((prev) =>
-                        normalizeAutoConditionRows(
-                          prev.map((condition) =>
-                            condition.id === row.id
-                              ? { ...condition, value2: e.target.value }
-                              : condition,
-                          ),
-                          operators,
-                        ),
-                      )
-                    }
-                    style={inputStyle}
-                  />
-                </div>
+                <input
+                  type={inputType}
+                  value={row.value2}
+                  placeholder={translation('Filter...')}
+                  style={{ ...styles.control, width: '100%' }}
+                  onChange={(e) =>
+                    setRows((prev) =>
+                      normalize(
+                        prev.map((r) => (r.id === row.id ? { ...r, value2: e.target.value } : r)),
+                        operators,
+                      ),
+                    )
+                  }
+                />
               ) : null}
             </div>
           );
         })}
       </div>
-
       <div className="flex items-center justify-center gap-2 border-t border-[#D1D5DB] bg-[#ECECEC] p-2">
         <button
           type="button"
-          style={neutralBtn}
+          style={{ ...styles.control, borderColor: '#0000001A', width: 'auto' }}
           onClick={() => {
-            onApply(null);
+            applyRules(activeRules.filter((r) => r.field !== colId));
             onClose();
           }}
         >
@@ -432,22 +345,34 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
         </button>
         <button
           type="button"
-          style={primaryBtn}
+          style={{
+            ...styles.control,
+            background: '#2B5797',
+            color: '#FFFFFF',
+            borderColor: '#2B5797',
+            width: 'auto',
+          }}
           onClick={() => {
-            const built = conditions
-              .map((c) => buildCondition(c, filterType))
-              .filter((c): c is any => c !== null);
+            const built = rows.map((r) => toCondition(r, filterType)).filter((v): v is any => v !== null);
+            const remaining = activeRules.filter((r) => r.field !== colId);
             if (!built.length) {
-              onApply(null);
-            } else if (built.length === 1) {
-              onApply(built[0]);
-            } else {
-              onApply({
-                filterType,
-                operator: joiner,
-                conditions: built,
-              });
+              applyRules(remaining);
+              onClose();
+              return;
             }
+            const nextRules = [
+              ...remaining,
+              ...built.map((condition, index) => ({
+                field: colId,
+                condition,
+                combinator: (index === 0
+                  ? remaining.length
+                    ? columnCombinator
+                    : 'AND'
+                  : rowCombinator) as QodlyFilterCombinator,
+              })),
+            ];
+            applyRules(nextRules);
             onClose();
           }}
         >

@@ -228,6 +228,16 @@ const splitCollectionValues = (raw: any): string[] =>
 const joinWithOr = (queries: string[]) =>
   queries.length > 1 ? `(${queries.join(' OR ')})` : (queries[0] ?? '');
 
+export type QodlyFilterCombinator = 'AND' | 'OR' | 'EXCEPT';
+
+export interface QodlyAdvancedRule {
+  field: string;
+  combinator: QodlyFilterCombinator;
+  condition: any;
+}
+
+export const QODLY_ADVANCED_RULES_KEY = '__qodlyAdvancedRules';
+
 export const buildFilterQuery = (filter: any, source: string, column?: any): string => {
   const filterType = filter.filterType;
   const filterValue = filter.filter;
@@ -483,8 +493,91 @@ export const getColumnAgGridFilterType = (
   }
 };
 
+export const getAdvancedRulesFromFilterModel = (model: any): QodlyAdvancedRule[] => {
+  const raw = model?.[QODLY_ADVANCED_RULES_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((r: any) => r && typeof r === 'object' && r.field && r.condition)
+    .map((r: any) => ({
+      field: String(r.field),
+      combinator: r.combinator === 'OR' || r.combinator === 'EXCEPT' ? r.combinator : 'AND',
+      condition: r.condition,
+    }));
+};
+
+export const stripAdvancedRulesFromFilterModel = (model: any): Record<string, any> => {
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return {};
+  const next: Record<string, any> = { ...model };
+  delete next[QODLY_ADVANCED_RULES_KEY];
+  return next;
+};
+
+export const withAdvancedRulesOnFilterModel = (
+  baseModel: any,
+  rules: QodlyAdvancedRule[],
+): Record<string, any> => {
+  const base = stripAdvancedRulesFromFilterModel(baseModel);
+  if (!rules.length) return base;
+  return {
+    ...base,
+    [QODLY_ADVANCED_RULES_KEY]: rules,
+  };
+};
+
+export const buildAgGridFilterModelFromAdvancedRules = (
+  rules: QodlyAdvancedRule[],
+): Record<string, any> => {
+  const next: Record<string, any> = {};
+  rules.forEach((rule) => {
+    const existing = next[rule.field];
+    if (!existing) {
+      next[rule.field] = rule.condition;
+      return;
+    }
+    if (rule.combinator !== 'AND' && rule.combinator !== 'OR') return;
+    if (existing.conditions && Array.isArray(existing.conditions)) {
+      existing.operator = rule.combinator;
+      existing.conditions.push(rule.condition);
+      return;
+    }
+    next[rule.field] = {
+      filterType: existing.filterType,
+      operator: rule.combinator,
+      conditions: [existing, rule.condition],
+    };
+  });
+  return next;
+};
+
 export const buildFilterQueries = (filterModel: any, columns: any[]): string[] => {
+  const advancedRules = getAdvancedRulesFromFilterModel(filterModel);
+  if (advancedRules.length) {
+    const compiled = advancedRules
+      .map((rule) => {
+        const column = columns.find(
+          (col) =>
+            col.source === rule.field ||
+            col.title === rule.field ||
+            String(col.id ?? '') === rule.field,
+        );
+        if (!column) return null;
+        const source = column.source;
+        const query = buildFilterQuery(rule.condition, source, column);
+        if (!query) return null;
+        return { query, combinator: rule.combinator };
+      })
+      .filter((item): item is { query: string; combinator: QodlyFilterCombinator } => item !== null);
+    if (!compiled.length) return [];
+    let chain = `(${compiled[0].query})`;
+    for (let i = 1; i < compiled.length; i += 1) {
+      const part = compiled[i];
+      chain = `(${chain}) ${part.combinator} (${part.query})`;
+    }
+    return [chain];
+  }
+
   return Object.keys(filterModel).map((key) => {
+    if (key === QODLY_ADVANCED_RULES_KEY) return '';
     const filter = filterModel[key];
     const column = columns.find(
       (col) => col.title === key || col.source === key || String(col.id ?? '') === key,

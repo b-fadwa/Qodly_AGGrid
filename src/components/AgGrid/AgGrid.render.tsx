@@ -36,7 +36,10 @@ import {
   writeTextToClipboard,
 } from './AgGrid.clipboard';
 import {
+  getAdvancedRulesFromFilterModel,
   buildFilterQueries,
+  stripAdvancedRulesFromFilterModel,
+  withAdvancedRulesOnFilterModel,
   extractRefDatasetKeyFromSource,
   getColumnFilterParams,
   getColumnFilterType,
@@ -114,6 +117,67 @@ const RowNumberCell: FC<ICellRendererParams> = (params) => (
     {params.value ?? ''}
   </span>
 );
+
+const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) => {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  const updatePos = useCallback(() => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPos({
+      top: rect.bottom + 6,
+      left: rect.left + rect.width / 2,
+    });
+  }, []);
+
+  const show = useCallback(() => {
+    updatePos();
+    setOpen(true);
+  }, [updatePos]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onViewportChange = () => updatePos();
+    window.addEventListener('scroll', onViewportChange, true);
+    window.addEventListener('resize', onViewportChange);
+    return () => {
+      window.removeEventListener('scroll', onViewportChange, true);
+      window.removeEventListener('resize', onViewportChange);
+    };
+  }, [open, updatePos]);
+
+  return (
+    <div
+      ref={anchorRef}
+      className="inline-flex"
+      onMouseEnter={show}
+      onMouseLeave={() => setOpen(false)}
+      onFocusCapture={show}
+      onBlurCapture={() => setOpen(false)}
+    >
+      {children}
+      {open ? (
+        <div
+          className="pointer-events-none fixed z-[100002] -translate-x-1/2 whitespace-nowrap rounded-md border px-2 py-1"
+          style={{
+            top: `${pos.top}px`,
+            left: `${pos.left}px`,
+            fontSize: '12px',
+            fontWeight: 500,
+            background: '#FFFFFF',
+            boxShadow: 'rgba(0, 0, 0, 0.1) 0px -4px 12px 0px',
+            borderColor: '#0000001A',
+            color: '#44444C',
+          }}
+        >
+          {label}
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
   if (data[field] !== undefined && data[field] !== null) {
@@ -409,6 +473,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showSortingDialog, setShowSortingDialog] = useState(false);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [liveFilterModel, setLiveFilterModel] = useState<any>({});
+  const liveFilterModelRef = useRef<any>({});
   const [sortDialogInitialModel, setSortDialogInitialModel] = useState<SortModelItem[]>([]);
   const [headerFilterPopupState, setHeaderFilterPopupState] = useState<{
     colId: string;
@@ -424,6 +489,10 @@ const AgGrid: FC<IAgGridProps> = ({
   // dialog's dropdown even before the user opens it.
   const [selectedFilterName, setSelectedFilterName] = useState<string>('');
   const [selectedSortName, setSelectedSortName] = useState<string>('');
+
+  useEffect(() => {
+    liveFilterModelRef.current = liveFilterModel ?? {};
+  }, [liveFilterModel]);
 
   // Bootstrap tracking for `isDefault` auto-apply: once a live value or a
   // default has been applied for a given kind, we leave the grid alone.
@@ -601,110 +670,108 @@ const AgGrid: FC<IAgGridProps> = ({
   );
 
   const colDefs: ColDef[] = useMemo(() => {
-    return columns
-      // Feature 3: internal id columns are completely hidden from the table.
-      // The underlying row data still carries the value (it's needed for CSS
-      // expressions, selection bookkeeping, etc.) — we just don't render a
-      // colDef for it so users can't see / move / resize / sort / filter it.
-      .filter((col) => !isHiddenIdColumn(col))
-      .map((col) => {
-        const stableField = agGridColumnField(col);
-        const colState = (columnVisibility.find((c) => c.field === stableField) ?? {
-          isHidden: false,
-          pinned: null,
-          width: col.width,
-          flex: col.flex,
-        }) as {
-          isHidden: boolean;
-          pinned: 'left' | 'right' | null;
-          width?: number | null;
-          flex?: number | null;
-        };
-        const isBooleanColumn = isBooleanLikeColumn(col);
-        const refKey = extractRefDatasetKeyFromSource(col.source);
-        const isRefSource = refKey != null;
-        return {
-          field: stableField,
-          headerName: col.title,
-          headerComponent: AgGridFilterHeader,
-          headerComponentParams: {
-            translation,
-            filterable: !isRefSource && !!getColumnFilterType(col, isBooleanColumn),
-            onOpenFilter: ({
-              colId,
-              anchorEl,
-            }: {
-              colId: string;
-              anchorEl: HTMLElement;
-            }) => {
-              setHeaderFilterPopupState({
-                colId,
-                anchorRect: anchorEl.getBoundingClientRect(),
-              });
+    return (
+      columns
+        // Feature 3: internal id columns are completely hidden from the table.
+        // The underlying row data still carries the value (it's needed for CSS
+        // expressions, selection bookkeeping, etc.) — we just don't render a
+        // colDef for it so users can't see / move / resize / sort / filter it.
+        .filter((col) => !isHiddenIdColumn(col))
+        .map((col) => {
+          const stableField = agGridColumnField(col);
+          const colState = (columnVisibility.find((c) => c.field === stableField) ?? {
+            isHidden: false,
+            pinned: null,
+            width: col.width,
+            flex: col.flex,
+          }) as {
+            isHidden: boolean;
+            pinned: 'left' | 'right' | null;
+            width?: number | null;
+            flex?: number | null;
+          };
+          const isBooleanColumn = isBooleanLikeColumn(col);
+          const refKey = extractRefDatasetKeyFromSource(col.source);
+          const isRefSource = refKey != null;
+          return {
+            field: stableField,
+            headerName: col.title,
+            headerComponent: AgGridFilterHeader,
+            headerComponentParams: {
+              translation,
+              filterable: !isRefSource && !!getColumnFilterType(col, isBooleanColumn),
+              onOpenFilter: ({ colId, anchorEl }: { colId: string; anchorEl: HTMLElement }) => {
+                setHeaderFilterPopupState({
+                  colId,
+                  anchorRect: anchorEl.getBoundingClientRect(),
+                });
+              },
             },
-          },
-          context: { source: col.source },
-          hide: colState.isHidden,
-          pinned: colState.pinned,
-          cellRendererParams: {
-            format: col.format,
-            dataType: col.dataType,
-          },
-          cellStyle: (params: any) => {
-            if (isCellSelectionAvailable) return undefined;
-            const resetStyle = {
-              border: '',
-              boxSizing: '',
-              backgroundColor: '',
-            };
-            if (!showCopyActions || copyMode !== 'cells') return resetStyle;
-            const rowIndex = params?.node?.rowIndex;
-            if (typeof rowIndex !== 'number') return resetStyle;
-            const key = `${rowIndex}::${params.column.getColId()}`;
-            if (!manualSelectedCellKeySet.has(key)) return resetStyle;
-            return {
-              border: '2px dashed #1d4ed8',
-              boxSizing: 'border-box',
-              backgroundColor: 'rgba(29, 78, 216, 0.08)',
-            };
-          },
-          lockPosition: col.locked,
-          sortable: col.dataType !== 'image' && col.dataType !== 'object' && col.sorting,
-          resizable: col.sizing,
-          // Prefer the persisted width/flex (kept in sync via `onColumnResized`),
-          // falling back to the column's design-time value. This is what makes
-          // manual resize "stick" across colDef rebuilds — without it AG Grid
-          // resets the column to `col.width` every time the colDef identity
-          // changes.
-          //
-          // The `flex` handling is subtle: AG Grid CLEARS `flex` to `null` on
-          // the column state the moment the user drags a flex-sized column,
-          // because flex sizing and a manual width are mutually exclusive. We
-          // must distinguish that "explicitly cleared" null from a missing
-          // value (`undefined`). Using `??` would collapse both into "fall
-          // back to col.flex (= 1)" and AG Grid would re-flex the column on
-          // the next render, snapping it back to its computed width and
-          // making the resize appear to "not stick".
-          width: colState.width ?? col.width,
-          flex: colState.flex === null ? undefined : (colState.flex ?? col.flex),
-          filter: isRefSource ? 'qodlyRefSelectFilter' : getColumnFilterType(col, isBooleanColumn),
-          suppressHeaderMenuButton: true,
-          suppressHeaderFilterButton: true,
-          filterParams: isRefSource
-            ? {
-                refDatasetKey: refKey,
-                maxOptions: 256,
-                placeholderLabel: translation('Choose one'),
-                applyButtonLabel: translation('Apply'),
-                resolveOptionLabel: (index: number) => {
-                  const composite = refOptionI18nCompositeKey(refKey, index);
-                  const fromLang = lang ? get(i18n, `keys.${composite}.${lang}`) : undefined;
-                  return String(fromLang ?? get(i18n, `keys.${composite}.default`, '') ?? '');
-                },
-              }
-            : getColumnFilterParams(col, isBooleanColumn),
-        };
-      });
+            context: { source: col.source },
+            hide: colState.isHidden,
+            pinned: colState.pinned,
+            cellRendererParams: {
+              format: col.format,
+              dataType: col.dataType,
+            },
+            cellStyle: (params: any) => {
+              if (isCellSelectionAvailable) return undefined;
+              const resetStyle = {
+                border: '',
+                boxSizing: '',
+                backgroundColor: '',
+              };
+              if (!showCopyActions || copyMode !== 'cells') return resetStyle;
+              const rowIndex = params?.node?.rowIndex;
+              if (typeof rowIndex !== 'number') return resetStyle;
+              const key = `${rowIndex}::${params.column.getColId()}`;
+              if (!manualSelectedCellKeySet.has(key)) return resetStyle;
+              return {
+                border: '2px dashed #1d4ed8',
+                boxSizing: 'border-box',
+                backgroundColor: 'rgba(29, 78, 216, 0.08)',
+              };
+            },
+            lockPosition: col.locked,
+            sortable: col.dataType !== 'image' && col.dataType !== 'object' && col.sorting,
+            resizable: col.sizing,
+            // Prefer the persisted width/flex (kept in sync via `onColumnResized`),
+            // falling back to the column's design-time value. This is what makes
+            // manual resize "stick" across colDef rebuilds — without it AG Grid
+            // resets the column to `col.width` every time the colDef identity
+            // changes.
+            //
+            // The `flex` handling is subtle: AG Grid CLEARS `flex` to `null` on
+            // the column state the moment the user drags a flex-sized column,
+            // because flex sizing and a manual width are mutually exclusive. We
+            // must distinguish that "explicitly cleared" null from a missing
+            // value (`undefined`). Using `??` would collapse both into "fall
+            // back to col.flex (= 1)" and AG Grid would re-flex the column on
+            // the next render, snapping it back to its computed width and
+            // making the resize appear to "not stick".
+            width: colState.width ?? col.width,
+            flex: colState.flex === null ? undefined : (colState.flex ?? col.flex),
+            filter: isRefSource
+              ? 'qodlyRefSelectFilter'
+              : getColumnFilterType(col, isBooleanColumn),
+            suppressHeaderMenuButton: true,
+            suppressHeaderFilterButton: true,
+            filterParams: isRefSource
+              ? {
+                  refDatasetKey: refKey,
+                  maxOptions: 256,
+                  placeholderLabel: translation('Choose one'),
+                  applyButtonLabel: translation('Apply'),
+                  resolveOptionLabel: (index: number) => {
+                    const composite = refOptionI18nCompositeKey(refKey, index);
+                    const fromLang = lang ? get(i18n, `keys.${composite}.${lang}`) : undefined;
+                    return String(fromLang ?? get(i18n, `keys.${composite}.default`, '') ?? '');
+                  },
+                }
+              : getColumnFilterParams(col, isBooleanColumn),
+          };
+        })
+    );
   }, [
     columns,
     columnVisibility,
@@ -821,21 +888,19 @@ const AgGrid: FC<IAgGridProps> = ({
         const applied = viewsManager.applyPersistedValue(api, data);
         if (applied && Array.isArray(data?.columnState)) {
           setColumnVisibility((prev) => {
-            const next = withoutSyntheticRowColumnState(data.columnState).map(
-              (col: any) => {
-                const previous = prev.find((p) => p.field === col.colId);
-                return {
-                  field: col.colId,
-                  isHidden: col.hide || false,
-                  pinned: col.pinned || null,
-                  // Preserve the user's manual resize: if the persisted state
-                  // doesn't carry an explicit width/flex (older saved views),
-                  // fall back to whatever we already have in memory.
-                  width: col.width ?? previous?.width ?? null,
-                  flex: col.flex ?? previous?.flex ?? null,
-                };
-              },
-            );
+            const next = withoutSyntheticRowColumnState(data.columnState).map((col: any) => {
+              const previous = prev.find((p) => p.field === col.colId);
+              return {
+                field: col.colId,
+                isHidden: col.hide || false,
+                pinned: col.pinned || null,
+                // Preserve the user's manual resize: if the persisted state
+                // doesn't carry an explicit width/flex (older saved views),
+                // fall back to whatever we already have in memory.
+                width: col.width ?? previous?.width ?? null,
+                flex: col.flex ?? previous?.flex ?? null,
+              };
+            });
             return next;
           });
         }
@@ -1215,9 +1280,7 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!api) return;
     setColumnVisibility((prev) =>
       prev.map((entry) => {
-        const colState = api
-          .getColumnState()
-          .find((s: any) => s.colId === entry.field);
+        const colState = api.getColumnState().find((s: any) => s.colId === entry.field);
         if (!colState) return entry;
         if (entry.width === colState.width && entry.flex === (colState.flex ?? null)) {
           return entry;
@@ -1232,24 +1295,20 @@ const AgGrid: FC<IAgGridProps> = ({
   }, []);
 
   const onFilterChanged = useCallback((event: FilterChangedEvent) => {
-    // AG Grid's InfiniteRowModel resets the cache automatically on
-    // `filterChanged`, so an explicit `refreshInfiniteCache()` here would
-    // fire a second `getRows` for the same filter model — that's the
-    // duplicate request the user was seeing. We only mirror the model into
-    // our live state so the QueryBuilder/other UI can track it.
-    setLiveFilterModel(event.api.getFilterModel() ?? {});
+    const fromGrid = event.api.getFilterModel() ?? {};
+    const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
+    setLiveFilterModel(withAdvancedRulesOnFilterModel(fromGrid, prevRules));
   }, []);
 
-  const applyHeaderFilterEntry = useCallback((colId: string, nextEntry: any | null) => {
+  const applyHeaderFilterModel = useCallback((nextModel: any) => {
     const api = gridRef.current?.api;
     if (!api || api.isDestroyed()) return;
-    const current = api.getFilterModel() ?? {};
-    const next = { ...current };
-    if (nextEntry) next[colId] = nextEntry;
-    else delete next[colId];
-    if (isEqual(current, next)) return;
-    api.setFilterModel(next);
-    setLiveFilterModel(next);
+    const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
+    const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
+    if (!isEqual(currentAg, nextAg)) {
+      api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
+    }
+    setLiveFilterModel(nextModel ?? {});
   }, []);
 
   const getState = useCallback(
@@ -1423,21 +1482,18 @@ const AgGrid: FC<IAgGridProps> = ({
    * string (`colA desc, colB asc`). Returns an empty string when the model
    * is empty or no rule resolves to a known `source` attribute.
    */
-  const buildOrderByClause = useCallback(
-    (sortModel: SortModelItem[], cols: IColumn[]): string => {
-      return sortModel
-        .map((rule) => {
-          const matchedColumn = cols.find(
-            (column) => column.title === rule.colId || column.source === rule.colId,
-          );
-          if (!matchedColumn?.source || !rule.sort) return '';
-          return `${matchedColumn.source} ${rule.sort}`;
-        })
-        .filter(Boolean)
-        .join(', ');
-    },
-    [],
-  );
+  const buildOrderByClause = useCallback((sortModel: SortModelItem[], cols: IColumn[]): string => {
+    return sortModel
+      .map((rule) => {
+        const matchedColumn = cols.find(
+          (column) => column.title === rule.colId || column.source === rule.colId,
+        );
+        if (!matchedColumn?.source || !rule.sort) return '';
+        return `${matchedColumn.source} ${rule.sort}`;
+      })
+      .filter(Boolean)
+      .join(', ');
+  }, []);
 
   const applySorting = useCallback(
     async (params: IGetRowsParams, cols: IColumn[], activeDs: any) => {
@@ -1450,10 +1506,7 @@ const AgGrid: FC<IAgGridProps> = ({
       // Dedupe per-entitysel: if the entitysel changed (e.g. searchDs was
       // re-queried for a new filter) we MUST re-apply the orderby even when
       // the sortModel itself is unchanged — the new entitysel has no sort.
-      if (
-        prev.entitysel === currentEntitysel &&
-        isEqual(params.sortModel, prev.sortModel)
-      ) {
+      if (prev.entitysel === currentEntitysel && isEqual(params.sortModel, prev.sortModel)) {
         return;
       }
 
@@ -1644,7 +1697,10 @@ const AgGrid: FC<IAgGridProps> = ({
         const rowFm = rowParams.filterModel ?? {};
         const apiFm = params.api.getFilterModel() ?? {};
         /** Infinite row model can call `getRows` before `rowParams.filterModel` is synced after `refreshInfiniteCache`; `api.getFilterModel()` is the source of truth. */
-        const effectiveFilterModel = !isEqual(rowFm, {}) ? rowFm : apiFm;
+        const effectiveFilterModel = withAdvancedRulesOnFilterModel(
+          !isEqual(rowFm, {}) ? rowFm : apiFm,
+          getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
+        );
         const financialDate = dateFinancialRef.current;
         const hasFinancialFilter = financialDate != null && dateFinancialEnabledRef.current;
         const hasColumnFilters = normalizeAgGridFilterModel(effectiveFilterModel) != null;
@@ -1669,9 +1725,7 @@ const AgGrid: FC<IAgGridProps> = ({
             hasFinancialFilter && financialDate
               ? `Date_Document >= ${format(financialDate, 'yyyy-MM-dd')}`
               : '';
-          const baseQuery = [...filterQueries.filter(Boolean), extra]
-            .filter(Boolean)
-            .join(' AND ');
+          const baseQuery = [...filterQueries.filter(Boolean), extra].filter(Boolean).join(' AND ');
           // Embed `order by` directly in the query string so `dataclass.query()`
           // produces an already-sorted entitysel. `DataClass.query()` is
           // synchronous (local), only `fetchPage()` hits the server, so this
@@ -1768,9 +1822,7 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const normalizedColumns = useMemo(() => {
-    const idFields = new Set(
-      columns.filter(isHiddenIdColumn).map(agGridColumnField),
-    );
+    const idFields = new Set(columns.filter(isHiddenIdColumn).map(agGridColumnField));
     return columnVisibility.filter(
       (column) =>
         column.field !== 'ag-Grid-SelectionColumn' &&
@@ -1878,25 +1930,26 @@ const AgGrid: FC<IAgGridProps> = ({
         <div className="flex flex-col gap-2 h-full" onKeyDownCapture={onGridKeyDownCapture}>
           {showCopyActions && !(showColumnActions && showToolbarActions) && (
             <div className="flex items-center gap-2 px-4 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setCopyModeDraft(copyMode);
-                  setShowCopyModeDialog(true);
-                }}
-                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-                style={{
-                  width: '31px',
-                  height: '31px',
-                  borderRadius: '8px',
-                  borderColor: '#0000001A',
-                  color: '#44444C',
-                }}
-                title={`${translation('Copy mode')}: ${copyMode === 'cells' ? translation('Cells') : copyMode === 'rows' ? translation('Rows') : translation('Nothing')}`}
-                aria-label={translation('Copy mode')}
-              >
-                <FaCopy size={14} />
-              </button>
+              <IconPopover label={translation('Copy mode')}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCopyModeDraft(copyMode);
+                    setShowCopyModeDialog(true);
+                  }}
+                  className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                  style={{
+                    width: '31px',
+                    height: '31px',
+                    borderRadius: '8px',
+                    borderColor: '#0000001A',
+                    color: '#44444C',
+                  }}
+                  aria-label={translation('Copy mode')}
+                >
+                  <FaCopy size={14} />
+                </button>
+              </IconPopover>
               {renderCopyCellsClearButton()}
             </div>
           )}
@@ -1936,61 +1989,66 @@ const AgGrid: FC<IAgGridProps> = ({
                         />
                         {showToolbarSorting && (
                           <div className="sorting-section ">
-                            <button
-                              onClick={openAdvancedSortingDialog}
-                              className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-                              style={{
-                                width: '31px',
-                                height: '31px',
-                                borderRadius: '8px',
-                                borderColor: '#0000001A',
-                                color: '#44444C',
-                              }}
-                              title={translation('Advanced sorting')}
-                            >
-                              <FaSortAmountDown />
-                            </button>
+                            <IconPopover label={translation('Advanced sorting')}>
+                              <button
+                                onClick={openAdvancedSortingDialog}
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                aria-label={translation('Advanced sorting')}
+                              >
+                                <FaSortAmountDown size={14} />
+                              </button>
+                            </IconPopover>
                           </div>
                         )}
                         {showToolbarFiltering && (
                           <div className="filtering-section ">
-                            <button
-                              onClick={openAdvancedFilterDialog}
-                              className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-                              style={{
-                                width: '31px',
-                                height: '31px',
-                                borderRadius: '8px',
-                                borderColor: '#0000001A',
-                                color: '#44444C',
-                              }}
-                              title={translation('Advanced filtering')}
-                            >
-                              <FaFilter />
-                            </button>
+                            <IconPopover label={translation('Advanced filtering')}>
+                              <button
+                                onClick={openAdvancedFilterDialog}
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                aria-label={translation('Advanced filtering')}
+                              >
+                                <FaFilter size={14} />
+                              </button>
+                            </IconPopover>
                           </div>
                         )}
                         {showCopyActions && (
                           <div className="copy-mode-section flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCopyModeDraft(copyMode);
-                                setShowCopyModeDialog(true);
-                              }}
-                              className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-                              style={{
-                                width: '31px',
-                                height: '31px',
-                                borderRadius: '8px',
-                                borderColor: '#0000001A',
-                                color: '#44444C',
-                              }}
-                              title={`${translation('Copy mode')}: ${copyMode === 'cells' ? translation('Cells') : copyMode === 'rows' ? translation('Rows') : translation('Nothing')}`}
-                              aria-label={translation('Copy mode')}
-                            >
-                              <FaCopy size={14} />
-                            </button>
+                            <IconPopover label={translation('Copy mode')}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCopyModeDraft(copyMode);
+                                  setShowCopyModeDialog(true);
+                                }}
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                aria-label={translation('Copy mode')}
+                              >
+                                <FaCopy size={14} />
+                              </button>
+                            </IconPopover>
                             {renderCopyCellsClearButton()}
                           </div>
                         )}
@@ -2009,32 +2067,38 @@ const AgGrid: FC<IAgGridProps> = ({
                             {translation('View')}
                           </span>
                           <div className="flex gap-2">
-                            <button
-                              className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
-                              style={{
-                                width: '31px',
-                                height: '31px',
-                                borderRadius: '8px',
-                                borderColor: '#0000001A',
-                                color: '#44444C',
-                              }}
-                              onClick={() => setShowPropertiesDialog(true)}
-                            >
-                              <FaTableColumns size={14} />
-                            </button>
-                            <button
-                              className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-                              style={{
-                                width: '31px',
-                                height: '31px',
-                                borderRadius: '8px',
-                                borderColor: '#0000001A',
-                                color: '#44444C',
-                              }}
-                              onClick={() => resetColumnview()}
-                            >
-                              <FaClockRotateLeft size={14} />
-                            </button>
+                            <IconPopover label={translation('Customize columns')}>
+                              <button
+                                className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                onClick={() => setShowPropertiesDialog(true)}
+                                aria-label={translation('Customize columns')}
+                              >
+                                <FaTableColumns size={14} />
+                              </button>
+                            </IconPopover>
+                            <IconPopover label={translation('Reset view')}>
+                              <button
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                onClick={() => resetColumnview()}
+                                aria-label={translation('Reset view')}
+                              >
+                                <FaClockRotateLeft size={14} />
+                              </button>
+                            </IconPopover>
                           </div>
                         </div>
                       </div>
@@ -2442,7 +2506,10 @@ const AgGrid: FC<IAgGridProps> = ({
                       columns={columns}
                       filterModel={liveFilterModel}
                       setFilterModel={(next) => {
-                        gridRef.current?.api?.setFilterModel(next ?? null);
+                        const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
+                        gridRef.current?.api?.setFilterModel(
+                          Object.keys(nextAg).length ? nextAg : null,
+                        );
                         setLiveFilterModel(next ?? {});
                       }}
                       savedFilters={filtersManager.savedFilters}
@@ -2586,13 +2653,15 @@ const AgGrid: FC<IAgGridProps> = ({
               anchorRect={headerFilterPopupState?.anchorRect ?? null}
               colId={headerFilterPopupState?.colId ?? null}
               column={headerPopupColumn}
+              currentModel={liveFilterModel}
               currentEntry={
-                headerFilterPopupState ? (liveFilterModel?.[headerFilterPopupState.colId] ?? null) : null
+                headerFilterPopupState
+                  ? (liveFilterModel?.[headerFilterPopupState.colId] ?? null)
+                  : null
               }
               translation={translation}
-              onApply={(nextEntry) => {
-                if (!headerFilterPopupState?.colId) return;
-                applyHeaderFilterEntry(headerFilterPopupState.colId, nextEntry);
+              onApply={(nextModel) => {
+                applyHeaderFilterModel(nextModel ?? {});
               }}
               onClose={() => setHeaderFilterPopupState(null)}
             />
