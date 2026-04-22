@@ -1,4 +1,4 @@
-import { FC, useState } from 'react';
+import { FC, useEffect, useState } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
@@ -16,9 +16,9 @@ interface FilterDialogProps {
   /** Push a new filterModel back to AG Grid (typically `gridApi.setFilterModel`). */
   setFilterModel: (next: any) => void;
   savedFilters: SavedFilter[];
-  saveFilter: (name: string) => void;
+  saveFilter: (name: string, options?: { isDefault?: boolean }) => void;
   loadFilter: (key: string) => void;
-  updateFilter: (key: string) => void;
+  updateFilter: (key: string, options?: { isDefault?: boolean }) => void;
   deleteFilter: (key: string) => void;
 }
 
@@ -37,6 +37,21 @@ export const FilterDialog: FC<FilterDialogProps> = ({
 }) => {
   const [filterName, setFilterName] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
+
+  useEffect(() => {
+    if (!selectedFilter) {
+      setIsDefault(false);
+      return;
+    }
+    const record = savedFilters.find(
+      (r) =>
+        r.name === selectedFilter ||
+        r.title === selectedFilter ||
+        (r.id != null && String(r.id) === selectedFilter),
+    );
+    setIsDefault(Boolean(record?.isDefault));
+  }, [selectedFilter, savedFilters]);
 
   if (!open) return null;
 
@@ -119,12 +134,25 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               onClick={() => {
                 const name = filterName.trim();
                 if (!name) return;
-                saveFilter(name);
+                saveFilter(name, { isDefault });
                 setFilterName('');
+                setIsDefault(false);
               }}
             >
               {translation('Save new')}
             </button>
+            <label
+              className="inline-flex items-center gap-1 whitespace-nowrap"
+              style={{ color: '#717182', fontSize: '12px', fontWeight: 500 }}
+              title={translation('Set as default')}
+            >
+              <input
+                type="checkbox"
+                checked={isDefault}
+                onChange={(e) => setIsDefault(e.target.checked)}
+              />
+              <span>{translation('Default')}</span>
+            </label>
             <select
               value={selectedFilter}
               onChange={(e) => {
@@ -160,7 +188,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               }}
               onClick={() => {
                 if (!selectedFilter) return;
-                updateFilter(selectedFilter);
+                updateFilter(selectedFilter, { isDefault });
               }}
             >
               {translation('Update')}

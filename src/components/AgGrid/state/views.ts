@@ -22,6 +22,11 @@ interface UseViewsManagerArgs {
   applyingExternalRef: React.MutableRefObject<boolean>;
 }
 
+/** Options accepted by save / update to flag the record as the default. */
+export interface SaveViewOptions {
+  isDefault?: boolean;
+}
+
 export interface ViewsManager {
   savedViews: SavedView[];
   /** Read the list from the `views` datasource and update state. */
@@ -31,13 +36,18 @@ export interface ViewsManager {
   /** Apply the `view` datasource snapshot to the grid (used on initial load). */
   applyPersistedValue: (api: GridApi, value: any) => boolean;
   /** Save the current grid state as a named view — emits `onsaveview`. */
-  saveView: (name: string) => void;
+  saveView: (name: string, options?: SaveViewOptions) => void;
   /** Load a named view into the grid — emits `onloadview`. */
   loadView: (key: string) => void;
   /** Update the saved view `key` with the current grid state — emits `onupdateview`. */
-  updateView: (key: string) => void;
+  updateView: (key: string, options?: SaveViewOptions) => void;
   /** Ask the host to delete the saved view `key` — emits `ondeleteview`. */
   deleteView: (key: string) => void;
+  /**
+   * If the list contains a record flagged `isDefault`, apply it to the grid
+   * and emit `onloadview`. Returns `true` when a default was applied.
+   */
+  tryApplyDefault: () => boolean;
 }
 
 export function useViewsManager({
@@ -122,15 +132,19 @@ export function useViewsManager({
   }, [gridRef, columnsRef]);
 
   const saveView = useCallback(
-    (rawName: string) => {
+    (rawName: string, options?: SaveViewOptions) => {
       const name = rawName.trim();
       if (!name) return;
       const columnState = captureCurrentColumnState();
-      const view: SavedView = { name, columnState };
-      const updated = [...savedViewsRef.current, view];
+      const isDefault = Boolean(options?.isDefault);
+      const view: SavedView = { name, columnState, isDefault };
+      const withoutOtherDefaults = isDefault
+        ? savedViewsRef.current.map((v) => ({ ...v, isDefault: false }))
+        : savedViewsRef.current;
+      const updated = [...withoutOtherDefaults, view];
       setSavedViews(updated);
       if (viewsDs) viewsDs.setValue(null, updated);
-      emit('onsaveview', { name, columnState, view });
+      emit('onsaveview', { name, columnState, isDefault, view });
     },
     [captureCurrentColumnState, emit, viewsDs],
   );
@@ -162,21 +176,31 @@ export function useViewsManager({
   );
 
   const updateView = useCallback(
-    (key: string) => {
+    (key: string, options?: SaveViewOptions) => {
       const selectedKey = key.trim();
       if (!selectedKey) return;
       const columnState = captureCurrentColumnState();
+      const hasDefaultOpt = options !== undefined && 'isDefault' in options;
+      const isDefault = Boolean(options?.isDefault);
       const updated = savedViewsRef.current.map((view) => {
         const matches =
           view.name === selectedKey ||
           view.title === selectedKey ||
           (view.id != null && String(view.id) === selectedKey);
-        if (!matches) return view;
-        return {
-          ...view,
-          name: view.name || view.title || String(view.id ?? selectedKey),
-          columnState,
-        };
+        if (matches) {
+          return {
+            ...view,
+            name: view.name || view.title || String(view.id ?? selectedKey),
+            columnState,
+            ...(hasDefaultOpt ? { isDefault } : {}),
+          };
+        }
+        // When the caller sets this record as default, clear the flag on the
+        // others to preserve the "only one default" invariant.
+        if (hasDefaultOpt && isDefault && view.isDefault) {
+          return { ...view, isDefault: false };
+        }
+        return view;
       });
       setSavedViews(updated);
       if (viewsDs) viewsDs.setValue(null, updated);
@@ -184,6 +208,7 @@ export function useViewsManager({
       emit('onupdateview', {
         selectedView: selectedKey,
         columnState,
+        isDefault: hasDefaultOpt ? isDefault : row?.isDefault,
         view: row,
       });
     },
@@ -200,6 +225,13 @@ export function useViewsManager({
     [emit],
   );
 
+  const tryApplyDefault = useCallback((): boolean => {
+    const defaultView = savedViewsRef.current.find((v) => v.isDefault);
+    if (!defaultView) return false;
+    loadView(defaultView.name);
+    return true;
+  }, [loadView]);
+
   return {
     savedViews,
     refreshSavedViews,
@@ -209,5 +241,6 @@ export function useViewsManager({
     loadView,
     updateView,
     deleteView,
+    tryApplyDefault,
   };
 }

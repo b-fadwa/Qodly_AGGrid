@@ -461,6 +461,14 @@ const AgGrid: FC<IAgGridProps> = ({
   // view management (toolbar UI state)
   const [viewName, setViewName] = useState<string>('');
   const [selectedView, setSelectedView] = useState<string>('');
+  const [isViewDefault, setIsViewDefault] = useState<boolean>(false);
+
+  // Bootstrap tracking for `isDefault` auto-apply: once a live value or a
+  // default has been applied for a given kind, we leave the grid alone.
+  const [gridReady, setGridReady] = useState(false);
+  const viewDefaultTriedRef = useRef(false);
+  const filterDefaultTriedRef = useRef(false);
+  const sortDefaultTriedRef = useRef(false);
 
   // columns dialog
   const [propertySearch, setPropertySearch] = useState('');
@@ -1302,12 +1310,16 @@ const AgGrid: FC<IAgGridProps> = ({
     async (params: any) => {
       const api: GridApi = params.api;
       let applied = false;
+      let viewLiveApplied = false;
+      let filterLiveApplied = false;
+      let sortLiveApplied = false;
 
       if (viewDs) {
         try {
           const value = await viewDs.getValue();
           if (viewsManager.applyPersistedValue(api, value)) {
             applied = true;
+            viewLiveApplied = true;
             if (value && Array.isArray(value.columnState)) {
               setColumnVisibility(
                 withoutSyntheticRowColumnState(value.columnState).map((col: any) => ({
@@ -1326,7 +1338,9 @@ const AgGrid: FC<IAgGridProps> = ({
       if (filterDs) {
         try {
           const value = await filterDs.getValue();
-          filtersManager.applyPersistedValue(api, value);
+          if (filtersManager.applyPersistedValue(api, value)) {
+            filterLiveApplied = true;
+          }
         } catch {
           /* ignore */
         }
@@ -1335,11 +1349,32 @@ const AgGrid: FC<IAgGridProps> = ({
       if (sortDs) {
         try {
           const value = await sortDs.getValue();
-          sortsManager.applyPersistedValue(api, value);
+          if (sortsManager.applyPersistedValue(api, value)) {
+            sortLiveApplied = true;
+          }
         } catch {
           /* ignore */
         }
       }
+
+      // Fallback: if no live value was applied for a given kind, try the
+      // record flagged `isDefault` (if the list is already populated at this
+      // point — otherwise the bootstrap useEffect below will retry once the
+      // saved list arrives).
+      if (!viewLiveApplied && viewsManager.tryApplyDefault()) {
+        applied = true;
+        viewLiveApplied = true;
+      }
+      if (!filterLiveApplied && filtersManager.tryApplyDefault()) {
+        filterLiveApplied = true;
+      }
+      if (!sortLiveApplied && sortsManager.tryApplyDefault()) {
+        sortLiveApplied = true;
+      }
+
+      viewDefaultTriedRef.current = viewLiveApplied;
+      filterDefaultTriedRef.current = filterLiveApplied;
+      sortDefaultTriedRef.current = sortLiveApplied;
 
       if (!applied) {
         const columnState = withoutSyntheticRowColumnState(api.getColumnState());
@@ -1350,9 +1385,55 @@ const AgGrid: FC<IAgGridProps> = ({
       } else {
         prevSortModelRef.current = buildSortModelFromColumnState(api.getColumnState());
       }
+
+      setGridReady(true);
     },
     [viewDs, filterDs, sortDs, viewsManager, filtersManager, sortsManager, persistGridState],
   );
+
+  // Deferred bootstrap for defaults: if the saved list DS finishes loading
+  // _after_ `getState` ran (common: the `views`/`filters`/`sorts` datasource
+  // is populated asynchronously), fall back to the record flagged `isDefault`.
+  // Each kind has its own "tried" flag so we only apply once.
+  useEffect(() => {
+    if (!gridReady) return;
+    if (viewDefaultTriedRef.current) return;
+    if (viewsManager.savedViews.length === 0) return;
+    viewsManager.tryApplyDefault();
+    viewDefaultTriedRef.current = true;
+  }, [gridReady, viewsManager.savedViews, viewsManager]);
+
+  // Keep the "default" checkbox in sync with the record selected in the
+  // `Saved views` dropdown so the user sees its current flag value.
+  useEffect(() => {
+    if (!selectedView) {
+      setIsViewDefault(false);
+      return;
+    }
+    const record = viewsManager.savedViews.find(
+      (v) =>
+        v.name === selectedView ||
+        v.title === selectedView ||
+        (v.id != null && String(v.id) === selectedView),
+    );
+    setIsViewDefault(Boolean(record?.isDefault));
+  }, [selectedView, viewsManager.savedViews]);
+
+  useEffect(() => {
+    if (!gridReady) return;
+    if (filterDefaultTriedRef.current) return;
+    if (filtersManager.savedFilters.length === 0) return;
+    filtersManager.tryApplyDefault();
+    filterDefaultTriedRef.current = true;
+  }, [gridReady, filtersManager.savedFilters, filtersManager]);
+
+  useEffect(() => {
+    if (!gridReady) return;
+    if (sortDefaultTriedRef.current) return;
+    if (sortsManager.savedSorts.length === 0) return;
+    sortsManager.tryApplyDefault();
+    sortDefaultTriedRef.current = true;
+  }, [gridReady, sortsManager.savedSorts, sortsManager]);
 
   const applySorting = useCallback(
     async (params: IGetRowsParams, cols: IColumn[], activeDs: any) => {
@@ -1965,8 +2046,11 @@ const AgGrid: FC<IAgGridProps> = ({
                               className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                               onClick={() => {
                                 if (!viewName.trim()) return;
-                                viewsManager.saveView(viewName);
+                                viewsManager.saveView(viewName, {
+                                  isDefault: isViewDefault,
+                                });
                                 setViewName('');
+                                setIsViewDefault(false);
                               }}
                               style={{
                                 height: '31px',
@@ -1979,6 +2063,22 @@ const AgGrid: FC<IAgGridProps> = ({
                             >
                               {translation('Save new')}
                             </button>
+                            <label
+                              className="inline-flex items-center gap-1 whitespace-nowrap"
+                              style={{
+                                color: '#717182',
+                                fontSize: '12px',
+                                fontWeight: 500,
+                              }}
+                              title={translation('Set as default')}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isViewDefault}
+                                onChange={(e) => setIsViewDefault(e.target.checked)}
+                              />
+                              <span>{translation('Default')}</span>
+                            </label>
                           </div>
                         </div>
                         {/* saved views section */}
@@ -2019,7 +2119,9 @@ const AgGrid: FC<IAgGridProps> = ({
                                 className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
                                 onClick={() => {
                                   if (!selectedView) return;
-                                  viewsManager.updateView(selectedView);
+                                  viewsManager.updateView(selectedView, {
+                                    isDefault: isViewDefault,
+                                  });
                                 }}
                                 style={{
                                   height: '31px',

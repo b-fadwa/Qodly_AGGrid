@@ -22,17 +22,24 @@ interface UseSortsManagerArgs {
   applyingExternalRef: React.MutableRefObject<boolean>;
 }
 
+export interface SaveSortOptions {
+  isDefault?: boolean;
+}
+
 export interface SortsManager {
   savedSorts: SavedSort[];
   refreshSavedSorts: () => Promise<void>;
   persistCurrent: (sortModel: SortModelItem[]) => void;
-  applyPersistedValue: (api: GridApi, value: any) => void;
-  saveSort: (name: string) => void;
+  /** Returns true if the value carried a non-empty sort model. */
+  applyPersistedValue: (api: GridApi, value: any) => boolean;
+  saveSort: (name: string, options?: SaveSortOptions) => void;
   loadSort: (key: string) => void;
-  updateSort: (key: string) => void;
+  updateSort: (key: string, options?: SaveSortOptions) => void;
   deleteSort: (key: string) => void;
   /** Apply a given sort model to the grid and persist it (shared with the advanced-sorting dialog). */
   applySortModelToGrid: (sortModel: SortModelItem[]) => void;
+  /** Apply the record flagged `isDefault`, if any. Returns `true` on success. */
+  tryApplyDefault: () => boolean;
 }
 
 export function useSortsManager({
@@ -92,13 +99,14 @@ export function useSortsManager({
   );
 
   const applyPersistedValue = useCallback(
-    (api: GridApi, value: any) => {
-      if (!value || typeof value !== 'object') return;
+    (api: GridApi, value: any): boolean => {
+      if (!value || typeof value !== 'object') return false;
       const v = value as SortStateValue;
       const sortModel = Array.isArray(v.sortModel)
         ? normalizeSortModel(v.sortModel, columnsRef.current, sortableColIdsRef.current)
         : [];
       applySortModelToGridApi(api, sortModel);
+      return sortModel.length > 0;
     },
     [columnsRef, sortableColIdsRef],
   );
@@ -129,15 +137,19 @@ export function useSortsManager({
   }, [gridRef, columnsRef, sortableColIdsRef]);
 
   const saveSort = useCallback(
-    (rawName: string) => {
+    (rawName: string, options?: SaveSortOptions) => {
       const name = rawName.trim();
       if (!name) return;
       const sortModel = captureCurrentSortModel();
-      const record: SavedSort = { name, sortModel };
-      const updated = [...savedSortsRef.current, record];
+      const isDefault = Boolean(options?.isDefault);
+      const record: SavedSort = { name, sortModel, isDefault };
+      const withoutOtherDefaults = isDefault
+        ? savedSortsRef.current.map((r) => ({ ...r, isDefault: false }))
+        : savedSortsRef.current;
+      const updated = [...withoutOtherDefaults, record];
       setSavedSorts(updated);
       if (sortsDs) sortsDs.setValue(null, updated);
-      emit('onsavesort', { name, sortModel, sort: record });
+      emit('onsavesort', { name, sortModel, isDefault, sort: record });
     },
     [captureCurrentSortModel, emit, sortsDs],
   );
@@ -159,26 +171,39 @@ export function useSortsManager({
   );
 
   const updateSort = useCallback(
-    (key: string) => {
+    (key: string, options?: SaveSortOptions) => {
       const selectedKey = key.trim();
       if (!selectedKey) return;
       const sortModel = captureCurrentSortModel();
+      const hasDefaultOpt = options !== undefined && 'isDefault' in options;
+      const isDefault = Boolean(options?.isDefault);
       const updated = savedSortsRef.current.map((record) => {
         const matches =
           record.name === selectedKey ||
           record.title === selectedKey ||
           (record.id != null && String(record.id) === selectedKey);
-        if (!matches) return record;
-        return {
-          ...record,
-          name: record.name || record.title || String(record.id ?? selectedKey),
-          sortModel,
-        };
+        if (matches) {
+          return {
+            ...record,
+            name: record.name || record.title || String(record.id ?? selectedKey),
+            sortModel,
+            ...(hasDefaultOpt ? { isDefault } : {}),
+          };
+        }
+        if (hasDefaultOpt && isDefault && record.isDefault) {
+          return { ...record, isDefault: false };
+        }
+        return record;
       });
       setSavedSorts(updated);
       if (sortsDs) sortsDs.setValue(null, updated);
       const row = findSavedRecord(updated, selectedKey);
-      emit('onupdatesort', { selectedSort: selectedKey, sortModel, sort: row });
+      emit('onupdatesort', {
+        selectedSort: selectedKey,
+        sortModel,
+        isDefault: hasDefaultOpt ? isDefault : row?.isDefault,
+        sort: row,
+      });
     },
     [captureCurrentSortModel, emit, sortsDs],
   );
@@ -193,6 +218,13 @@ export function useSortsManager({
     [emit],
   );
 
+  const tryApplyDefault = useCallback((): boolean => {
+    const defaultSort = savedSortsRef.current.find((r) => r.isDefault);
+    if (!defaultSort) return false;
+    loadSort(defaultSort.name);
+    return true;
+  }, [loadSort]);
+
   return {
     savedSorts,
     refreshSavedSorts,
@@ -203,6 +235,7 @@ export function useSortsManager({
     updateSort,
     deleteSort,
     applySortModelToGrid,
+    tryApplyDefault,
   };
 }
 

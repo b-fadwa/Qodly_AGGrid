@@ -21,9 +21,9 @@ interface SortingDialogProps {
   /** Reset current grid sorting. */
   onClear: () => void;
   savedSorts: SavedSort[];
-  saveSort: (name: string) => void;
+  saveSort: (name: string, options?: { isDefault?: boolean }) => void;
   loadSort: (key: string) => void;
-  updateSort: (key: string) => void;
+  updateSort: (key: string, options?: { isDefault?: boolean }) => void;
   deleteSort: (key: string) => void;
 }
 
@@ -44,11 +44,26 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
   const [sortName, setSortName] = useState('');
   const [selectedSort, setSelectedSort] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setSortDialogModel(buildInitialSortDialogModel(initialSortModel, sortableColumns));
   }, [open, initialSortModel, sortableColumns]);
+
+  useEffect(() => {
+    if (!selectedSort) {
+      setIsDefault(false);
+      return;
+    }
+    const record = savedSorts.find(
+      (r) =>
+        r.name === selectedSort ||
+        r.title === selectedSort ||
+        (r.id != null && String(r.id) === selectedSort),
+    );
+    setIsDefault(Boolean(record?.isDefault));
+  }, [selectedSort, savedSorts]);
 
   if (!open) return null;
 
@@ -233,15 +248,18 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                 setSortName={setSortName}
                 selectedSort={selectedSort}
                 setSelectedSort={setSelectedSort}
+                isDefault={isDefault}
+                setIsDefault={setIsDefault}
                 onSave={() => {
                   if (!sortName.trim()) return;
-                  saveSort(sortName.trim());
+                  saveSort(sortName.trim(), { isDefault });
                   setSortName('');
+                  setIsDefault(false);
                 }}
                 onLoad={(key) => loadSort(key)}
                 onUpdate={() => {
                   if (!selectedSort) return;
-                  updateSort(selectedSort);
+                  updateSort(selectedSort, { isDefault });
                 }}
                 onDelete={() => {
                   if (!selectedSort) return;
@@ -295,6 +313,8 @@ interface SavedSortsSectionProps {
   setSortName: (value: string) => void;
   selectedSort: string;
   setSelectedSort: (value: string) => void;
+  isDefault: boolean;
+  setIsDefault: (value: boolean) => void;
   onSave: () => void;
   onLoad: (key: string) => void;
   onUpdate: () => void;
@@ -308,6 +328,8 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
   setSortName,
   selectedSort,
   setSelectedSort,
+  isDefault,
+  setIsDefault,
   onSave,
   onLoad,
   onUpdate,
@@ -358,6 +380,18 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
         >
           {translation('Save new')}
         </button>
+        <label
+          className="inline-flex items-center gap-1 whitespace-nowrap"
+          style={{ color: '#717182', fontSize: '12px', fontWeight: 500 }}
+          title={translation('Set as default')}
+        >
+          <input
+            type="checkbox"
+            checked={isDefault}
+            onChange={(e) => setIsDefault(e.target.checked)}
+          />
+          <span>{translation('Default')}</span>
+        </label>
         <select
           value={selectedSort}
           onChange={(e) => {

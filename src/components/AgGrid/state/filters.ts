@@ -19,15 +19,22 @@ interface UseFiltersManagerArgs {
   dateFinancialEnabledRef: React.MutableRefObject<boolean>;
 }
 
+export interface SaveFilterOptions {
+  isDefault?: boolean;
+}
+
 export interface FiltersManager {
   savedFilters: SavedFilter[];
   refreshSavedFilters: () => Promise<void>;
   persistCurrent: (filterModel: any) => void;
-  applyPersistedValue: (api: GridApi, value: any) => void;
-  saveFilter: (name: string) => void;
+  /** Returns true if the value carried a non-empty filter model. */
+  applyPersistedValue: (api: GridApi, value: any) => boolean;
+  saveFilter: (name: string, options?: SaveFilterOptions) => void;
   loadFilter: (key: string) => void;
-  updateFilter: (key: string) => void;
+  updateFilter: (key: string, options?: SaveFilterOptions) => void;
   deleteFilter: (key: string) => void;
+  /** Apply the record flagged `isDefault`, if any. Returns `true` on success. */
+  tryApplyDefault: () => boolean;
 }
 
 export function useFiltersManager({
@@ -89,15 +96,20 @@ export function useFiltersManager({
   );
 
   const applyPersistedValue = useCallback(
-    (api: GridApi, value: any) => {
-      if (!value || typeof value !== 'object') return;
+    (api: GridApi, value: any): boolean => {
+      if (!value || typeof value !== 'object') return false;
       const v = value as FilterStateValue;
       if ('dateFinancialFilterEnabled' in v) {
         dateFinancialEnabledRef.current = Boolean(v.dateFinancialFilterEnabled);
       }
+      let appliedFilter = false;
       if ('filterModel' in v) {
         applyGridFilterModel(api, v.filterModel);
+        const fm = v.filterModel;
+        appliedFilter =
+          !!fm && typeof fm === 'object' && Object.keys(fm as any).length > 0;
       }
+      return appliedFilter;
     },
     [dateFinancialEnabledRef],
   );
@@ -109,21 +121,27 @@ export function useFiltersManager({
   }, [gridRef]);
 
   const saveFilter = useCallback(
-    (rawName: string) => {
+    (rawName: string, options?: SaveFilterOptions) => {
       const name = rawName.trim();
       if (!name) return;
       const filterModel = captureCurrentFilterModel();
+      const isDefault = Boolean(options?.isDefault);
       const record: SavedFilter = {
         name,
         filterModel,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+        isDefault,
       };
-      const updated = [...savedFiltersRef.current, record];
+      const withoutOtherDefaults = isDefault
+        ? savedFiltersRef.current.map((r) => ({ ...r, isDefault: false }))
+        : savedFiltersRef.current;
+      const updated = [...withoutOtherDefaults, record];
       setSavedFilters(updated);
       if (filtersDs) filtersDs.setValue(null, updated);
       emit('onsavefilter', {
         name,
         filterModel,
+        isDefault,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
         filter: record,
       });
@@ -156,22 +174,30 @@ export function useFiltersManager({
   );
 
   const updateFilter = useCallback(
-    (key: string) => {
+    (key: string, options?: SaveFilterOptions) => {
       const selectedKey = key.trim();
       if (!selectedKey) return;
       const filterModel = captureCurrentFilterModel();
+      const hasDefaultOpt = options !== undefined && 'isDefault' in options;
+      const isDefault = Boolean(options?.isDefault);
       const updated = savedFiltersRef.current.map((record) => {
         const matches =
           record.name === selectedKey ||
           record.title === selectedKey ||
           (record.id != null && String(record.id) === selectedKey);
-        if (!matches) return record;
-        return {
-          ...record,
-          name: record.name || record.title || String(record.id ?? selectedKey),
-          filterModel,
-          dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-        };
+        if (matches) {
+          return {
+            ...record,
+            name: record.name || record.title || String(record.id ?? selectedKey),
+            filterModel,
+            dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+            ...(hasDefaultOpt ? { isDefault } : {}),
+          };
+        }
+        if (hasDefaultOpt && isDefault && record.isDefault) {
+          return { ...record, isDefault: false };
+        }
+        return record;
       });
       setSavedFilters(updated);
       if (filtersDs) filtersDs.setValue(null, updated);
@@ -179,6 +205,7 @@ export function useFiltersManager({
       emit('onupdatefilter', {
         selectedFilter: selectedKey,
         filterModel,
+        isDefault: hasDefaultOpt ? isDefault : row?.isDefault,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
         filter: row,
       });
@@ -196,6 +223,13 @@ export function useFiltersManager({
     [emit],
   );
 
+  const tryApplyDefault = useCallback((): boolean => {
+    const defaultFilter = savedFiltersRef.current.find((r) => r.isDefault);
+    if (!defaultFilter) return false;
+    loadFilter(defaultFilter.name);
+    return true;
+  }, [loadFilter]);
+
   return {
     savedFilters,
     refreshSavedFilters,
@@ -205,5 +239,6 @@ export function useFiltersManager({
     loadFilter,
     updateFilter,
     deleteFilter,
+    tryApplyDefault,
   };
 }

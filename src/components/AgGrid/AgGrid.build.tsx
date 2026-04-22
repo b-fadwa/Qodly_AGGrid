@@ -11,7 +11,7 @@ import { FaTableColumns } from "react-icons/fa6";
 import { FaClockRotateLeft } from "react-icons/fa6";
 import { GoTrash } from "react-icons/go";
 import { IoMdClose } from "react-icons/io";
-import { FaCalculator, FaSortAmountDown } from "react-icons/fa";
+import { FaCalculator, FaSortAmountDown, FaFilter } from "react-icons/fa";
 
 function agGridColumnField(col: { title: string; source: string }): string {
   const s = typeof col.source === 'string' ? col.source.trim() : '';
@@ -45,6 +45,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarActions = true,
   showToolbarView = true,
   showToolbarSorting = true,
+  showToolbarFiltering = true,
   showToolbarStatistics = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
@@ -169,6 +170,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarActions ||
     showToolbarView ||
     showToolbarSorting ||
+    showToolbarFiltering ||
     showToolbarStatistics ||
     showToolbarSaveView ||
     showToolbarSavedViews;
@@ -223,9 +225,24 @@ const AgGrid: FC<IAgGridProps> = ({
                                   borderColor: "#0000001A",
                                   color: "#44444C",
                                 }}
-                                disabled={sortableColumns.length === 0}
                               >
                                 <FaSortAmountDown />
+                              </button>
+                            </div>
+                          )}
+                          {showToolbarFiltering && (
+                            <div className="filtering-section flex flex-col gap-2 mr-4 bg-white px-4 py-2">
+                              <button
+                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
+                                style={{
+                                  height: "31px",
+                                  borderRadius: "6px",
+                                  borderColor: "#0000001A",
+                                  color: "#44444C",
+                                }}
+                                title={translation("Advanced filtering")}
+                              >
+                                <FaFilter />
                               </button>
                             </div>
                           )}
@@ -286,6 +303,14 @@ const AgGrid: FC<IAgGridProps> = ({
                                 color: "#44444C",
                               }}
                             >{translation("Save new")}</button>
+                            <label
+                              className="inline-flex items-center gap-1 whitespace-nowrap"
+                              style={{ color: "#717182", fontSize: "12px", fontWeight: 500 }}
+                              title={translation("Set as default")}
+                            >
+                              <input type="checkbox" />
+                              <span>{translation("Default")}</span>
+                            </label>
                           </div>
                         </div>
                         {showToolbarSavedViews && (
@@ -302,14 +327,6 @@ const AgGrid: FC<IAgGridProps> = ({
                               >
                                 <option value="">{translation("Select view")}</option>
                               </select>
-                              <button className='header-button inline-flex gap-2 items-center border  bg-white px-4 py-2 text-sm font-medium'
-                                style={{
-                                  height: "31px",
-                                  borderRadius: "6px",
-                                  borderColor: "#0000001A",
-                                  color: "#44444C",
-                                }}                        >
-                                {translation("Load")}</button>
                               <button className='header-button inline-flex gap-2 items-center border bg-white px-4 py-2 text-sm font-medium '
                                 style={{
                                   height: "31px",

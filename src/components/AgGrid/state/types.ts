@@ -10,6 +10,13 @@ export interface SavedRecordBase {
   name: string;
   title?: string;
   id?: string | number;
+  /**
+   * When true, this record is the one auto-applied on grid bootstrap if the
+   * live DS (`view` / `filter` / `sort`) does not already carry a value.
+   * Only one record per list should have `isDefault: true` — the managers
+   * enforce this on save/update.
+   */
+  isDefault?: boolean;
 }
 
 export interface SavedView extends SavedRecordBase {
