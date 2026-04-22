@@ -1,9 +1,10 @@
-import { FC, useEffect, useState } from 'react';
+import { FC, useEffect, useMemo, useState } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
-import type { SavedFilter } from '../state/types';
+import type { SavedFilter, SavedSort } from '../state/types';
 import type { Translation } from '../state/sorts';
+import { isHiddenIdColumn } from '../state/gridState';
 import { QueryBuilder } from './QueryBuilder';
 
 interface FilterDialogProps {
@@ -16,10 +17,18 @@ interface FilterDialogProps {
   /** Push a new filterModel back to AG Grid (typically `gridApi.setFilterModel`). */
   setFilterModel: (next: any) => void;
   savedFilters: SavedFilter[];
-  saveFilter: (name: string, options?: { isDefault?: boolean }) => void;
+  savedSorts: SavedSort[];
+  saveFilter: (name: string, options?: { isDefault?: boolean; linkedSort?: string }) => void;
   loadFilter: (key: string) => void;
-  updateFilter: (key: string, options?: { isDefault?: boolean }) => void;
+  updateFilter: (key: string, options?: { isDefault?: boolean; linkedSort?: string }) => void;
   deleteFilter: (key: string) => void;
+  /**
+   * Currently selected saved filter — owned by the parent so that an
+   * auto-applied default (via `tryApplyDefault`) is reflected in the dropdown
+   * even before the user opens the dialog.
+   */
+  selectedFilter: string;
+  setSelectedFilter: (next: string) => void;
 }
 
 export const FilterDialog: FC<FilterDialogProps> = ({
@@ -30,18 +39,22 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   filterModel,
   setFilterModel,
   savedFilters,
+  savedSorts,
   saveFilter,
   loadFilter,
   updateFilter,
   deleteFilter,
+  selectedFilter,
+  setSelectedFilter,
 }) => {
   const [filterName, setFilterName] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState('');
   const [isDefault, setIsDefault] = useState(false);
+  const [linkedSort, setLinkedSort] = useState('');
 
   useEffect(() => {
     if (!selectedFilter) {
       setIsDefault(false);
+      setLinkedSort('');
       return;
     }
     const record = savedFilters.find(
@@ -51,7 +64,51 @@ export const FilterDialog: FC<FilterDialogProps> = ({
         (r.id != null && String(r.id) === selectedFilter),
     );
     setIsDefault(Boolean(record?.isDefault));
+    setLinkedSort(record?.linkedSort ?? '');
   }, [selectedFilter, savedFilters]);
+
+  /**
+   * Hide internal id columns from the column picker (Feature 3) — they still
+   * render in the grid because the data is needed, but the user shouldn't
+   * be able to filter on them via the advanced filter modal.
+   */
+  const visibleColumns = useMemo(
+    () => columns.filter((c) => !isHiddenIdColumn(c)),
+    [columns],
+  );
+
+  /**
+   * Single Save/Update button (Feature 1):
+   *   - typed name matches an existing record  → update that record
+   *   - typed name is new                      → save a brand-new record
+   *   - input empty + a saved filter selected  → update the selected one
+   *   - otherwise                              → no-op (button disabled)
+   */
+  const trimmedName = filterName.trim();
+  const matchingExisting = trimmedName
+    ? savedFilters.find(
+        (r) => r.name === trimmedName || r.title === trimmedName,
+      )
+    : null;
+  const willUpdateExisting = Boolean(matchingExisting) || (!trimmedName && !!selectedFilter);
+  const saveButtonDisabled = !trimmedName && !selectedFilter;
+  const handleSavePressed = () => {
+    if (saveButtonDisabled) return;
+    if (trimmedName) {
+      if (matchingExisting) {
+        updateFilter(matchingExisting.name, { isDefault });
+      } else {
+        saveFilter(trimmedName, { isDefault, linkedSort });
+      }
+    } else if (selectedFilter) {
+      updateFilter(selectedFilter, { isDefault, linkedSort });
+    }
+    setFilterName('');
+    if (!selectedFilter) {
+      setIsDefault(false);
+      setLinkedSort('');
+    }
+  };
 
   if (!open) return null;
 
@@ -92,7 +149,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
         <div className="px-5 py-4" style={{ overflowY: 'auto' }}>
           <QueryBuilder
             translation={translation}
-            columns={columns}
+            columns={visibleColumns}
             filterModel={filterModel}
             onChange={setFilterModel}
           />
@@ -120,27 +177,6 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                 fontSize: '12px',
               }}
             />
-            <button
-              type="button"
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1"
-              style={{
-                height: '31px',
-                borderRadius: '6px',
-                borderColor: '#0000001A',
-                color: '#44444C',
-                fontSize: '12px',
-                fontWeight: 500,
-              }}
-              onClick={() => {
-                const name = filterName.trim();
-                if (!name) return;
-                saveFilter(name, { isDefault });
-                setFilterName('');
-                setIsDefault(false);
-              }}
-            >
-              {translation('Save new')}
-            </button>
             <label
               className="inline-flex items-center gap-1 whitespace-nowrap"
               style={{ color: '#717182', fontSize: '12px', fontWeight: 500 }}
@@ -176,9 +212,10 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1"
+            <select
+              value={linkedSort}
+              onChange={(e) => setLinkedSort(e.target.value)}
+              className="rounded-lg border border-gray-300 px-2 py-1"
               style={{
                 height: '31px',
                 borderRadius: '6px',
@@ -186,13 +223,15 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                 color: '#44444C',
                 fontSize: '12px',
               }}
-              onClick={() => {
-                if (!selectedFilter) return;
-                updateFilter(selectedFilter, { isDefault });
-              }}
+              title={translation('Linked sort')}
             >
-              {translation('Update')}
-            </button>
+              <option value="">{translation('No linked sort')}</option>
+              {savedSorts.map((record) => (
+                <option key={record.name} value={record.name}>
+                  {record.name}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               className="inline-flex items-center justify-center rounded-lg border"
@@ -211,6 +250,22 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               title={translation('Delete')}
             >
               <GoTrash size={14} />
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-gray-300 bg-white px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                height: '31px',
+                borderRadius: '6px',
+                borderColor: '#0000001A',
+                color: '#44444C',
+                fontSize: '12px',
+                fontWeight: 500,
+              }}
+              disabled={saveButtonDisabled}
+              onClick={handleSavePressed}
+            >
+              {willUpdateExisting ? translation('Update') : translation('Save')}
             </button>
           </div>
         </div>

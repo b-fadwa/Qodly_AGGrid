@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import isEqual from 'lodash/isEqual';
 import type { AgGridReact } from 'ag-grid-react';
 import type { GridApi, SortModelItem } from 'ag-grid-community';
 import type { IColumn } from '../AgGrid.config';
@@ -38,8 +39,12 @@ export interface SortsManager {
   deleteSort: (key: string) => void;
   /** Apply a given sort model to the grid and persist it (shared with the advanced-sorting dialog). */
   applySortModelToGrid: (sortModel: SortModelItem[]) => void;
-  /** Apply the record flagged `isDefault`, if any. Returns `true` on success. */
-  tryApplyDefault: () => boolean;
+  /**
+   * Apply the record flagged `isDefault`, if any. Returns the applied
+   * record's name (for syncing dropdown state) or `null` when nothing
+   * was applied.
+   */
+  tryApplyDefault: () => string | null;
 }
 
 export function useSortsManager({
@@ -105,6 +110,14 @@ export function useSortsManager({
       const sortModel = Array.isArray(v.sortModel)
         ? normalizeSortModel(v.sortModel, columnsRef.current, sortableColIdsRef.current)
         : [];
+      // Idempotency guard: this hook's listener fires after every external
+      // sort change (we persist → DS emits "changed" → listener calls us
+      // back with the freshly-persisted value). Re-applying the same model
+      // would `applyColumnState` + `refreshInfiniteCache` again, which in
+      // turn fires another `stateUpdated` and (if AG Grid emits it after our
+      // setTimeout(0) flag-reset) starts an infinite request loop.
+      const currentSortModel = buildSortModelFromColumnState(api.getColumnState());
+      if (isEqual(currentSortModel, sortModel)) return sortModel.length > 0;
       applySortModelToGridApi(api, sortModel);
       return sortModel.length > 0;
     },
@@ -218,11 +231,11 @@ export function useSortsManager({
     [emit],
   );
 
-  const tryApplyDefault = useCallback((): boolean => {
+  const tryApplyDefault = useCallback((): string | null => {
     const defaultSort = savedSortsRef.current.find((r) => r.isDefault);
-    if (!defaultSort) return false;
+    if (!defaultSort) return null;
     loadSort(defaultSort.name);
-    return true;
+    return defaultSort.name;
   }, [loadSort]);
 
   return {

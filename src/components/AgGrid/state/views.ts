@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import isEqual from 'lodash/isEqual';
 import type { AgGridReact } from 'ag-grid-react';
 import type { GridApi } from 'ag-grid-community';
 import type { IColumn } from '../AgGrid.config';
@@ -8,6 +9,7 @@ import {
   findSavedRecord,
   hasMeaningfulColumnState,
   savedRecordsFromDatasourceValue,
+  withoutSortFromColumnState,
   withoutSyntheticRowColumnState,
 } from './gridState';
 import type { SavedView, ViewStateValue } from './types';
@@ -25,6 +27,22 @@ interface UseViewsManagerArgs {
 /** Options accepted by save / update to flag the record as the default. */
 export interface SaveViewOptions {
   isDefault?: boolean;
+}
+
+/**
+ * Project a column state array down to only the fields the views manager
+ * persists (visibility, order, width, pinning). Used by `applyPersistedValue`
+ * to detect "no-op" updates and short-circuit before calling `applyColumnState`
+ * a second time.
+ */
+function viewStateForCompare(columnState: any[]): any[] {
+  return columnState.map((entry: any) => ({
+    colId: entry?.colId ?? null,
+    hide: entry?.hide ?? false,
+    pinned: entry?.pinned ?? null,
+    width: entry?.width ?? null,
+    flex: entry?.flex ?? null,
+  }));
 }
 
 export interface ViewsManager {
@@ -45,9 +63,10 @@ export interface ViewsManager {
   deleteView: (key: string) => void;
   /**
    * If the list contains a record flagged `isDefault`, apply it to the grid
-   * and emit `onloadview`. Returns `true` when a default was applied.
+   * and emit `onloadview`. Returns the applied record's name (so callers can
+   * sync their "currently selected" UI state) or `null` when nothing applied.
    */
-  tryApplyDefault: () => boolean;
+  tryApplyDefault: () => string | null;
 }
 
 export function useViewsManager({
@@ -99,8 +118,12 @@ export function useViewsManager({
     (columnState: any[]) => {
       if (!viewDs) return;
       if (applyingExternalRef.current) return;
+      // Views own column visibility / order / width / pinning ONLY — sort is
+      // owned by the sorts manager. Stripping `sort`/`sortIndex` keeps the
+      // two concerns from clobbering each other and prevents `loadView` from
+      // triggering a `sortChanged` (which would issue an extra getRows).
       const enriched = enrichColumnStateWithSource(
-        withoutSyntheticRowColumnState(columnState),
+        withoutSortFromColumnState(withoutSyntheticRowColumnState(columnState)),
         columnsRef.current,
       );
       const next: ViewStateValue = { columnState: enriched };
@@ -112,13 +135,23 @@ export function useViewsManager({
   const applyPersistedValue = useCallback(
     (api: GridApi, value: any): boolean => {
       if (!value || typeof value !== 'object') return false;
-      const raw = withoutSyntheticRowColumnState((value as ViewStateValue).columnState);
+      const raw = withoutSortFromColumnState(
+        withoutSyntheticRowColumnState((value as ViewStateValue).columnState),
+      );
       if (!hasMeaningfulColumnState(raw)) return false;
       const enriched = enrichColumnStateWithSource(raw, columnsRef.current);
-      api.applyColumnState({
-        state: columnStateForAgGridApply(enriched),
-        applyOrder: true,
-      });
+      const nextState = columnStateForAgGridApply(enriched);
+      // Idempotency guard: when persistGridState writes back the same
+      // columnState the DS listener calls us with the freshly-persisted
+      // value. Re-applying would emit `stateUpdated` again and (combined
+      // with the setTimeout(0) flag-reset) can start an infinite loop.
+      const currentState = withoutSortFromColumnState(
+        withoutSyntheticRowColumnState(api.getColumnState()),
+      );
+      if (isEqual(viewStateForCompare(currentState), viewStateForCompare(nextState))) {
+        return true;
+      }
+      api.applyColumnState({ state: nextState, applyOrder: true });
       return true;
     },
     [columnsRef],
@@ -127,7 +160,9 @@ export function useViewsManager({
   const captureCurrentColumnState = useCallback((): any[] => {
     const api = gridRef.current?.api;
     if (!api) return [];
-    const raw = withoutSyntheticRowColumnState(api.getColumnState());
+    const raw = withoutSortFromColumnState(
+      withoutSyntheticRowColumnState(api.getColumnState()),
+    );
     return enrichColumnStateWithSource(raw, columnsRef.current);
   }, [gridRef, columnsRef]);
 
@@ -157,8 +192,10 @@ export function useViewsManager({
       if (!view) return;
       const api = gridRef.current?.api;
       if (api && Array.isArray(view.columnState)) {
+        // Strip sort here too — older views saved before this fix may still
+        // contain sort/sortIndex in their columnState.
         const enriched = enrichColumnStateWithSource(
-          withoutSyntheticRowColumnState(view.columnState),
+          withoutSortFromColumnState(withoutSyntheticRowColumnState(view.columnState)),
           columnsRef.current,
         );
         api.applyColumnState({
@@ -225,11 +262,11 @@ export function useViewsManager({
     [emit],
   );
 
-  const tryApplyDefault = useCallback((): boolean => {
+  const tryApplyDefault = useCallback((): string | null => {
     const defaultView = savedViewsRef.current.find((v) => v.isDefault);
-    if (!defaultView) return false;
+    if (!defaultView) return null;
     loadView(defaultView.name);
-    return true;
+    return defaultView.name;
   }, [loadView]);
 
   return {

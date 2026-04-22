@@ -17,10 +17,13 @@ interface UseFiltersManagerArgs {
   applyingExternalRef: React.MutableRefObject<boolean>;
   /** Mutable ref holding the fiscal-year toggle so it persists alongside the filter model. */
   dateFinancialEnabledRef: React.MutableRefObject<boolean>;
+  /** Optional hook to apply a linked sort when a filter gets loaded. */
+  onFilterLoaded?: (record: SavedFilter, selectedKey: string) => void;
 }
 
 export interface SaveFilterOptions {
   isDefault?: boolean;
+  linkedSort?: string;
 }
 
 export interface FiltersManager {
@@ -33,8 +36,12 @@ export interface FiltersManager {
   loadFilter: (key: string) => void;
   updateFilter: (key: string, options?: SaveFilterOptions) => void;
   deleteFilter: (key: string) => void;
-  /** Apply the record flagged `isDefault`, if any. Returns `true` on success. */
-  tryApplyDefault: () => boolean;
+  /**
+   * Apply the record flagged `isDefault`, if any. Returns the applied
+   * record's name (for syncing dropdown state) or `null` when nothing
+   * was applied.
+   */
+  tryApplyDefault: () => string | null;
 }
 
 export function useFiltersManager({
@@ -44,6 +51,7 @@ export function useFiltersManager({
   emit,
   applyingExternalRef,
   dateFinancialEnabledRef,
+  onFilterLoaded,
 }: UseFiltersManagerArgs): FiltersManager {
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
   const savedFiltersRef = useRef<SavedFilter[]>([]);
@@ -131,6 +139,7 @@ export function useFiltersManager({
         filterModel,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
         isDefault,
+        linkedSort: options?.linkedSort?.trim() || undefined,
       };
       const withoutOtherDefaults = isDefault
         ? savedFiltersRef.current.map((r) => ({ ...r, isDefault: false }))
@@ -142,6 +151,7 @@ export function useFiltersManager({
         name,
         filterModel,
         isDefault,
+        linkedSort: record.linkedSort,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
         filter: record,
       });
@@ -157,20 +167,25 @@ export function useFiltersManager({
       if (!record) return;
       const api = gridRef.current?.api;
       if (api) {
+        // `applyGridFilterModel` calls `setFilterModel` which fires
+        // `filterChanged`; the host's `onFilterChanged` listener already
+        // calls `refreshInfiniteCache`, so a second refresh here would
+        // produce a duplicate `getRows` (the second one losing orderBy).
         applyGridFilterModel(api, record.filterModel);
         if ('dateFinancialFilterEnabled' in record) {
           dateFinancialEnabledRef.current = Boolean(record.dateFinancialFilterEnabled);
         }
-        api.refreshInfiniteCache();
       }
       emit('onloadfilter', {
         selectedFilter: selectedKey,
         filterModel: record.filterModel,
+        linkedSort: record.linkedSort,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
         filter: record,
       });
+      onFilterLoaded?.(record, selectedKey);
     },
-    [emit, gridRef, dateFinancialEnabledRef],
+    [emit, gridRef, dateFinancialEnabledRef, onFilterLoaded],
   );
 
   const updateFilter = useCallback(
@@ -191,6 +206,10 @@ export function useFiltersManager({
             name: record.name || record.title || String(record.id ?? selectedKey),
             filterModel,
             dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+            linkedSort:
+              options?.linkedSort !== undefined
+                ? options.linkedSort?.trim() || undefined
+                : record.linkedSort,
             ...(hasDefaultOpt ? { isDefault } : {}),
           };
         }
@@ -205,6 +224,7 @@ export function useFiltersManager({
       emit('onupdatefilter', {
         selectedFilter: selectedKey,
         filterModel,
+        linkedSort: row?.linkedSort,
         isDefault: hasDefaultOpt ? isDefault : row?.isDefault,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
         filter: row,
@@ -223,11 +243,11 @@ export function useFiltersManager({
     [emit],
   );
 
-  const tryApplyDefault = useCallback((): boolean => {
+  const tryApplyDefault = useCallback((): string | null => {
     const defaultFilter = savedFiltersRef.current.find((r) => r.isDefault);
-    if (!defaultFilter) return false;
+    if (!defaultFilter) return null;
     loadFilter(defaultFilter.name);
-    return true;
+    return defaultFilter.name;
   }, [loadFilter]);
 
   return {

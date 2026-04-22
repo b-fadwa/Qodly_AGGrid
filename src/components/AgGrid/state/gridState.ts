@@ -22,6 +22,22 @@ export function withoutSyntheticRowColumnState(
   return columnState.filter((s) => s && s.colId !== ROW_NUMBER_COL_ID);
 }
 
+/**
+ * Columns whose `title` or `source` is exactly "id" (case-insensitive — so
+ * "ID", "Id", "iD" all match) are treated as internal: they still render in
+ * the grid (the data is needed) but they are hidden from every "manage"
+ * surface (column visibility dialog, sortable columns dropdown, advanced
+ * filter column picker).
+ */
+export function isHiddenIdColumn(
+  col: Pick<IColumn, 'title' | 'source'> | null | undefined,
+): boolean {
+  if (!col) return false;
+  const t = typeof col.title === 'string' ? col.title.trim() : '';
+  const s = typeof col.source === 'string' ? col.source.trim() : '';
+  return /^id$/i.test(t) || /^id$/i.test(s);
+}
+
 export function hasMeaningfulColumnState(columnState: unknown): boolean {
   return Array.isArray(columnState) && columnState.length > 0;
 }
@@ -129,7 +145,19 @@ export function normalizeSortModel(
     .map((rule) => ({ colId: rule.colId, sort: rule.sort }));
 }
 
-/** Mutate column state so every `colId` sorts according to `sortModel` (others reset). */
+/**
+ * Mutate column state so every `colId` sorts according to `sortModel` (others reset).
+ *
+ * AG Grid v35's `InfiniteRowModel` subscribes to `sortChanged` and calls
+ * `reset()` (destroys + recreates the cache → fresh `getRows`) for us, so we
+ * MUST NOT also call `refreshInfiniteCache()` here — doing so fires a second
+ * `getRows` for the exact same sort model and produces the duplicate
+ * server request the user was seeing.
+ *
+ * The `applyPersistedValue` of the sorts manager still uses an `isEqual`
+ * guard to skip re-applying when the sort model already matches (prevents
+ * listener echoes from the `sortDs` `changed` event).
+ */
 export function applySortModelToGridApi(
   api: GridApi,
   sortModel: SortModelItem[],
@@ -143,7 +171,21 @@ export function applySortModelToGridApi(
     return { ...columnState, sort: sortState.sort, sortIndex: sortState.sortIndex };
   });
   api.applyColumnState({ state: updatedColumnState, applyOrder: false });
-  api.refreshInfiniteCache();
+}
+
+/**
+ * Strip sort information from a `columnState` array so applying it never
+ * triggers AG Grid's `sortChanged` (which would purge the infinite cache and
+ * fire an extra `getRows`). Used by the views manager — sort is owned by the
+ * sorts manager, views only carry visibility / order / width / pinning.
+ */
+export function withoutSortFromColumnState(columnState: any[] | undefined | null): any[] {
+  if (!Array.isArray(columnState)) return [];
+  return columnState.map((s: any) => {
+    if (!s || typeof s !== 'object') return s;
+    const { sort: _sort, sortIndex: _sortIndex, ...rest } = s;
+    return rest;
+  });
 }
 
 /**

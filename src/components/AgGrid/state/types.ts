@@ -27,6 +27,8 @@ export interface SavedFilter extends SavedRecordBase {
   filterModel: any;
   /** Toggle for the Date_Financial companion filter (see AgGrid.render.tsx). */
   dateFinancialFilterEnabled?: boolean;
+  /** Optional saved sort name applied automatically when this filter loads. */
+  linkedSort?: string;
 }
 
 export interface SavedSort extends SavedRecordBase {

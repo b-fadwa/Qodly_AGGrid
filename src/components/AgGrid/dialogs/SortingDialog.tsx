@@ -25,6 +25,13 @@ interface SortingDialogProps {
   loadSort: (key: string) => void;
   updateSort: (key: string, options?: { isDefault?: boolean }) => void;
   deleteSort: (key: string) => void;
+  /**
+   * Currently selected saved sort — owned by the parent so an auto-applied
+   * default (via `tryApplyDefault`) is reflected in the dropdown even before
+   * the user opens the dialog.
+   */
+  selectedSort: string;
+  setSelectedSort: (value: string) => void;
 }
 
 export const SortingDialog: FC<SortingDialogProps> = ({
@@ -40,10 +47,11 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   loadSort,
   updateSort,
   deleteSort,
+  selectedSort,
+  setSelectedSort,
 }) => {
   const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
   const [sortName, setSortName] = useState('');
-  const [selectedSort, setSelectedSort] = useState('');
   const [isDefault, setIsDefault] = useState(false);
 
   useEffect(() => {
@@ -250,17 +258,9 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                 setSelectedSort={setSelectedSort}
                 isDefault={isDefault}
                 setIsDefault={setIsDefault}
-                onSave={() => {
-                  if (!sortName.trim()) return;
-                  saveSort(sortName.trim(), { isDefault });
-                  setSortName('');
-                  setIsDefault(false);
-                }}
+                saveSort={saveSort}
+                updateSort={updateSort}
                 onLoad={(key) => loadSort(key)}
-                onUpdate={() => {
-                  if (!selectedSort) return;
-                  updateSort(selectedSort, { isDefault });
-                }}
                 onDelete={() => {
                   if (!selectedSort) return;
                   deleteSort(selectedSort);
@@ -315,9 +315,9 @@ interface SavedSortsSectionProps {
   setSelectedSort: (value: string) => void;
   isDefault: boolean;
   setIsDefault: (value: boolean) => void;
-  onSave: () => void;
+  saveSort: (name: string, options?: { isDefault?: boolean }) => void;
+  updateSort: (key: string, options?: { isDefault?: boolean }) => void;
   onLoad: (key: string) => void;
-  onUpdate: () => void;
   onDelete: () => void;
 }
 
@@ -330,11 +330,41 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
   setSelectedSort,
   isDefault,
   setIsDefault,
-  onSave,
+  saveSort,
+  updateSort,
   onLoad,
-  onUpdate,
   onDelete,
 }) => {
+  /**
+   * Single Save/Update button (Feature 1):
+   *   - typed name matches an existing record  → update that record
+   *   - typed name is new                      → save a brand-new record
+   *   - input empty + a saved sort selected    → update the selected one
+   *   - otherwise                              → no-op (button disabled)
+   */
+  const trimmedName = sortName.trim();
+  const matchingExisting = trimmedName
+    ? savedSorts.find(
+        (r) => r.name === trimmedName || r.title === trimmedName,
+      )
+    : null;
+  const willUpdateExisting = Boolean(matchingExisting) || (!trimmedName && !!selectedSort);
+  const saveButtonDisabled = !trimmedName && !selectedSort;
+  const handleSavePressed = () => {
+    if (saveButtonDisabled) return;
+    if (trimmedName) {
+      if (matchingExisting) {
+        updateSort(matchingExisting.name, { isDefault });
+      } else {
+        saveSort(trimmedName, { isDefault });
+      }
+    } else if (selectedSort) {
+      updateSort(selectedSort, { isDefault });
+    }
+    setSortName('');
+    if (!selectedSort) setIsDefault(false);
+  };
+
   const inputStyle = {
     height: '31px',
     borderRadius: '6px',
@@ -372,14 +402,6 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
           className="rounded-lg border border-gray-300 px-2 py-1"
           style={inputStyle}
         />
-        <button
-          type="button"
-          className="rounded-lg border border-gray-300 bg-white px-2 py-1"
-          style={buttonStyle}
-          onClick={onSave}
-        >
-          {translation('Save new')}
-        </button>
         <label
           className="inline-flex items-center gap-1 whitespace-nowrap"
           style={{ color: '#717182', fontSize: '12px', fontWeight: 500 }}
@@ -411,14 +433,6 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
         </select>
         <button
           type="button"
-          className="rounded-lg border border-gray-300 bg-white px-2 py-1"
-          style={buttonStyle}
-          onClick={onUpdate}
-        >
-          {translation('Update')}
-        </button>
-        <button
-          type="button"
           className="inline-flex items-center justify-center rounded-lg border"
           style={{
             width: '31px',
@@ -432,6 +446,15 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
           title={translation('Delete')}
         >
           <GoTrash size={14} />
+        </button>
+        <button
+          type="button"
+          className="rounded-lg border border-gray-300 bg-white px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+          style={buttonStyle}
+          disabled={saveButtonDisabled}
+          onClick={handleSavePressed}
+        >
+          {willUpdateExisting ? translation('Update') : translation('Save')}
         </button>
       </div>
     </div>

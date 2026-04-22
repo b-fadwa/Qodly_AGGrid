@@ -8,6 +8,14 @@ import {
   type FilterOperatorDescriptor,
 } from '../AgGrid.filtering';
 
+/**
+ * Delay applied to value-input changes before pushing them up to AG Grid.
+ * Without it, every keystroke would call `setFilterModel`, which fires
+ * `filterChanged` and triggers a server fetch per character. 400ms feels
+ * snappy while keeping a single request per "typed token".
+ */
+const VALUE_DEBOUNCE_MS = 400;
+
 /* ------------------------------------------------------------------ *
  *  Internal flat representation
  *
@@ -251,6 +259,12 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
   // popup edits, saved-filter loads) can re-seed the rule list without
   // clobbering in-progress rows that the user is still typing into.
   const lastEmittedRef = useRef<any>(filterModel);
+  // Debounce timer + columns ref for the value-input path.
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     if (sameModel(filterModel, lastEmittedRef.current)) return;
@@ -258,17 +272,63 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
     setRules(filterModelToRules(filterModel, columns));
   }, [filterModel, columns]);
 
+  // Cancel any pending debounced emit on unmount so we don't push a stale
+  // model after the dialog is closed.
+  useEffect(
+    () => () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    },
+    [],
+  );
+
+  const flushNow = (nextRules: FilterRule[]) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const model = rulesToFilterModel(nextRules, columnsRef.current);
+    lastEmittedRef.current = model;
+    onChangeRef.current(model);
+  };
+
+  /**
+   * Push the rules immediately. Used for structural changes (add/remove rule,
+   * column/operator/combinator change) where the user expects an instant grid
+   * update.
+   */
   const emit = (nextRules: FilterRule[]) => {
     setRules(nextRules);
-    const model = rulesToFilterModel(nextRules, columns);
-    lastEmittedRef.current = model;
-    onChange(model);
+    flushNow(nextRules);
+  };
+
+  /**
+   * Push the rules after a short delay. Used for value-input typing so the
+   * server isn't pinged for every keystroke (e.g. typing "ABAD" used to send
+   * a request for "A", "AB", "ABA", "ABAD"). The debounce coalesces those
+   * into a single fetch when the user pauses.
+   */
+  const emitDebounced = (nextRules: FilterRule[]) => {
+    setRules(nextRules);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      const model = rulesToFilterModel(nextRules, columnsRef.current);
+      lastEmittedRef.current = model;
+      onChangeRef.current(model);
+    }, VALUE_DEBOUNCE_MS);
   };
 
   const updateRule = (index: number, patch: Partial<FilterRule>) => {
     const next = rules.slice();
     next[index] = { ...next[index], ...patch };
     emit(next);
+  };
+
+  /** Same as `updateRule` but doesn't fire a request until typing pauses. */
+  const updateRuleValue = (index: number, patch: Partial<FilterRule>) => {
+    const next = rules.slice();
+    next[index] = { ...next[index], ...patch };
+    emitDebounced(next);
   };
 
   const removeRule = (index: number) => {
@@ -338,6 +398,8 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
                   columns={visibleColumns}
                   rule={rule}
                   onChange={(patch) => updateRule(index, patch)}
+                  onValueChange={(patch) => updateRuleValue(index, patch)}
+                  onValueCommit={() => flushNow(rules)}
                   onRemove={() => removeRule(index)}
                 />
               </div>
@@ -390,7 +452,12 @@ interface RuleRowProps {
   translation: Translation;
   columns: IColumn[];
   rule: FilterRule;
+  /** Apply a structural change (column/operator) immediately. */
   onChange: (patch: Partial<FilterRule>) => void;
+  /** Apply a value-input change after the debounce period. */
+  onValueChange: (patch: Partial<FilterRule>) => void;
+  /** Flush any pending value change right now (on blur / Enter). */
+  onValueCommit: () => void;
   onRemove: () => void;
 }
 
@@ -399,6 +466,8 @@ const RuleRow: FC<RuleRowProps> = ({
   columns,
   rule,
   onChange,
+  onValueChange,
+  onValueCommit,
   onRemove,
 }) => {
   const column = columns.find((c) => c.source === rule.field || c.title === rule.field);
@@ -464,7 +533,11 @@ const RuleRow: FC<RuleRowProps> = ({
           placeholder={translation('Value')}
           style={inputStyle}
           value={rule.value}
-          onChange={(e) => onChange({ value: e.target.value })}
+          onChange={(e) => onValueChange({ value: e.target.value })}
+          onBlur={onValueCommit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onValueCommit();
+          }}
         />
       )}
       {inputCount >= 2 && (
@@ -473,7 +546,11 @@ const RuleRow: FC<RuleRowProps> = ({
           placeholder={translation('Value 2')}
           style={inputStyle}
           value={rule.value2 ?? ''}
-          onChange={(e) => onChange({ value2: e.target.value })}
+          onChange={(e) => onValueChange({ value2: e.target.value })}
+          onBlur={onValueCommit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onValueCommit();
+          }}
         />
       )}
 

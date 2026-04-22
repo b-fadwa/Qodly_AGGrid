@@ -51,7 +51,6 @@ import {
   GridReadyEvent,
   ICellRendererParams,
   IGetRowsParams,
-  PostProcessPopupParams,
   SortModelItem,
   StateUpdatedEvent,
   ModuleRegistry,
@@ -87,6 +86,7 @@ import {
   ROW_NUMBER_COL_ID,
   agGridColumnField,
   buildSortModelFromColumnState,
+  isHiddenIdColumn,
   normalizeAgGridFilterModel,
   normalizeSortModel,
   withoutSyntheticRowColumnState,
@@ -96,6 +96,8 @@ import { useFiltersManager } from './state/filters';
 import { useSortsManager } from './state/sorts';
 import { SortingDialog } from './dialogs/SortingDialog';
 import { FilterDialog } from './dialogs/FilterDialog';
+import AgGridFilterHeader from './AgGridFilterHeader';
+import { HeaderFilterPopup } from './dialogs/HeaderFilterPopup';
 
 ModuleRegistry.registerModules([
   ColumnHoverModule,
@@ -106,72 +108,6 @@ ModuleRegistry.registerModules([
   NumberFilterModule,
   DateFilterModule,
 ]);
-
-/**
- * After "Clear result" calls `setFilterModel(null)`, the filter popup can close (especially in
- * hosted / MF builds). AG Grid supports reopening via `showColumnFilter` — schedule a few passes
- * so it runs after internal teardown + async refresh.
- * @see https://www.ag-grid.com/react-data-grid/filter-api/#launching-filters
- */
-function scheduleReopenColumnFilterAfterClear(api: GridApi, colId: string | undefined): void {
-  if (!colId || colId === ROW_NUMBER_COL_ID) return;
-  const reopen = () => {
-    try {
-      (api as unknown as { showColumnFilter?: (key: string) => void }).showColumnFilter?.(colId);
-    } catch {
-      // Older typings or host wrappers
-    }
-  };
-  queueMicrotask(reopen);
-  requestAnimationFrame(() => {
-    requestAnimationFrame(reopen);
-  });
-  window.setTimeout(reopen, 120);
-}
-
-/**
- * Condition-type `AgSelect` renders its option list in a separate layered popup. A mousedown there
- * can be treated as "outside" the column filter panel, so the panel closes before Apply — especially
- * when there are no value inputs (`numberOfInputs: 0`, e.g. boolean True/False on a number filter).
- * Marking the open list lets AG Grid treat those clicks as part of the filter UI flow.
- */
-function attachColumnFilterNestedSelectPopupWorkaround(ePopup: HTMLElement): void {
-  if (ePopup.getAttribute('data-qodly-nested-select-popup-fix') === '1') return;
-  if (!ePopup.querySelector('.ag-filter')) return;
-  ePopup.setAttribute('data-qodly-nested-select-popup-fix', '1');
-
-  const markListFromEvent = (eventTarget: EventTarget | null) => {
-    const list = (eventTarget as HTMLElement | null)?.closest?.('.ag-select-list');
-    if (list) list.classList.add('ag-custom-component-popup');
-  };
-
-  const onPointerDownCapture = (e: Event) => {
-    if (!ePopup.isConnected) {
-      cleanup();
-      return;
-    }
-    markListFromEvent(e.target);
-  };
-
-  let detachInterval: number | undefined;
-  const cleanup = () => {
-    document.removeEventListener('mousedown', onPointerDownCapture, true);
-    document.removeEventListener('touchstart', onPointerDownCapture, true);
-    if (detachInterval != null) {
-      window.clearInterval(detachInterval);
-      detachInterval = undefined;
-    }
-  };
-
-  document.addEventListener('mousedown', onPointerDownCapture, true);
-  document.addEventListener('touchstart', onPointerDownCapture, true);
-
-  detachInterval = window.setInterval(() => {
-    if (!ePopup.isConnected) {
-      cleanup();
-    }
-  }, 500);
-}
 
 const RowNumberCell: FC<ICellRendererParams> = (params) => (
   <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
@@ -289,7 +225,24 @@ const AgGrid: FC<IAgGridProps> = ({
   const { id: nodeID } = useEnhancedNode();
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
-  const prevSortModelRef = useRef<SortModelItem[]>([]);
+  /**
+   * `applySorting` dedupe key. Tracks both the last sortModel AND the entitysel
+   * it was applied to. A fresh entitysel (e.g. `searchDs.entitysel = dataclass.query(...)`
+   * when loading a filter) has no orderby, even when the sortModel itself
+   * hasn't changed — comparing against the entitysel reference forces a
+   * re-apply so the outgoing request keeps the orderby.
+   */
+  const prevSortInfoRef = useRef<{ sortModel: SortModelItem[]; entitysel: any }>({
+    sortModel: [],
+    entitysel: null,
+  });
+  /**
+   * Consume-once flag for `onDsChange` → `refreshInfiniteCache`. Set to `true`
+   * just before `await activeDs.orderBy(...)` inside `applySorting`; the
+   * resulting `onDsChange` would otherwise fire a duplicate `getRows` for the
+   * same block (the first one lacking the orderby, the second one with it).
+   */
+  const skipDsChangeRefreshOnceRef = useRef(false);
   /** Skip persisting to `state` while we apply datasource → grid (avoids echo with external updates). */
   const applyingExternalStateRef = useRef(false);
   const gridRef = useRef<AgGridReact>(null);
@@ -457,11 +410,20 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [liveFilterModel, setLiveFilterModel] = useState<any>({});
   const [sortDialogInitialModel, setSortDialogInitialModel] = useState<SortModelItem[]>([]);
+  const [headerFilterPopupState, setHeaderFilterPopupState] = useState<{
+    colId: string;
+    anchorRect: DOMRect;
+  } | null>(null);
 
   // view management (toolbar UI state)
   const [viewName, setViewName] = useState<string>('');
   const [selectedView, setSelectedView] = useState<string>('');
   const [isViewDefault, setIsViewDefault] = useState<boolean>(false);
+  // Currently selected saved filter / sort. Lifted here so that an
+  // auto-applied default (via `tryApplyDefault`) is reflected in the
+  // dialog's dropdown even before the user opens it.
+  const [selectedFilterName, setSelectedFilterName] = useState<string>('');
+  const [selectedSortName, setSelectedSortName] = useState<string>('');
 
   // Bootstrap tracking for `isDefault` auto-apply: once a live value or a
   // default has been applied for a given kind, we leave the grid alone.
@@ -469,6 +431,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const viewDefaultTriedRef = useRef(false);
   const filterDefaultTriedRef = useRef(false);
   const sortDefaultTriedRef = useRef(false);
+  const linkedSortAppliedFromFilterRef = useRef(false);
 
   // columns dialog
   const [propertySearch, setPropertySearch] = useState('');
@@ -590,6 +553,13 @@ const AgGrid: FC<IAgGridProps> = ({
         field: agGridColumnField(col),
         isHidden: col.hidden || false, // use col.hidden directly from properties
         pinned: null as 'left' | 'right' | null,
+        // Tracking width/flex here lets manual column resizes survive
+        // colDef rebuilds. AG Grid resets a column's width whenever the
+        // colDef passes a different `width` value, so without this the
+        // resize would be reverted on the next render that touches
+        // `columnVisibility` (e.g. our own viewDs change listener).
+        width: col.width as number | null,
+        flex: col.flex as number | null,
       })),
     [columns],
   );
@@ -631,64 +601,110 @@ const AgGrid: FC<IAgGridProps> = ({
   );
 
   const colDefs: ColDef[] = useMemo(() => {
-    return columns.map((col) => {
-      const stableField = agGridColumnField(col);
-      const colState = columnVisibility.find((c) => c.field === stableField) || {
-        isHidden: false,
-        pinned: null,
-      };
-      const isBooleanColumn = isBooleanLikeColumn(col);
-      const refKey = extractRefDatasetKeyFromSource(col.source);
-      const isRefSource = refKey != null;
-      return {
-        field: stableField,
-        headerName: col.title,
-        context: { source: col.source },
-        hide: colState.isHidden,
-        pinned: colState.pinned,
-        cellRendererParams: {
-          format: col.format,
-          dataType: col.dataType,
-        },
-        cellStyle: (params: any) => {
-          if (isCellSelectionAvailable) return undefined;
-          const resetStyle = {
-            border: '',
-            boxSizing: '',
-            backgroundColor: '',
-          };
-          if (!showCopyActions || copyMode !== 'cells') return resetStyle;
-          const rowIndex = params?.node?.rowIndex;
-          if (typeof rowIndex !== 'number') return resetStyle;
-          const key = `${rowIndex}::${params.column.getColId()}`;
-          if (!manualSelectedCellKeySet.has(key)) return resetStyle;
-          return {
-            border: '2px dashed #1d4ed8',
-            boxSizing: 'border-box',
-            backgroundColor: 'rgba(29, 78, 216, 0.08)',
-          };
-        },
-        lockPosition: col.locked,
-        sortable: col.dataType !== 'image' && col.dataType !== 'object' && col.sorting,
-        resizable: col.sizing,
-        width: col.width,
-        flex: col.flex,
-        filter: isRefSource ? 'qodlyRefSelectFilter' : getColumnFilterType(col, isBooleanColumn),
-        filterParams: isRefSource
-          ? {
-              refDatasetKey: refKey,
-              maxOptions: 256,
-              placeholderLabel: translation('Choose one'),
-              applyButtonLabel: translation('Apply'),
-              resolveOptionLabel: (index: number) => {
-                const composite = refOptionI18nCompositeKey(refKey, index);
-                const fromLang = lang ? get(i18n, `keys.${composite}.${lang}`) : undefined;
-                return String(fromLang ?? get(i18n, `keys.${composite}.default`, '') ?? '');
-              },
-            }
-          : getColumnFilterParams(col, isBooleanColumn),
-      };
-    });
+    return columns
+      // Feature 3: internal id columns are completely hidden from the table.
+      // The underlying row data still carries the value (it's needed for CSS
+      // expressions, selection bookkeeping, etc.) — we just don't render a
+      // colDef for it so users can't see / move / resize / sort / filter it.
+      .filter((col) => !isHiddenIdColumn(col))
+      .map((col) => {
+        const stableField = agGridColumnField(col);
+        const colState = (columnVisibility.find((c) => c.field === stableField) ?? {
+          isHidden: false,
+          pinned: null,
+          width: col.width,
+          flex: col.flex,
+        }) as {
+          isHidden: boolean;
+          pinned: 'left' | 'right' | null;
+          width?: number | null;
+          flex?: number | null;
+        };
+        const isBooleanColumn = isBooleanLikeColumn(col);
+        const refKey = extractRefDatasetKeyFromSource(col.source);
+        const isRefSource = refKey != null;
+        return {
+          field: stableField,
+          headerName: col.title,
+          headerComponent: AgGridFilterHeader,
+          headerComponentParams: {
+            translation,
+            filterable: !isRefSource && !!getColumnFilterType(col, isBooleanColumn),
+            onOpenFilter: ({
+              colId,
+              anchorEl,
+            }: {
+              colId: string;
+              anchorEl: HTMLElement;
+            }) => {
+              setHeaderFilterPopupState({
+                colId,
+                anchorRect: anchorEl.getBoundingClientRect(),
+              });
+            },
+          },
+          context: { source: col.source },
+          hide: colState.isHidden,
+          pinned: colState.pinned,
+          cellRendererParams: {
+            format: col.format,
+            dataType: col.dataType,
+          },
+          cellStyle: (params: any) => {
+            if (isCellSelectionAvailable) return undefined;
+            const resetStyle = {
+              border: '',
+              boxSizing: '',
+              backgroundColor: '',
+            };
+            if (!showCopyActions || copyMode !== 'cells') return resetStyle;
+            const rowIndex = params?.node?.rowIndex;
+            if (typeof rowIndex !== 'number') return resetStyle;
+            const key = `${rowIndex}::${params.column.getColId()}`;
+            if (!manualSelectedCellKeySet.has(key)) return resetStyle;
+            return {
+              border: '2px dashed #1d4ed8',
+              boxSizing: 'border-box',
+              backgroundColor: 'rgba(29, 78, 216, 0.08)',
+            };
+          },
+          lockPosition: col.locked,
+          sortable: col.dataType !== 'image' && col.dataType !== 'object' && col.sorting,
+          resizable: col.sizing,
+          // Prefer the persisted width/flex (kept in sync via `onColumnResized`),
+          // falling back to the column's design-time value. This is what makes
+          // manual resize "stick" across colDef rebuilds — without it AG Grid
+          // resets the column to `col.width` every time the colDef identity
+          // changes.
+          //
+          // The `flex` handling is subtle: AG Grid CLEARS `flex` to `null` on
+          // the column state the moment the user drags a flex-sized column,
+          // because flex sizing and a manual width are mutually exclusive. We
+          // must distinguish that "explicitly cleared" null from a missing
+          // value (`undefined`). Using `??` would collapse both into "fall
+          // back to col.flex (= 1)" and AG Grid would re-flex the column on
+          // the next render, snapping it back to its computed width and
+          // making the resize appear to "not stick".
+          width: colState.width ?? col.width,
+          flex: colState.flex === null ? undefined : (colState.flex ?? col.flex),
+          filter: isRefSource ? 'qodlyRefSelectFilter' : getColumnFilterType(col, isBooleanColumn),
+          suppressHeaderMenuButton: true,
+          suppressHeaderFilterButton: true,
+          filterParams: isRefSource
+            ? {
+                refDatasetKey: refKey,
+                maxOptions: 256,
+                placeholderLabel: translation('Choose one'),
+                applyButtonLabel: translation('Apply'),
+                resolveOptionLabel: (index: number) => {
+                  const composite = refOptionI18nCompositeKey(refKey, index);
+                  const fromLang = lang ? get(i18n, `keys.${composite}.${lang}`) : undefined;
+                  return String(fromLang ?? get(i18n, `keys.${composite}.default`, '') ?? '');
+                },
+              }
+            : getColumnFilterParams(col, isBooleanColumn),
+        };
+      });
   }, [
     columns,
     columnVisibility,
@@ -698,6 +714,7 @@ const AgGrid: FC<IAgGridProps> = ({
     lang,
     manualSelectedCellKeySet,
     showCopyActions,
+    translation,
   ]);
 
   const gridColumnDefs = useMemo(
@@ -716,7 +733,13 @@ const AgGrid: FC<IAgGridProps> = ({
   const sortableColumns = useMemo(
     () =>
       columns
-        .filter((col) => col.dataType !== 'image' && col.dataType !== 'object' && col.sorting)
+        .filter(
+          (col) =>
+            col.dataType !== 'image' &&
+            col.dataType !== 'object' &&
+            col.sorting &&
+            !isHiddenIdColumn(col),
+        )
         .map((col) => ({
           colId: agGridColumnField(col),
           label: col.title,
@@ -737,6 +760,16 @@ const AgGrid: FC<IAgGridProps> = ({
     });
     return m;
   }, [columns]);
+  const columnByStableField = useMemo(() => {
+    const m = new Map<string, IColumn>();
+    columns.forEach((c) => {
+      m.set(agGridColumnField(c), c);
+    });
+    return m;
+  }, [columns]);
+  const headerPopupColumn = headerFilterPopupState
+    ? (columnByStableField.get(headerFilterPopupState.colId) ?? null)
+    : null;
 
   const sortableColIdsRef = useRef<string[]>([]);
   sortableColIdsRef.current = sortableColumns.map((c) => c.colId);
@@ -750,15 +783,6 @@ const AgGrid: FC<IAgGridProps> = ({
     applyingExternalRef: applyingExternalStateRef,
   });
 
-  const filtersManager = useFiltersManager({
-    filterDs,
-    filtersDs,
-    gridRef,
-    emit,
-    applyingExternalRef: applyingExternalStateRef,
-    dateFinancialEnabledRef,
-  });
-
   const sortsManager = useSortsManager({
     sortDs,
     sortsDs,
@@ -767,6 +791,22 @@ const AgGrid: FC<IAgGridProps> = ({
     sortableColIdsRef,
     emit,
     applyingExternalRef: applyingExternalStateRef,
+  });
+
+  const filtersManager = useFiltersManager({
+    filterDs,
+    filtersDs,
+    gridRef,
+    emit,
+    applyingExternalRef: applyingExternalStateRef,
+    dateFinancialEnabledRef,
+    onFilterLoaded: (record) => {
+      const linkedSort = record?.linkedSort?.trim();
+      if (!linkedSort) return;
+      sortsManager.loadSort(linkedSort);
+      setSelectedSortName(linkedSort);
+      linkedSortAppliedFromFilterRef.current = true;
+    },
   });
 
   /** Re-apply grid state whenever one of the 3 live datasources changes externally. */
@@ -780,13 +820,24 @@ const AgGrid: FC<IAgGridProps> = ({
       try {
         const applied = viewsManager.applyPersistedValue(api, data);
         if (applied && Array.isArray(data?.columnState)) {
-          setColumnVisibility(
-            withoutSyntheticRowColumnState(data.columnState).map((col: any) => ({
-              field: col.colId,
-              isHidden: col.hide || false,
-              pinned: col.pinned || null,
-            })),
-          );
+          setColumnVisibility((prev) => {
+            const next = withoutSyntheticRowColumnState(data.columnState).map(
+              (col: any) => {
+                const previous = prev.find((p) => p.field === col.colId);
+                return {
+                  field: col.colId,
+                  isHidden: col.hide || false,
+                  pinned: col.pinned || null,
+                  // Preserve the user's manual resize: if the persisted state
+                  // doesn't carry an explicit width/flex (older saved views),
+                  // fall back to whatever we already have in memory.
+                  width: col.width ?? previous?.width ?? null,
+                  flex: col.flex ?? previous?.flex ?? null,
+                };
+              },
+            );
+            return next;
+          });
         }
       } finally {
         setTimeout(() => {
@@ -808,8 +859,10 @@ const AgGrid: FC<IAgGridProps> = ({
       const data = await filterDs.getValue();
       applyingExternalStateRef.current = true;
       try {
+        // `applyPersistedValue` calls `setFilterModel` → `filterChanged` →
+        // `onFilterChanged` already triggers `refreshInfiniteCache`; an
+        // explicit refresh here would double-fire `getRows`.
         filtersManager.applyPersistedValue(api, data);
-        api.refreshInfiniteCache();
       } finally {
         setTimeout(() => {
           applyingExternalStateRef.current = false;
@@ -898,7 +951,16 @@ const AgGrid: FC<IAgGridProps> = ({
       // Keep user view/sort/filter state when datasource changes (e.g. sort requests).
       setManualSelectedCells([]);
       gridRef.current.api.deselectAll();
-      gridRef.current.api.refreshInfiniteCache();
+      // `applySorting` just called `ds.orderBy(...)` and that's what fired
+      // this `onDsChange`. AG Grid is already in the middle of the same
+      // `getRows` block — refreshing again would start a second request
+      // (the first one racing the entitysel swap and landing without the
+      // orderby). Consume the one-shot flag and skip the refresh.
+      if (skipDsChangeRefreshOnceRef.current) {
+        skipDsChangeRefreshOnceRef.current = false;
+      } else {
+        gridRef.current.api.refreshInfiniteCache();
+      }
       if (multiSelection && gridRef.current.api.getSelectedNodes().length > 0) {
         gridRef.current.api.deselectAll();
       }
@@ -1125,168 +1187,6 @@ const AgGrid: FC<IAgGridProps> = ({
     [viewsManager, filtersManager, sortsManager],
   );
 
-  /** Extra control in the column filter footer (built-in Apply/Reset cannot clear other columns). */
-  const postProcessPopup = useCallback(
-    (params: PostProcessPopupParams) => {
-      const panel = params.ePopup.querySelector<HTMLElement>('.ag-filter-apply-panel');
-      if (!panel || !params.ePopup.querySelector('.ag-filter')) return;
-      attachColumnFilterNestedSelectPopupWorkaround(params.ePopup);
-      if (panel.querySelector('[data-qodly-clear-all-filters-button]')) return;
-
-      const financialDate = dateFinancialRef.current;
-      if (financialDate && !params.ePopup.querySelector('[data-qodly-date-financial-row]')) {
-        const labelText = get(
-          i18n,
-          `keys.filter_by_fiscal_year.${lang}`,
-          get(i18n, 'keys.filter_by_fiscal_year.default', 'Filtrer sur exercice(s)'),
-        );
-
-        const row = document.createElement('div');
-        row.setAttribute('data-qodly-date-financial-row', '1');
-        Object.assign(row.style, {
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          gap: '8px',
-          padding: '10px 16px',
-          borderTop: '1px solid rgb(229, 231, 235)',
-          fontSize: '12px',
-          color: 'rgb(68, 68, 76)',
-        });
-
-        const labelEl = document.createElement('label');
-        Object.assign(labelEl.style, {
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          cursor: 'pointer',
-          margin: '0',
-          userSelect: 'none',
-        });
-
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = Boolean(dateFinancialEnabledRef.current);
-
-        const span = document.createElement('span');
-        span.textContent = String(labelText);
-
-        labelEl.appendChild(input);
-        labelEl.appendChild(span);
-        row.appendChild(labelEl);
-
-        // Do NOT apply immediately; only sync this control when the user clicks the filter Apply button.
-        input.addEventListener('change', () => {
-          // keep UI state only
-        });
-        panel.parentElement?.insertBefore(row, panel);
-      }
-
-      // Hook the built-in filter Apply button so the Date_Financial checkbox is applied only on Apply.
-      if (!panel.getAttribute('data-qodly-date-financial-apply-hook')) {
-        panel.setAttribute('data-qodly-date-financial-apply-hook', '1');
-        panel.addEventListener(
-          'click',
-          (ev) => {
-            const target = ev.target as HTMLElement | null;
-            const btnEl = target?.closest?.('button') as HTMLButtonElement | null;
-            if (!btnEl) return;
-            if (btnEl.getAttribute('data-qodly-clear-all-filters-button')) return;
-
-            const finInput = params.ePopup.querySelector<HTMLInputElement>(
-              '[data-qodly-date-financial-row] input[type="checkbox"]',
-            );
-            if (finInput) {
-              dateFinancialEnabledRef.current = Boolean(finInput.checked);
-              params.api.refreshInfiniteCache();
-              const columnState = withoutSyntheticRowColumnState(params.api.getColumnState());
-              const filterModel = params.api.getFilterModel() ?? {};
-              const sortModel = buildSortModelFromColumnState(columnState);
-              persistGridState(columnState, filterModel, sortModel);
-            }
-          },
-          true,
-        );
-      }
-
-      Object.assign(panel.style, {
-        display: 'flex',
-        justifyContent: 'flex-end',
-        alignItems: 'center',
-        gap: '8px',
-        borderTop: '1px solid rgb(229, 231, 235)',
-        padding: '16px',
-      });
-
-      const secondaryBtn: Partial<CSSStyleDeclaration> = {
-        boxSizing: 'border-box',
-        height: '32px',
-        borderRadius: '6px',
-        fontSize: '12px',
-        padding: '0 12px',
-        margin: '0px',
-        border: '1px solid rgba(0, 0, 0, 0.1)',
-        color: 'rgb(68, 68, 76)',
-        background: '#fff',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-        cursor: 'pointer',
-      };
-
-      const primaryBtn: Partial<CSSStyleDeclaration> = {
-        boxSizing: 'border-box',
-        height: '31px',
-        borderRadius: '6px',
-        fontSize: '12px',
-        padding: '0 12px',
-        margin: '0px',
-        background: 'rgb(43, 87, 151)',
-        color: '#fff',
-        border: '1px solid rgb(43, 87, 151)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-        cursor: 'pointer',
-      };
-
-      panel.querySelectorAll('button').forEach((el) => {
-        if (el.getAttribute('data-qodly-clear-all-filters-button')) return;
-        Object.assign(el.style, primaryBtn);
-      });
-
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.setAttribute('data-qodly-clear-all-filters-button', '1');
-      btn.textContent = translation('Clear result');
-      Object.assign(btn.style, secondaryBtn);
-
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const { api } = params;
-        const filterColId = params.column?.getColId?.();
-        // Reset Date_Financial toggle on clear.
-        dateFinancialEnabledRef.current = false;
-        const finInput = params.ePopup.querySelector<HTMLInputElement>(
-          '[data-qodly-date-financial-row] input[type="checkbox"]',
-        );
-        if (finInput) finInput.checked = false;
-        api.setFilterModel(null);
-        const columnState = withoutSyntheticRowColumnState(api.getColumnState());
-        const filterModel = api.getFilterModel() ?? {};
-        const sortModel = buildSortModelFromColumnState(columnState);
-        persistGridState(columnState, filterModel, sortModel);
-        scheduleReopenColumnFilterAfterClear(api, filterColId);
-      });
-
-      panel.insertBefore(btn, panel.firstChild);
-    },
-    [i18n, lang, persistGridState, translation],
-  );
-
   const onStateUpdated = useCallback(
     (params: StateUpdatedEvent) => {
       if (params.sources.length === 1 && params.sources.includes('rowSelection')) return; // to avoid multiple triggers when selecting a row
@@ -1301,9 +1201,55 @@ const AgGrid: FC<IAgGridProps> = ({
     [persistGridState],
   );
 
+  /**
+   * Mirror manual column resizes into `columnVisibility` so the new width is
+   * carried back through `colDefs`. Without this, the next colDef rebuild
+   * (e.g. after `viewDs` updates) would reset the column to its design-time
+   * width because AG Grid honours an explicit `width` value passed in the
+   * colDef. We only react to the final `finished: true` event so transient
+   * widths during the drag are ignored.
+   */
+  const onColumnResized = useCallback((event: any) => {
+    if (!event?.finished) return;
+    const api = event.api;
+    if (!api) return;
+    setColumnVisibility((prev) =>
+      prev.map((entry) => {
+        const colState = api
+          .getColumnState()
+          .find((s: any) => s.colId === entry.field);
+        if (!colState) return entry;
+        if (entry.width === colState.width && entry.flex === (colState.flex ?? null)) {
+          return entry;
+        }
+        return {
+          ...entry,
+          width: colState.width ?? entry.width,
+          flex: colState.flex ?? null,
+        };
+      }),
+    );
+  }, []);
+
   const onFilterChanged = useCallback((event: FilterChangedEvent) => {
+    // AG Grid's InfiniteRowModel resets the cache automatically on
+    // `filterChanged`, so an explicit `refreshInfiniteCache()` here would
+    // fire a second `getRows` for the same filter model — that's the
+    // duplicate request the user was seeing. We only mirror the model into
+    // our live state so the QueryBuilder/other UI can track it.
     setLiveFilterModel(event.api.getFilterModel() ?? {});
-    event.api.refreshInfiniteCache();
+  }, []);
+
+  const applyHeaderFilterEntry = useCallback((colId: string, nextEntry: any | null) => {
+    const api = gridRef.current?.api;
+    if (!api || api.isDestroyed()) return;
+    const current = api.getFilterModel() ?? {};
+    const next = { ...current };
+    if (nextEntry) next[colId] = nextEntry;
+    else delete next[colId];
+    if (isEqual(current, next)) return;
+    api.setFilterModel(next);
+    setLiveFilterModel(next);
   }, []);
 
   const getState = useCallback(
@@ -1313,6 +1259,7 @@ const AgGrid: FC<IAgGridProps> = ({
       let viewLiveApplied = false;
       let filterLiveApplied = false;
       let sortLiveApplied = false;
+      linkedSortAppliedFromFilterRef.current = false;
 
       if (viewDs) {
         try {
@@ -1321,12 +1268,17 @@ const AgGrid: FC<IAgGridProps> = ({
             applied = true;
             viewLiveApplied = true;
             if (value && Array.isArray(value.columnState)) {
-              setColumnVisibility(
-                withoutSyntheticRowColumnState(value.columnState).map((col: any) => ({
-                  field: col.colId,
-                  isHidden: col.hide || false,
-                  pinned: col.pinned || null,
-                })),
+              setColumnVisibility((prev) =>
+                withoutSyntheticRowColumnState(value.columnState).map((col: any) => {
+                  const previous = prev.find((p) => p.field === col.colId);
+                  return {
+                    field: col.colId,
+                    isHidden: col.hide || false,
+                    pinned: col.pinned || null,
+                    width: col.width ?? previous?.width ?? null,
+                    flex: col.flex ?? previous?.flex ?? null,
+                  };
+                }),
               );
             }
           }
@@ -1360,16 +1312,34 @@ const AgGrid: FC<IAgGridProps> = ({
       // Fallback: if no live value was applied for a given kind, try the
       // record flagged `isDefault` (if the list is already populated at this
       // point — otherwise the bootstrap useEffect below will retry once the
-      // saved list arrives).
-      if (!viewLiveApplied && viewsManager.tryApplyDefault()) {
-        applied = true;
-        viewLiveApplied = true;
+      // saved list arrives). When a default is applied, also reflect its
+      // name in the corresponding dropdown selection.
+      if (!viewLiveApplied) {
+        const appliedName = viewsManager.tryApplyDefault();
+        if (appliedName) {
+          applied = true;
+          viewLiveApplied = true;
+          setSelectedView(appliedName);
+        }
       }
-      if (!filterLiveApplied && filtersManager.tryApplyDefault()) {
-        filterLiveApplied = true;
+      if (!filterLiveApplied) {
+        const appliedName = filtersManager.tryApplyDefault();
+        if (appliedName) {
+          filterLiveApplied = true;
+          setSelectedFilterName(appliedName);
+        }
       }
-      if (!sortLiveApplied && sortsManager.tryApplyDefault()) {
-        sortLiveApplied = true;
+      if (!sortLiveApplied) {
+        if (linkedSortAppliedFromFilterRef.current) {
+          sortLiveApplied = true;
+        }
+      }
+      if (!sortLiveApplied) {
+        const appliedName = sortsManager.tryApplyDefault();
+        if (appliedName) {
+          sortLiveApplied = true;
+          setSelectedSortName(appliedName);
+        }
       }
 
       viewDefaultTriedRef.current = viewLiveApplied;
@@ -1380,10 +1350,16 @@ const AgGrid: FC<IAgGridProps> = ({
         const columnState = withoutSyntheticRowColumnState(api.getColumnState());
         const filterModel = api.getFilterModel() ?? {};
         const sortModel = buildSortModelFromColumnState(columnState);
-        prevSortModelRef.current = sortModel;
+        prevSortInfoRef.current = {
+          sortModel,
+          entitysel: (ds as any)?.entitysel ?? null,
+        };
         persistGridState(columnState, filterModel, sortModel);
       } else {
-        prevSortModelRef.current = buildSortModelFromColumnState(api.getColumnState());
+        prevSortInfoRef.current = {
+          sortModel: buildSortModelFromColumnState(api.getColumnState()),
+          entitysel: (ds as any)?.entitysel ?? null,
+        };
       }
 
       setGridReady(true);
@@ -1399,7 +1375,8 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!gridReady) return;
     if (viewDefaultTriedRef.current) return;
     if (viewsManager.savedViews.length === 0) return;
-    viewsManager.tryApplyDefault();
+    const appliedName = viewsManager.tryApplyDefault();
+    if (appliedName) setSelectedView(appliedName);
     viewDefaultTriedRef.current = true;
   }, [gridReady, viewsManager.savedViews, viewsManager]);
 
@@ -1423,29 +1400,32 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!gridReady) return;
     if (filterDefaultTriedRef.current) return;
     if (filtersManager.savedFilters.length === 0) return;
-    filtersManager.tryApplyDefault();
+    const appliedName = filtersManager.tryApplyDefault();
+    if (appliedName) setSelectedFilterName(appliedName);
     filterDefaultTriedRef.current = true;
   }, [gridReady, filtersManager.savedFilters, filtersManager]);
 
   useEffect(() => {
     if (!gridReady) return;
     if (sortDefaultTriedRef.current) return;
+    if (selectedSortName) {
+      sortDefaultTriedRef.current = true;
+      return;
+    }
     if (sortsManager.savedSorts.length === 0) return;
-    sortsManager.tryApplyDefault();
+    const appliedName = sortsManager.tryApplyDefault();
+    if (appliedName) setSelectedSortName(appliedName);
     sortDefaultTriedRef.current = true;
-  }, [gridReady, sortsManager.savedSorts, sortsManager]);
+  }, [gridReady, sortsManager.savedSorts, sortsManager, selectedSortName]);
 
-  const applySorting = useCallback(
-    async (params: IGetRowsParams, cols: IColumn[], activeDs: any) => {
-      if (params.sortModel.length === 0) {
-        prevSortModelRef.current = [];
-        return;
-      }
-      if (isEqual(params.sortModel, prevSortModelRef.current)) {
-        return;
-      }
-
-      const sortInstructions = params.sortModel
+  /**
+   * Translate an AG Grid `sortModel` into the tail of a 4D/Qodly `query()`
+   * string (`colA desc, colB asc`). Returns an empty string when the model
+   * is empty or no rule resolves to a known `source` attribute.
+   */
+  const buildOrderByClause = useCallback(
+    (sortModel: SortModelItem[], cols: IColumn[]): string => {
+      return sortModel
         .map((rule) => {
           const matchedColumn = cols.find(
             (column) => column.title === rule.colId || column.source === rule.colId,
@@ -1453,16 +1433,43 @@ const AgGrid: FC<IAgGridProps> = ({
           if (!matchedColumn?.source || !rule.sort) return '';
           return `${matchedColumn.source} ${rule.sort}`;
         })
-        .filter(Boolean);
-
-      if (!sortInstructions.length) {
-        return;
-      }
-      prevSortModelRef.current = params.sortModel;
-      const orderBy = sortInstructions.join(', ');
-      await activeDs.orderBy(orderBy);
+        .filter(Boolean)
+        .join(', ');
     },
     [],
+  );
+
+  const applySorting = useCallback(
+    async (params: IGetRowsParams, cols: IColumn[], activeDs: any) => {
+      const currentEntitysel = (activeDs as any)?.entitysel ?? null;
+      const prev = prevSortInfoRef.current;
+      if (params.sortModel.length === 0) {
+        prevSortInfoRef.current = { sortModel: [], entitysel: currentEntitysel };
+        return;
+      }
+      // Dedupe per-entitysel: if the entitysel changed (e.g. searchDs was
+      // re-queried for a new filter) we MUST re-apply the orderby even when
+      // the sortModel itself is unchanged — the new entitysel has no sort.
+      if (
+        prev.entitysel === currentEntitysel &&
+        isEqual(params.sortModel, prev.sortModel)
+      ) {
+        return;
+      }
+
+      const orderBy = buildOrderByClause(params.sortModel, cols);
+      if (!orderBy) return;
+      prevSortInfoRef.current = {
+        sortModel: params.sortModel,
+        entitysel: currentEntitysel,
+      };
+      // Our own `activeDs.orderBy(...)` will fire `onDsChange`; swallow the
+      // refresh it would trigger so we don't issue a duplicate `getRows` for
+      // the same block.
+      skipDsChangeRefreshOnceRef.current = true;
+      await activeDs.orderBy(orderBy);
+    },
+    [buildOrderByClause],
   );
 
   // (fix bug when calling 4d function on aggrid that displayes related values)
@@ -1662,7 +1669,16 @@ const AgGrid: FC<IAgGridProps> = ({
             hasFinancialFilter && financialDate
               ? `Date_Document >= ${format(financialDate, 'yyyy-MM-dd')}`
               : '';
-          const queryStr = [...filterQueries.filter(Boolean), extra].filter(Boolean).join(' AND ');
+          const baseQuery = [...filterQueries.filter(Boolean), extra]
+            .filter(Boolean)
+            .join(' AND ');
+          // Embed `order by` directly in the query string so `dataclass.query()`
+          // produces an already-sorted entitysel. `DataClass.query()` is
+          // synchronous (local), only `fetchPage()` hits the server, so this
+          // collapses what was previously two server requests per filter+sort
+          // apply (orderBy + fetchPage) into a single request.
+          const sortClause = buildOrderByClause(rowParams.sortModel, cols);
+          const queryStr = sortClause ? `${baseQuery} order by ${sortClause}` : baseQuery;
 
           const { entitysel } = searchDs as any;
           const dataSetName = entitysel?.getServerRef();
@@ -1671,7 +1687,13 @@ const AgGrid: FC<IAgGridProps> = ({
             filterAttributes: searchDs.filterAttributesText || searchDs._private.filterAttributes,
           });
 
-          await applySorting(rowParams, cols, searchDs);
+          // Remember the sort we just baked into the entitysel so the
+          // no-filter branch (below) can still dedupe correctly after the
+          // user clears the filter.
+          prevSortInfoRef.current = {
+            sortModel: rowParams.sortModel,
+            entitysel: (searchDs as any).entitysel,
+          };
 
           const result = await fetchData(fetchClone, rowParams);
           entities = result.entities;
@@ -1745,14 +1767,17 @@ const AgGrid: FC<IAgGridProps> = ({
     setShowFilterDialog(true);
   };
 
-  const normalizedColumns = useMemo(
-    () =>
-      columnVisibility.filter(
-        (column) =>
-          column.field !== 'ag-Grid-SelectionColumn' && column.field !== ROW_NUMBER_COL_ID,
-      ),
-    [columnVisibility],
-  );
+  const normalizedColumns = useMemo(() => {
+    const idFields = new Set(
+      columns.filter(isHiddenIdColumn).map(agGridColumnField),
+    );
+    return columnVisibility.filter(
+      (column) =>
+        column.field !== 'ag-Grid-SelectionColumn' &&
+        column.field !== ROW_NUMBER_COL_ID &&
+        !idFields.has(column.field),
+    );
+  }, [columnVisibility, columns]);
 
   const filteredColumns = useMemo(() => {
     const rawSearch = propertySearch.trim().toLowerCase();
@@ -2042,27 +2067,55 @@ const AgGrid: FC<IAgGridProps> = ({
                                 fontWeight: 500,
                               }}
                             />
-                            <button
-                              className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                              onClick={() => {
-                                if (!viewName.trim()) return;
-                                viewsManager.saveView(viewName, {
-                                  isDefault: isViewDefault,
-                                });
-                                setViewName('');
-                                setIsViewDefault(false);
-                              }}
-                              style={{
-                                height: '31px',
-                                borderRadius: '6px',
-                                borderColor: '#0000001A',
-                                color: '#44444C',
-                                fontSize: '12px',
-                                fontWeight: 500,
-                              }}
-                            >
-                              {translation('Save new')}
-                            </button>
+                            {!showToolbarSavedViews && (
+                              <button
+                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => {
+                                  const trimmed = viewName.trim();
+                                  if (trimmed) {
+                                    const existing = viewsManager.savedViews.find(
+                                      (v) => v.name === trimmed || v.title === trimmed,
+                                    );
+                                    if (existing) {
+                                      viewsManager.updateView(existing.name, {
+                                        isDefault: isViewDefault,
+                                      });
+                                    } else {
+                                      viewsManager.saveView(trimmed, {
+                                        isDefault: isViewDefault,
+                                      });
+                                    }
+                                  } else if (selectedView) {
+                                    viewsManager.updateView(selectedView, {
+                                      isDefault: isViewDefault,
+                                    });
+                                  }
+                                  setViewName('');
+                                  if (!selectedView) setIsViewDefault(false);
+                                }}
+                                disabled={!viewName.trim() && !selectedView}
+                                style={{
+                                  height: '31px',
+                                  borderRadius: '6px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                  fontSize: '12px',
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {(() => {
+                                  const trimmed = viewName.trim();
+                                  const matching = trimmed
+                                    ? viewsManager.savedViews.find(
+                                        (v) => v.name === trimmed || v.title === trimmed,
+                                      )
+                                    : null;
+                                  const willUpdate =
+                                    Boolean(matching) || (!trimmed && !!selectedView);
+                                  return translation(willUpdate ? 'Update' : 'Save');
+                                })()}
+                              </button>
+                            )}
                             <label
                               className="inline-flex items-center gap-1 whitespace-nowrap"
                               style={{
@@ -2116,25 +2169,6 @@ const AgGrid: FC<IAgGridProps> = ({
                                 ))}
                               </select>
                               <button
-                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800"
-                                onClick={() => {
-                                  if (!selectedView) return;
-                                  viewsManager.updateView(selectedView, {
-                                    isDefault: isViewDefault,
-                                  });
-                                }}
-                                style={{
-                                  height: '31px',
-                                  borderRadius: '6px',
-                                  borderColor: '#0000001A',
-                                  color: '#44444C',
-                                  fontSize: '12px',
-                                  fontWeight: 500,
-                                }}
-                              >
-                                {translation('Update')}
-                              </button>
-                              <button
                                 className="header-button-trash inline-flex items-center justify-center rounded-lg border"
                                 style={{
                                   width: '31px',
@@ -2150,6 +2184,53 @@ const AgGrid: FC<IAgGridProps> = ({
                                 }}
                               >
                                 <GoTrash size={14} />
+                              </button>
+                              <button
+                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => {
+                                  const trimmed = viewName.trim();
+                                  if (trimmed) {
+                                    const existing = viewsManager.savedViews.find(
+                                      (v) => v.name === trimmed || v.title === trimmed,
+                                    );
+                                    if (existing) {
+                                      viewsManager.updateView(existing.name, {
+                                        isDefault: isViewDefault,
+                                      });
+                                    } else {
+                                      viewsManager.saveView(trimmed, {
+                                        isDefault: isViewDefault,
+                                      });
+                                    }
+                                  } else if (selectedView) {
+                                    viewsManager.updateView(selectedView, {
+                                      isDefault: isViewDefault,
+                                    });
+                                  }
+                                  setViewName('');
+                                  if (!selectedView) setIsViewDefault(false);
+                                }}
+                                disabled={!viewName.trim() && !selectedView}
+                                style={{
+                                  height: '31px',
+                                  borderRadius: '6px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                  fontSize: '12px',
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {(() => {
+                                  const trimmed = viewName.trim();
+                                  const matching = trimmed
+                                    ? viewsManager.savedViews.find(
+                                        (v) => v.name === trimmed || v.title === trimmed,
+                                      )
+                                    : null;
+                                  const willUpdate =
+                                    Boolean(matching) || (!trimmed && !!selectedView);
+                                  return translation(willUpdate ? 'Update' : 'Save');
+                                })()}
                               </button>
                             </div>
                           </div>
@@ -2349,6 +2430,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       loadSort={sortsManager.loadSort}
                       updateSort={sortsManager.updateSort}
                       deleteSort={sortsManager.deleteSort}
+                      selectedSort={selectedSortName}
+                      setSelectedSort={setSelectedSortName}
                     />
                   )}
                   {showToolbarFiltering && (
@@ -2363,10 +2446,13 @@ const AgGrid: FC<IAgGridProps> = ({
                         setLiveFilterModel(next ?? {});
                       }}
                       savedFilters={filtersManager.savedFilters}
+                      savedSorts={sortsManager.savedSorts}
                       saveFilter={filtersManager.saveFilter}
                       loadFilter={filtersManager.loadFilter}
                       updateFilter={filtersManager.updateFilter}
                       deleteFilter={filtersManager.deleteFilter}
+                      selectedFilter={selectedFilterName}
+                      setSelectedFilter={setSelectedFilterName}
                     />
                   )}
                 </div>
@@ -2495,18 +2581,33 @@ const AgGrid: FC<IAgGridProps> = ({
             </div>
           )}
           <div className="h-full">
+            <HeaderFilterPopup
+              open={!!headerFilterPopupState}
+              anchorRect={headerFilterPopupState?.anchorRect ?? null}
+              colId={headerFilterPopupState?.colId ?? null}
+              column={headerPopupColumn}
+              currentEntry={
+                headerFilterPopupState ? (liveFilterModel?.[headerFilterPopupState.colId] ?? null) : null
+              }
+              translation={translation}
+              onApply={(nextEntry) => {
+                if (!headerFilterPopupState?.colId) return;
+                applyHeaderFilterEntry(headerFilterPopupState.colId, nextEntry);
+              }}
+              onClose={() => setHeaderFilterPopupState(null)}
+            />
             <AgGridReact
               ref={gridRef}
               columnDefs={gridColumnDefs}
               components={agGridFilterComponents}
               maintainColumnOrder
               defaultColDef={defaultColDef}
-              postProcessPopup={postProcessPopup}
               onRowClicked={onRowClicked}
               onSelectionChanged={onSelectionChanged}
               onRowDoubleClicked={onRowDoubleClicked}
               onGridReady={onGridReady}
               onFilterChanged={onFilterChanged}
+              onColumnResized={onColumnResized}
               rowModelType="infinite"
               rowSelection={{
                 mode: multiSelection ? 'multiRow' : 'singleRow',
