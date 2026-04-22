@@ -72,10 +72,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
    * render in the grid because the data is needed, but the user shouldn't
    * be able to filter on them via the advanced filter modal.
    */
-  const visibleColumns = useMemo(
-    () => columns.filter((c) => !isHiddenIdColumn(c)),
-    [columns],
-  );
+  const visibleColumns = useMemo(() => columns.filter((c) => !isHiddenIdColumn(c)), [columns]);
 
   /**
    * Single Save/Update button (Feature 1):
@@ -86,9 +83,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
    */
   const trimmedName = filterName.trim();
   const matchingExisting = trimmedName
-    ? savedFilters.find(
-        (r) => r.name === trimmedName || r.title === trimmedName,
-      )
+    ? savedFilters.find((r) => r.name === trimmedName || r.title === trimmedName)
     : null;
   const willUpdateExisting = Boolean(matchingExisting) || (!trimmedName && !!selectedFilter);
   const saveButtonDisabled = !trimmedName && !selectedFilter;
@@ -125,15 +120,12 @@ export const FilterDialog: FC<FilterDialogProps> = ({
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 rounded-t-xl">
           <div>
             <span
-              className="text-sm tracking-wide"
-              style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
+              className="tracking-wide"
+              style={{ color: '#0A0A0A', fontSize: '16px', fontWeight: 500 }}
             >
-              {translation('ADVANCED FILTERING')}
+              {translation('Advanced filtering')}
             </span>
-            <span
-              className="mt-1 block text-sm"
-              style={{ color: '#4A5565', fontSize: '14px' }}
-            >
+            <span className="mt-1 block text-sm" style={{ color: '#4A5565', fontSize: '14px' }}>
               {translation('Edit the same filters as the column popups')}
             </span>
           </div>
@@ -155,10 +147,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
           />
         </div>
 
-        <div
-          className="px-5 py-3 flex flex-col gap-3"
-          style={{ borderTop: '1px solid #E5E7EB' }}
-        >
+        <div className="px-5 py-3 flex flex-col gap-3" style={{ borderTop: '1px solid #E5E7EB' }}>
           <span style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}>
             {translation('Saved filters')}
           </span>

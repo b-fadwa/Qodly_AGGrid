@@ -165,7 +165,7 @@ const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) 
             top: `${pos.top}px`,
             left: `${pos.left}px`,
             fontSize: '12px',
-            fontWeight: 500,
+            fontWeight: 400,
             background: '#FFFFFF',
             boxShadow: 'rgba(0, 0, 0, 0.1) 0px -4px 12px 0px',
             borderColor: '#0000001A',
@@ -1947,7 +1947,7 @@ const AgGrid: FC<IAgGridProps> = ({
                   }}
                   aria-label={translation('Copy mode')}
                 >
-                  <FaCopy size={14} />
+                  <FaCopy size={12} />
                 </button>
               </IconPopover>
               {renderCopyCellsClearButton()}
@@ -2002,7 +2002,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 }}
                                 aria-label={translation('Advanced sorting')}
                               >
-                                <FaSortAmountDown size={14} />
+                                <FaSortAmountDown size={12} />
                               </button>
                             </IconPopover>
                           </div>
@@ -2022,7 +2022,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 }}
                                 aria-label={translation('Advanced filtering')}
                               >
-                                <FaFilter size={14} />
+                                <FaFilter size={12} />
                               </button>
                             </IconPopover>
                           </div>
@@ -2046,7 +2046,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 }}
                                 aria-label={translation('Copy mode')}
                               >
-                                <FaCopy size={14} />
+                                <FaCopy size={12} />
                               </button>
                             </IconPopover>
                             {renderCopyCellsClearButton()}
@@ -2315,8 +2315,8 @@ const AgGrid: FC<IAgGridProps> = ({
                         <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl">
                           <div>
                             <h1
-                              className="text-sm tracking-wide"
-                              style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
+                              className="tracking-wide"
+                              style={{ color: '#0A0A0A', fontSize: '16px', fontWeight: 500 }}
                             >
                               {translation('COLUMN STATE')}
                             </h1>
@@ -2538,10 +2538,10 @@ const AgGrid: FC<IAgGridProps> = ({
                 <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-slate-200 px-5 py-4">
                   <div>
                     <span
-                      className="text-sm tracking-wide"
-                      style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
+                      className="tracking-wide"
+                      style={{ color: '#0A0A0A', fontSize: '16px', fontWeight: 500 }}
                     >
-                      {translation('COPY MODE')}
+                      {translation('Copy mode')}
                     </span>
                     <span
                       className="mt-1 block text-sm"

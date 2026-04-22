@@ -168,7 +168,7 @@ const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) 
             borderColor: '#0000001A',
             fontSize: '12px',
             boxShadow: 'rgba(0, 0, 0, 0.1) 0px -4px 12px 0px',
-            fontWeight: 500,
+            fontWeight: 400,
             color: '#44444C',
           }}
         >
@@ -376,7 +376,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
             disabled={statisticsColumns.length === 0}
             aria-label={translation('calculator')}
           >
-            <FaCalculator size={14} />
+            <FaCalculator size={12} />
           </button>
         </IconPopover>
       </div>
@@ -393,8 +393,8 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
             <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-slate-200 px-5 py-4">
               <div>
                 <span
-                  className="text-sm tracking-wide"
-                  style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
+                  className="tracking-wide"
+                  style={{ color: '#0A0A0A', fontSize: '16px', fontWeight: 500 }}
                 >
                   {translation('calculator')}
                 </span>
@@ -651,7 +651,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                         setLastCalculations([]);
                       }}
                     >
-                      {translation('Clear result')}
+                      {translation('Clear')}
                     </button>
                     <button
                       type="button"

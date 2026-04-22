@@ -3,10 +3,7 @@ import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { SortModelItem } from 'ag-grid-community';
 import type { SavedSort } from '../state/types';
-import type {
-  SortableColumnDescriptor,
-  Translation,
-} from '../state/sorts';
+import type { SortableColumnDescriptor, Translation } from '../state/sorts';
 import { buildInitialSortDialogModel } from '../state/sorts';
 
 interface SortingDialogProps {
@@ -89,15 +86,11 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   };
 
   const updateLevelColumn = (index: number, colId: string) => {
-    setSortDialogModel((prev) =>
-      prev.map((rule, i) => (i === index ? { ...rule, colId } : rule)),
-    );
+    setSortDialogModel((prev) => prev.map((rule, i) => (i === index ? { ...rule, colId } : rule)));
   };
 
   const updateLevelDirection = (index: number, sort: 'asc' | 'desc') => {
-    setSortDialogModel((prev) =>
-      prev.map((rule, i) => (i === index ? { ...rule, sort } : rule)),
-    );
+    setSortDialogModel((prev) => prev.map((rule, i) => (i === index ? { ...rule, sort } : rule)));
   };
 
   const handleApply = () => {
@@ -123,15 +116,12 @@ export const SortingDialog: FC<SortingDialogProps> = ({
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 rounded-t-xl">
           <div>
             <span
-              className="text-sm tracking-wide"
-              style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
+              className="tracking-wide"
+              style={{ color: '#0A0A0A', fontSize: '16px', fontWeight: 500 }}
             >
-              {translation('ADVANCED SORTING')}
+              {translation('Advanced sorting')}
             </span>
-            <span
-              className="mt-1 block text-sm"
-              style={{ color: '#4A5565', fontSize: '14px' }}
-            >
+            <span className="mt-1 block text-sm" style={{ color: '#4A5565', fontSize: '14px' }}>
               {translation(
                 'Choose one or multiple columns and define sort direction for each level',
               )}
@@ -148,10 +138,7 @@ export const SortingDialog: FC<SortingDialogProps> = ({
 
         <div>
           {sortableColumns.length === 0 ? (
-            <div
-              className="bg-slate-50 px-3 py-2"
-              style={{ color: '#4A5565', fontSize: '14px' }}
-            >
+            <div className="bg-slate-50 px-3 py-2" style={{ color: '#4A5565', fontSize: '14px' }}>
               {translation('No sortable columns are enabled in grid properties')}
             </div>
           ) : (
@@ -168,10 +155,7 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                         key={`${rule.colId}-${index}`}
                         className="flex items-center gap-2 px-2 py-2"
                       >
-                        <span
-                          className="w-14"
-                          style={{ color: '#364153', fontSize: '14px' }}
-                        >
+                        <span className="w-14" style={{ color: '#364153', fontSize: '14px' }}>
                           {translation('Level')} {index + 1}
                         </span>
                         <select
@@ -203,10 +187,7 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                           }}
                           value={rule.sort}
                           onChange={(e) =>
-                            updateLevelDirection(
-                              index,
-                              (e.target.value as 'asc' | 'desc') || 'asc',
-                            )
+                            updateLevelDirection(index, (e.target.value as 'asc' | 'desc') || 'asc')
                           }
                         >
                           <option value="asc">{translation('Asc')}</option>
@@ -344,9 +325,7 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
    */
   const trimmedName = sortName.trim();
   const matchingExisting = trimmedName
-    ? savedSorts.find(
-        (r) => r.name === trimmedName || r.title === trimmedName,
-      )
+    ? savedSorts.find((r) => r.name === trimmedName || r.title === trimmedName)
     : null;
   const willUpdateExisting = Boolean(matchingExisting) || (!trimmedName && !!selectedSort);
   const saveButtonDisabled = !trimmedName && !selectedSort;
@@ -384,13 +363,8 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
   } as const;
 
   return (
-    <div
-      className="px-4 py-3 flex flex-col gap-3"
-      style={{ borderTop: '1px solid #E5E7EB' }}
-    >
-      <span
-        style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
-      >
+    <div className="px-4 py-3 flex flex-col gap-3" style={{ borderTop: '1px solid #E5E7EB' }}>
+      <span style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}>
         {translation('Saved sorts')}
       </span>
       <div className="flex flex-wrap items-center gap-2">

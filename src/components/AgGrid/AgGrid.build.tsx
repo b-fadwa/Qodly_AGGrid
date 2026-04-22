@@ -70,7 +70,7 @@ const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) 
             borderColor: '#0000001A',
             boxShadow: 'rgba(0, 0, 0, 0.1) 0px -4px 12px 0px',
             fontSize: '12px',
-            fontWeight: 500,
+            fontWeight: 400,
             color: '#44444C',
           }}
         >
@@ -673,7 +673,7 @@ const AgGrid: FC<IAgGridProps> = ({
                             className="text-sm tracking-wide"
                             style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
                           >
-                            {translation('ADVANCED SORTING')}
+                            {translation('Advanced sorting')}
                           </span>
                           <span
                             className="mt-1 block text-sm"

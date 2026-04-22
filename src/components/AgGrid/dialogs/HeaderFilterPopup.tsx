@@ -34,7 +34,8 @@ const ZERO_INPUT_OPERATORS = new Set(['isTrue', 'isFalse', 'blank', 'notBlank'])
 const mk = (): string => `h_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
 const boolOps = (ops: FilterOperatorDescriptor[]) =>
   ops.some((o) => o.key === 'isTrue' || o.key === 'isFalse');
-const defaultOp = (ops: FilterOperatorDescriptor[]) => (boolOps(ops) ? '' : (ops[0]?.key ?? 'equals'));
+const defaultOp = (ops: FilterOperatorDescriptor[]) =>
+  boolOps(ops) ? '' : (ops[0]?.key ?? 'equals');
 
 const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft[] => {
   const fallback = defaultOp(ops);
@@ -145,7 +146,9 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   const operators = useMemo(() => (column ? getColumnFilterOperators(column) : []), [column]);
   const filterType = useMemo(() => getColumnAgGridFilterType(column), [column]);
   const inputType = useMemo(() => {
-    const dt = String(column?.dataType ?? '').trim().toLowerCase();
+    const dt = String(column?.dataType ?? '')
+      .trim()
+      .toLowerCase();
     if (dt === 'date') return 'date';
     if (['word', 'short', 'long', 'number', 'long64', 'duration'].includes(dt)) return 'number';
     return 'text';
@@ -222,7 +225,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
       </div>
       <div className="flex flex-col gap-1 p-2">
         {rows.map((row, idx) => {
-          const selectedOp = operators.find((op) => op.key === row.operator) ?? operators[0] ?? null;
+          const selectedOp =
+            operators.find((op) => op.key === row.operator) ?? operators[0] ?? null;
           const inputs = selectedOp?.inputs ?? 1;
           const canDelete = rows.length > 1;
           return (
@@ -275,7 +279,12 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     className="inline-flex items-center justify-center rounded-lg border"
                     style={styles.trash}
                     onClick={() =>
-                      setRows((prev) => normalize(prev.filter((r) => r.id !== row.id), operators))
+                      setRows((prev) =>
+                        normalize(
+                          prev.filter((r) => r.id !== row.id),
+                          operators,
+                        ),
+                      )
                     }
                   >
                     <GoTrash size={14} />
@@ -304,7 +313,12 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                       className="inline-flex items-center justify-center rounded-lg border"
                       style={styles.trash}
                       onClick={() =>
-                        setRows((prev) => normalize(prev.filter((r) => r.id !== row.id), operators))
+                        setRows((prev) =>
+                          normalize(
+                            prev.filter((r) => r.id !== row.id),
+                            operators,
+                          ),
+                        )
                       }
                     >
                       <GoTrash size={14} />
@@ -341,7 +355,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
             onClose();
           }}
         >
-          {translation('Clear result')}
+          {translation('Clear filters')}
         </button>
         <button
           type="button"
@@ -353,7 +367,9 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
             width: 'auto',
           }}
           onClick={() => {
-            const built = rows.map((r) => toCondition(r, filterType)).filter((v): v is any => v !== null);
+            const built = rows
+              .map((r) => toCondition(r, filterType))
+              .filter((v): v is any => v !== null);
             const remaining = activeRules.filter((r) => r.field !== colId);
             if (!built.length) {
               applyRules(remaining);
