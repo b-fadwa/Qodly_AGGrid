@@ -675,6 +675,17 @@ const AgGrid: FC<IAgGridProps> = ({
     setLiveFilterModel(normalized);
   }, []);
 
+  const persistFilterDsNow = useCallback(
+    (filterModel: any) => {
+      if (!filterDs) return;
+      filterDs.setValue(null, {
+        filterModel: normalizeAgGridFilterModel(filterModel) ?? {},
+        dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+      });
+    },
+    [filterDs],
+  );
+
   // Bootstrap tracking for `isDefault` auto-apply: once a live value or a
   // default has been applied for a given kind, we leave the grid alone.
   const [gridReady, setGridReady] = useState(false);
@@ -1501,7 +1512,8 @@ const AgGrid: FC<IAgGridProps> = ({
     const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
     const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
     commitLiveFilterModel(next);
-  }, [commitLiveFilterModel]);
+    filtersManager.persistCurrent(fromGrid);
+  }, [commitLiveFilterModel, filtersManager]);
 
   const applyHeaderFilterModel = useCallback((nextModel: any) => {
     const api = gridRef.current?.api;
@@ -1512,14 +1524,17 @@ const AgGrid: FC<IAgGridProps> = ({
     const agChanged = !isEqual(currentAg, nextAg);
     if (agChanged) {
       api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
+      persistFilterDsNow(nextAg);
     }
     const normalizedNextLive = nextModel ?? {};
     const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
     commitLiveFilterModel(normalizedNextLive);
     if (!agChanged && liveChanged) {
+      persistFilterDsNow(nextAg);
+      filtersManager.persistCurrent(nextAg);
       api.refreshInfiniteCache();
     }
-  }, [commitLiveFilterModel]);
+  }, [commitLiveFilterModel, filtersManager, persistFilterDsNow]);
 
   const getState = useCallback(
     async (params: any) => {
@@ -2465,11 +2480,14 @@ const AgGrid: FC<IAgGridProps> = ({
                         const agChanged = !isEqual(currentAg, nextAg);
                         if (agChanged) {
                           api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
+                          persistFilterDsNow(nextAg);
                         }
                         const normalizedNextLive = next ?? {};
                         const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
                         commitLiveFilterModel(normalizedNextLive);
                         if (!agChanged && liveChanged) {
+                          persistFilterDsNow(nextAg);
+                          filtersManager.persistCurrent(nextAg);
                           api.refreshInfiniteCache();
                         }
                       }}
