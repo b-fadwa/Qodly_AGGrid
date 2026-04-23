@@ -132,6 +132,11 @@ const dataAccessSettings: TSetting[] = [
     key: 'showRecordCount',
   },
   {
+    key: 'dateFinancial',
+    label: 'Date_Financial (4D Date)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
     label: 'Show row numbers',
     defaultValue: false,
     type: ESetting.CHECKBOX,
@@ -157,7 +162,7 @@ const dataAccessSettings: TSetting[] = [
   },
   {
     label: 'Toolbar: Calculs statistique',
-    defaultValue: true,
+    defaultValue: false,
     type: ESetting.CHECKBOX,
     key: 'showToolbarStatistics',
   },
@@ -174,14 +179,10 @@ const dataAccessSettings: TSetting[] = [
     key: 'showToolbarSavedViews',
   },
   {
-    key: 'state',
-    label: 'Grid state (current)',
-    type: ESetting.DS_AUTO_SUGGEST,
-  },
-  {
-    key: 'states',
-    label: 'Saved states list',
-    type: ESetting.DS_AUTO_SUGGEST,
+    label: 'Toolbar: Filtering',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarFiltering',
   },
   {
     key: 'calculStatistiqueResult',
@@ -200,6 +201,45 @@ const dataAccessSettings: TSetting[] = [
     type: ESetting.TEXT_FIELD,
     hasError: validateServerSide,
     validateOnEnter: true,
+  },
+];
+
+const viewSettings: TSetting[] = [
+  {
+    key: 'view',
+    label: 'Current view (columnState)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'views',
+    label: 'Saved views list',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+];
+
+const filterSettings: TSetting[] = [
+  {
+    key: 'filter',
+    label: 'Current filter (filterModel)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'filters',
+    label: 'Saved filters list',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+];
+
+const sortSettings: TSetting[] = [
+  {
+    key: 'sort',
+    label: 'Current sort (sortModel)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'sorts',
+    label: 'Saved sorts list',
+    type: ESetting.DS_AUTO_SUGGEST,
   },
 ];
 
@@ -541,6 +581,24 @@ const Settings: TSetting[] = [
     components: dataAccessSettings,
   },
   {
+    key: 'view',
+    label: 'View',
+    type: ESetting.GROUP,
+    components: viewSettings,
+  },
+  {
+    key: 'filter',
+    label: 'Filter',
+    type: ESetting.GROUP,
+    components: filterSettings,
+  },
+  {
+    key: 'sort',
+    label: 'Sort',
+    type: ESetting.GROUP,
+    components: sortSettings,
+  },
+  {
     key: 'general',
     label: 'General',
     type: ESetting.GROUP,
@@ -574,6 +632,9 @@ const Settings: TSetting[] = [
 
 export const BasicSettings: TSetting[] = [
   ...dataAccessSettings,
+  ...viewSettings,
+  ...filterSettings,
+  ...sortSettings,
   ...commonSettings,
   ...basicSettings,
 ];

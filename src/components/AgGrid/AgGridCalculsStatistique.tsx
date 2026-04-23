@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { AgGridReact } from 'ag-grid-react';
@@ -117,6 +118,67 @@ export type AgGridCalculsStatistiqueProps = {
   calculStatistiqueResultDS: CalculsStatistiqueResultDatasource | null | undefined;
 };
 
+const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) => {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  const updatePos = useCallback(() => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPos({
+      top: rect.bottom + 6,
+      left: rect.left + rect.width / 2,
+    });
+  }, []);
+
+  const show = useCallback(() => {
+    updatePos();
+    setOpen(true);
+  }, [updatePos]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onViewportChange = () => updatePos();
+    window.addEventListener('scroll', onViewportChange, true);
+    window.addEventListener('resize', onViewportChange);
+    return () => {
+      window.removeEventListener('scroll', onViewportChange, true);
+      window.removeEventListener('resize', onViewportChange);
+    };
+  }, [open, updatePos]);
+
+  return (
+    <div
+      ref={anchorRef}
+      className="inline-flex"
+      onMouseEnter={show}
+      onMouseLeave={() => setOpen(false)}
+      onFocusCapture={show}
+      onBlurCapture={() => setOpen(false)}
+    >
+      {children}
+      {open ? (
+        <div
+          className="pointer-events-none fixed z-[100002] -translate-x-1/2 whitespace-nowrap rounded-md border px-2 py-1"
+          style={{
+            top: `${pos.top}px`,
+            left: `${pos.left}px`,
+            background: '#FFFFFF',
+            borderColor: '#0000001A',
+            fontSize: '12px',
+            boxShadow: 'rgba(0, 0, 0, 0.1) 0px -4px 12px 0px',
+            fontWeight: 400,
+            color: '#44444C',
+          }}
+        >
+          {label}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   translation,
   showToolbarStatistics,
@@ -136,16 +198,6 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   const [lastCalculations, setLastCalculations] = useState<StatisticCalculationItem[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
-  const [columnSearchQuery, setColumnSearchQuery] = useState('');
-
-  const filteredStatisticsColumns = useMemo(() => {
-    const q = columnSearchQuery.trim().toLowerCase();
-    if (!q) return statisticsColumns;
-    return statisticsColumns.filter(
-      (c) =>
-        c.label.toLowerCase().includes(q) || c.colId.toLowerCase().includes(q),
-    );
-  }, [statisticsColumns, columnSearchQuery]);
 
   const operationLabel = useCallback(
     (op: StatsOperation) => {
@@ -201,12 +253,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   };
 
   const selectAllColumns = () => {
-    if (columnSearchQuery.trim()) {
-      const ids = new Set(filteredStatisticsColumns.map((c) => c.colId));
-      setSelectedColumnIds((prev) => Array.from(new Set([...prev, ...ids])));
-    } else {
-      setSelectedColumnIds(statisticsColumns.map((c) => c.colId));
-    }
+    setSelectedColumnIds(statisticsColumns.map((c) => c.colId));
   };
 
   const clearColumns = () => setSelectedColumnIds([]);
@@ -217,7 +264,6 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   const clearOperations = () => setSelectedOperations([]);
 
   const openCalculsStatistiqueDialog = () => {
-    setColumnSearchQuery('');
     setStatsError(null);
     setStatsResponse(null);
     setLastCalculations([]);
@@ -306,8 +352,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
     };
   }, [calculStatistiqueResultDS, showStatisticsDialog]);
 
-  const canCalculate =
-    statisticsColumns.length > 0 && calculations.length > 0 && !statsLoading;
+  const canCalculate = statisticsColumns.length > 0 && calculations.length > 0 && !statsLoading;
 
   if (!showToolbarStatistics) {
     return null;
@@ -316,23 +361,24 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   return (
     <>
       <div className="statistics-section">
-        <button
-          type="button"
-          onClick={openCalculsStatistiqueDialog}
-          className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-          style={{
-            width: '31px',
-            height: '31px',
-            borderRadius: '8px',
-            borderColor: '#0000001A',
-            color: '#44444C',
-          }}
-          disabled={statisticsColumns.length === 0}
-          title={translation('Calculs statistique')}
-          aria-label={translation('Calculs statistique')}
-        >
-          <FaCalculator />
-        </button>
+        <IconPopover label={translation('calculator')}>
+          <button
+            type="button"
+            onClick={openCalculsStatistiqueDialog}
+            className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+            style={{
+              width: '31px',
+              height: '31px',
+              borderRadius: '8px',
+              borderColor: '#0000001A',
+              color: '#44444C',
+            }}
+            disabled={statisticsColumns.length === 0}
+            aria-label={translation('calculator')}
+          >
+            <FaCalculator size={12} />
+          </button>
+        </IconPopover>
       </div>
 
       {showStatisticsDialog && (
@@ -347,17 +393,14 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
             <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-slate-200 px-5 py-4">
               <div>
                 <span
-                  className="text-sm tracking-wide"
-                  style={{ color: '#0A0A0A', fontSize: '21px', fontWeight: 500 }}
+                  className="tracking-wide"
+                  style={{ color: '#0A0A0A', fontSize: '16px', fontWeight: 500 }}
                 >
-                  {translation('Calculs statistique')}
+                  {translation('calculator')}
                 </span>
-                <span
-                  className="mt-1 block text-sm"
-                  style={{ color: '#4A5565', fontSize: '14px' }}
-                >
+                <span className="mt-1 block text-sm" style={{ color: '#4A5565', fontSize: '14px' }}>
                   {translation(
-                    'Select one or more columns and one or more calculation modes. The server receives every combination. Bind Calculs statistique result to the scalar datasource used as the event return.',
+                    'Select one or more columns and one or more calculation modes, the server receives every combination, bind Calculs statistique result to the scalar datasource used as the event return',
                   )}
                 </span>
               </div>
@@ -376,9 +419,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                   className="bg-slate-50 px-3 py-2"
                   style={{ color: '#4A5565', fontSize: '14px' }}
                 >
-                  {translation(
-                    'No columns with type number are configured in grid properties',
-                  )}
+                  {translation('No columns with type number are configured in grid properties')}
                 </div>
               ) : (
                 <>
@@ -408,41 +449,26 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                           </button>
                         </div>
                       </div>
-                      <input
-                        type="search"
-                        value={columnSearchQuery}
-                        onChange={(e) => setColumnSearchQuery(e.target.value)}
-                        placeholder={translation('Search field')}
-                        autoComplete="off"
-                        className="mb-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
-                        aria-label={translation('Search field')}
-                      />
                       <div className="max-h-[min(50vh,360px)] overflow-y-auto rounded-md border border-slate-200 bg-slate-50/80 p-3">
-                        {filteredStatisticsColumns.length === 0 ? (
-                          <p className="py-4 text-center text-sm text-slate-500">
-                            {translation('No fields match your filter')}
-                          </p>
-                        ) : (
-                          <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-                            {filteredStatisticsColumns.map((column) => (
-                              <label
-                                key={column.colId}
-                                className="flex min-w-0 cursor-pointer items-center gap-2 text-sm"
-                                style={{ color: '#44444C' }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedColumnIds.includes(column.colId)}
-                                  onChange={() => toggleColumn(column.colId)}
-                                  className="shrink-0 rounded border-slate-300"
-                                />
-                                <span className="min-w-0 truncate" title={column.label}>
-                                  {column.label}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
+                        <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+                          {statisticsColumns.map((column) => (
+                            <label
+                              key={column.colId}
+                              className="flex min-w-0 cursor-pointer items-center gap-2 text-sm"
+                              style={{ color: '#44444C' }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedColumnIds.includes(column.colId)}
+                                onChange={() => toggleColumn(column.colId)}
+                                className="shrink-0 rounded border-slate-300"
+                              />
+                              <span className="min-w-0 truncate" title={column.label}>
+                                {column.label}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     <div>
@@ -496,11 +522,6 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                         ))}
                       </div>
                     </div>
-                    {calculations.length > 0 && (
-                      <p className="text-xs text-slate-500">
-                        {translation('Combinations')}: {calculations.length}
-                      </p>
-                    )}
                     {(statsLoading ||
                       statsError != null ||
                       statsResponse != null ||
@@ -515,98 +536,98 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                         {!statsLoading &&
                           statsError == null &&
                           (pivotFieldRows.length > 0 || statsResponse != null) && (
-                          <div className="space-y-2">
-                            {pivotFieldRows.length > 0 ? (
-                              <div className="flex items-start gap-2">
-                                <div className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white">
-                                  <table className="w-full border-collapse text-left text-sm">
-                                    <thead className="bg-slate-100/90">
-                                      <tr>
-                                        <th className="border-b border-slate-200 px-3 py-2.5 font-semibold text-slate-800">
-                                          {translation('Field')}
-                                        </th>
-                                        {StatisticCalculations.ALL_OPERATIONS.map((op) => (
-                                          <th
-                                            key={op}
-                                            className="border-b border-l border-slate-200 px-3 py-2.5 text-center font-semibold text-slate-800"
-                                          >
-                                            {operationLabel(op)}
+                            <div className="space-y-2">
+                              {pivotFieldRows.length > 0 ? (
+                                <div className="flex items-start gap-2">
+                                  <div className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white">
+                                    <table className="w-full border-collapse text-left text-sm">
+                                      <thead className="bg-slate-100/90">
+                                        <tr>
+                                          <th className="border-b border-slate-200 px-3 py-2.5 font-semibold text-slate-800">
+                                            {translation('Field')}
                                           </th>
-                                        ))}
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {pivotFieldRows.map((row) => (
-                                        <tr
-                                          key={row.columnTitle}
-                                          className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/80"
-                                        >
-                                          <td className="px-3 py-2 font-medium text-slate-900">
-                                            {row.columnTitle}
-                                          </td>
-                                          {StatisticCalculations.ALL_OPERATIONS.map((op) => {
-                                            const cell = StatisticCalculations.getCellValue(
-                                              statsResponse,
-                                              row.columnTitle,
-                                              op,
-                                              row.columnSource,
-                                            );
-                                            const cellText =
-                                              cell === undefined
-                                                ? '—'
-                                                : StatisticCalculations.formatDisplayValue(cell);
-                                            return (
-                                              <td
-                                                key={op}
-                                                className="border-l border-slate-100 px-3 py-2 text-center font-mono tabular-nums text-slate-900"
-                                              >
-                                                {cellText}
-                                              </td>
-                                            );
-                                          })}
+                                          {StatisticCalculations.ALL_OPERATIONS.map((op) => (
+                                            <th
+                                              key={op}
+                                              className="border-b border-l border-slate-200 px-3 py-2.5 text-center font-semibold text-slate-800"
+                                            >
+                                              {operationLabel(op)}
+                                            </th>
+                                          ))}
                                         </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
+                                      </thead>
+                                      <tbody>
+                                        {pivotFieldRows.map((row) => (
+                                          <tr
+                                            key={row.columnTitle}
+                                            className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/80"
+                                          >
+                                            <td className="px-3 py-2 font-medium text-slate-900">
+                                              {row.columnTitle}
+                                            </td>
+                                            {StatisticCalculations.ALL_OPERATIONS.map((op) => {
+                                              const cell = StatisticCalculations.getCellValue(
+                                                statsResponse,
+                                                row.columnTitle,
+                                                op,
+                                                row.columnSource,
+                                              );
+                                              const cellText =
+                                                cell === undefined
+                                                  ? '—'
+                                                  : StatisticCalculations.formatDisplayValue(cell);
+                                              return (
+                                                <td
+                                                  key={op}
+                                                  className="border-l border-slate-100 px-3 py-2 text-center font-mono tabular-nums text-slate-900"
+                                                >
+                                                  {cellText}
+                                                </td>
+                                              );
+                                            })}
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded-md border px-2 py-1 text-xs"
+                                    style={{
+                                      borderColor: '#0000001A',
+                                      color: '#44444C',
+                                      height: '31px',
+                                    }}
+                                    onClick={() => void copyStatisticsToClipboard()}
+                                    title={translation('Copy')}
+                                    aria-label={translation('Copy')}
+                                  >
+                                    <FaCopy size={14} />
+                                  </button>
                                 </div>
-                                <button
-                                  type="button"
-                                  className="shrink-0 rounded-md border px-2 py-1 text-xs"
-                                  style={{
-                                    borderColor: '#0000001A',
-                                    color: '#44444C',
-                                    height: '31px',
-                                  }}
-                                  onClick={() => void copyStatisticsToClipboard()}
-                                  title={translation('Copy')}
-                                  aria-label={translation('Copy')}
-                                >
-                                  <FaCopy size={14} />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-start gap-2">
-                                <pre className="max-h-48 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-sans text-sm text-slate-800">
-                                  {StatisticCalculations.formatDisplayValue(statsResponse)}
-                                </pre>
-                                <button
-                                  type="button"
-                                  className="shrink-0 rounded-md border px-2 py-1 text-xs"
-                                  style={{
-                                    borderColor: '#0000001A',
-                                    color: '#44444C',
-                                    height: '31px',
-                                  }}
-                                  onClick={() => void writeTextToClipboard(String(statsResponse))}
-                                  title={translation('Copy')}
-                                  aria-label={translation('Copy')}
-                                >
-                                  <FaCopy size={14} />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                              ) : (
+                                <div className="flex items-start gap-2">
+                                  <pre className="max-h-48 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-sans text-sm text-slate-800">
+                                    {StatisticCalculations.formatDisplayValue(statsResponse)}
+                                  </pre>
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded-md border px-2 py-1 text-xs"
+                                    style={{
+                                      borderColor: '#0000001A',
+                                      color: '#44444C',
+                                      height: '31px',
+                                    }}
+                                    onClick={() => void writeTextToClipboard(String(statsResponse))}
+                                    title={translation('Copy')}
+                                    aria-label={translation('Copy')}
+                                  >
+                                    <FaCopy size={14} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                       </div>
                     )}
                   </div>
@@ -630,7 +651,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                         setLastCalculations([]);
                       }}
                     >
-                      {translation('Clear result')}
+                      {translation('Clear')}
                     </button>
                     <button
                       type="button"
