@@ -26,10 +26,16 @@ const toFiniteNumber = (value: any): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const splitRawCollectionValues = (raw: any): string[] =>
+  String(raw ?? '')
+    .replace(/\\n/g, '\n')
+    .split(/[\n\r,]+/g)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
 const parseNumberCollectionValues = (raw: any): number[] => {
   if (typeof raw === 'number' && Number.isFinite(raw)) return [raw];
-  return String(raw ?? '')
-    .split(',')
+  return splitRawCollectionValues(raw)
     .map((value) => toFiniteNumber(value))
     .filter((value): value is number => value !== null);
 };
@@ -96,10 +102,7 @@ export const getColumnFilterParams = (column: any, isBooleanColumn: boolean) => 
             displayKey: 'inCollection',
             displayName: 'in collection',
             predicate: (filterValues: any[], cellValue: any) => {
-              const values = String(filterValues?.[0] ?? '')
-                .split(',')
-                .map((value) => value.trim())
-                .filter(Boolean);
+              const values = splitRawCollectionValues(filterValues?.[0]);
               return values.some((value) => String(cellValue) === value);
             },
             numberOfInputs: 1,
@@ -219,11 +222,7 @@ export const getColumnFilterParams = (column: any, isBooleanColumn: boolean) => 
   };
 };
 
-const splitCollectionValues = (raw: any): string[] =>
-  String(raw ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
+const splitCollectionValues = (raw: any): string[] => splitRawCollectionValues(raw);
 
 const joinWithOr = (queries: string[]) =>
   queries.length > 1 ? `(${queries.join(' OR ')})` : (queries[0] ?? '');

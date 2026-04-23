@@ -20,6 +20,17 @@ import {
  */
 const VALUE_DEBOUNCE_MS = 400;
 
+const COLLECTION_OPERATOR_KEY = 'inCollection';
+
+const parseCollectionTokens = (raw: string): string[] =>
+  String(raw ?? '')
+    .replace(/\\n/g, '\n')
+    .split(/[\n\r,]+/g)
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+const joinCollectionTokens = (tokens: string[]): string => tokens.join(', ');
+
 /* ------------------------------------------------------------------ *
  *  Internal flat representation
  *
@@ -188,11 +199,15 @@ const buildCondition = (rule: FilterRule, filterType: string): any | null => {
     if (!Number.isFinite(num)) return null;
     return { filterType, type: rule.operator, value: num };
   }
-  if (rule.value === '' || rule.value == null) return null;
+  const normalizedValue =
+    rule.operator === COLLECTION_OPERATOR_KEY
+      ? joinCollectionTokens(parseCollectionTokens(rule.value))
+      : rule.value;
+  if (normalizedValue === '' || normalizedValue == null) return null;
   return {
     filterType,
     type: rule.operator,
-    filter: rule.value,
+    filter: normalizedValue,
     filterTo: rule.value2 || undefined,
   };
 };
@@ -473,6 +488,8 @@ const RuleRow: FC<RuleRowProps> = ({
   const operatorDescriptor = operators.find((op) => op.key === rule.operator) ?? operators[0];
   const inputCount = operatorDescriptor?.inputs ?? 1;
   const htmlInputType = inputTypeFor(column);
+  const isCollection = operatorDescriptor?.key === COLLECTION_OPERATOR_KEY;
+  const collectionTokens = useMemo(() => parseCollectionTokens(rule.value), [rule.value]);
 
   const onFieldChange = (nextKey: string) => {
     const nextColumn = columns.find((c) => c.source === nextKey || c.title === nextKey);
@@ -522,17 +539,63 @@ const RuleRow: FC<RuleRowProps> = ({
       </select>
 
       {inputCount >= 1 && (
-        <input
-          type={htmlInputType}
-          placeholder={translation('Value')}
-          style={inputStyle}
-          value={rule.value}
-          onChange={(e) => onValueChange({ value: e.target.value })}
-          onBlur={onValueCommit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onValueCommit();
-          }}
-        />
+        <div style={{ flex: 1, minWidth: '160px' }}>
+          {isCollection && collectionTokens.length ? (
+            <div className="mb-1 flex flex-wrap gap-1">
+              {collectionTokens.map((token) => (
+                <button
+                  key={token}
+                  type="button"
+                  title={translation('Remove')}
+                  onClick={() => {
+                    const next = collectionTokens.filter((t) => t !== token);
+                    onValueChange({ value: joinCollectionTokens(next) });
+                  }}
+                  style={{
+                    border: '1px solid rgba(99, 143, 207, 0.4)',
+                    background: 'rgba(99, 143, 207, 0.15)',
+                    color: '#2B5797',
+                    borderRadius: '999px',
+                    padding: '2px 8px',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {token} ×
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {isCollection ? (
+            <textarea
+              placeholder={translation('Enter values separated by commas')}
+              style={{
+                ...inputStyle,
+                width: '100%',
+                minHeight: '56px',
+                resize: 'vertical',
+                paddingTop: '6px',
+                paddingBottom: '6px',
+              }}
+              value={rule.value}
+              onChange={(e) => onValueChange({ value: e.target.value })}
+              onBlur={onValueCommit}
+            />
+          ) : (
+            <input
+              type={htmlInputType}
+              placeholder={translation('Value')}
+              style={{ ...inputStyle, width: '100%' }}
+              value={rule.value}
+              onChange={(e) => onValueChange({ value: e.target.value })}
+              onBlur={onValueCommit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onValueCommit();
+              }}
+            />
+          )}
+        </div>
       )}
       {inputCount >= 2 && (
         <input

@@ -18,6 +18,17 @@ interface ConditionDraft {
   value2: string;
 }
 
+const COLLECTION_OPERATOR_KEY = 'inCollection';
+
+const parseCollectionTokens = (raw: string): string[] =>
+  String(raw ?? '')
+    .replace(/\\n/g, '\n')
+    .split(/[\n\r,]+/g)
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+const joinCollectionTokens = (tokens: string[]): string => tokens.join(', ');
+
 interface HeaderFilterPopupProps {
   open: boolean;
   anchorRect: DOMRect | null;
@@ -77,8 +88,17 @@ const toCondition = (
     if (!Number.isFinite(num)) return null;
     return { filterType, type: row.operator, value: num };
   }
-  if (!row.value) return null;
-  return { filterType, type: row.operator, filter: row.value, filterTo: row.value2 || undefined };
+  const normalizedValue =
+    row.operator === COLLECTION_OPERATOR_KEY
+      ? joinCollectionTokens(parseCollectionTokens(row.value))
+      : row.value;
+  if (!normalizedValue) return null;
+  return {
+    filterType,
+    type: row.operator,
+    filter: normalizedValue,
+    filterTo: row.value2 || undefined,
+  };
 };
 
 const filled = (row: ConditionDraft, ops: FilterOperatorDescriptor[]) => {
@@ -280,6 +300,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
           const selectedOp =
             operators.find((op) => op.key === row.operator) ?? operators[0] ?? null;
           const inputs = selectedOp?.inputs ?? 1;
+          const isCollection = selectedOp?.key === COLLECTION_OPERATOR_KEY;
+          const tokens = parseCollectionTokens(row.value);
           const canDelete = rows.length > 1;
           return (
             <div key={row.id}>
@@ -346,21 +368,82 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
               </div>
               {inputs >= 1 ? (
                 <div className="mb-1 flex items-center gap-2">
-                  <input
-                    type={inputType}
-                    value={row.value}
-                    placeholder={translation('Filter...')}
-                    style={{ ...styles.control, width: '100%' }}
-                    onChange={(e) => {
-                      const nextValue = e.target.value;
-                      setRows((prev) => {
-                        return normalize(
-                          prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
-                          operators,
-                        );
-                      });
-                    }}
-                  />
+                  <div style={{ width: '100%', display: 'grid' }}>
+                    {isCollection && tokens.length ? (
+                      <div className="mb-1 flex flex-wrap gap-1">
+                        {tokens.map((token) => (
+                          <button
+                            key={token}
+                            type="button"
+                            title={translation('Remove')}
+                            onClick={() => {
+                              const next = tokens.filter((t) => t !== token);
+                              const nextValue = joinCollectionTokens(next);
+                              setRows((prev) => {
+                                return normalize(
+                                  prev.map((r) =>
+                                    r.id === row.id ? { ...r, value: nextValue } : r,
+                                  ),
+                                  operators,
+                                );
+                              });
+                            }}
+                            style={{
+                              border: '1px solid rgba(99, 143, 207, 0.4)',
+                              background: 'rgba(99, 143, 207, 0.15)',
+                              color: '#2B5797',
+                              borderRadius: '999px',
+                              padding: '2px 8px',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {token} ×
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {isCollection ? (
+                      <textarea
+                        value={row.value}
+                        placeholder={translation('Enter values separated by commas')}
+                        style={{
+                          ...styles.control,
+                          width: '100%',
+                          height: '56px',
+                          paddingTop: '6px',
+                          paddingBottom: '6px',
+                          resize: 'vertical',
+                        }}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          setRows((prev) => {
+                            return normalize(
+                              prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
+                              operators,
+                            );
+                          });
+                        }}
+                      />
+                    ) : (
+                      <input
+                        type={inputType}
+                        value={row.value}
+                        placeholder={translation('Filter...')}
+                        style={{ ...styles.control, width: '100%' }}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          setRows((prev) => {
+                            return normalize(
+                              prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
+                              operators,
+                            );
+                          });
+                        }}
+                      />
+                    )}
+                  </div>
                   {canDelete ? (
                     <button
                       type="button"

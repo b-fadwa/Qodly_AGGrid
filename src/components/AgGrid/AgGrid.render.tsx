@@ -512,6 +512,7 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
+
   const searchDs = useMemo(() => {
     if (ds) {
       const clone: any = cloneDeep(ds);
@@ -1505,12 +1506,19 @@ const AgGrid: FC<IAgGridProps> = ({
   const applyHeaderFilterModel = useCallback((nextModel: any) => {
     const api = gridRef.current?.api;
     if (!api || api.isDestroyed()) return;
+    const prevLiveModel = liveFilterModelRef.current ?? {};
     const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
     const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
-    if (!isEqual(currentAg, nextAg)) {
+    const agChanged = !isEqual(currentAg, nextAg);
+    if (agChanged) {
       api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
     }
-    commitLiveFilterModel(nextModel ?? {});
+    const normalizedNextLive = nextModel ?? {};
+    const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
+    commitLiveFilterModel(normalizedNextLive);
+    if (!agChanged && liveChanged) {
+      api.refreshInfiniteCache();
+    }
   }, [commitLiveFilterModel]);
 
   const getState = useCallback(
@@ -2449,11 +2457,21 @@ const AgGrid: FC<IAgGridProps> = ({
                       onDateFinancialFilterEnabledChange={applyDateFinancialFilterToggle}
                       filterModel={liveFilterModel}
                       setFilterModel={(next) => {
+                        const api = gridRef.current?.api;
+                        if (!api || api.isDestroyed()) return;
+                        const prevLiveModel = liveFilterModelRef.current ?? {};
                         const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
-                        gridRef.current?.api?.setFilterModel(
-                          Object.keys(nextAg).length ? nextAg : null,
-                        );
-                        commitLiveFilterModel(next ?? {});
+                        const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
+                        const agChanged = !isEqual(currentAg, nextAg);
+                        if (agChanged) {
+                          api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
+                        }
+                        const normalizedNextLive = next ?? {};
+                        const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
+                        commitLiveFilterModel(normalizedNextLive);
+                        if (!agChanged && liveChanged) {
+                          api.refreshInfiniteCache();
+                        }
                       }}
                       savedFilters={filtersManager.savedFilters}
                       savedSorts={sortsManager.savedSorts}
