@@ -15,6 +15,7 @@ export type AgGridFilterHeaderParams = CustomHeaderProps & {
   filterable?: boolean;
   translation: (key: string) => string;
   onOpenFilter: (args: { colId: string; anchorEl: HTMLElement }) => void;
+  isColumnFilterActive?: (colId: string) => boolean;
 };
 
 const HeaderPopover: React.FC<{ label: string; children: any }> = ({ label, children }) => {
@@ -90,27 +91,42 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
     } = props;
     const filterBtnRef = useRef<HTMLButtonElement>(null);
     const [sortState, setSortState] = useState<string | null>(() => column.getSort() ?? null);
+    const [isFilterHovered, setIsFilterHovered] = useState(false);
     const [sortIndex, setSortIndex] = useState<number | null>(() => {
       const raw = (column as any)?.getSortIndex?.();
       return typeof raw === 'number' && raw >= 0 ? raw : null;
     });
-    const [filterActive, setFilterActive] = useState<boolean>(() => column.isFilterActive());
+    const computeFilterActive = useCallback((): boolean => {
+      // Prefer an OR-combination of all available sources. In this project,
+      // header filters can be mirrored through advanced rules before AG Grid
+      // fully reflects them on the column instance.
+      const apiModel = props.api?.getFilterModel?.() ?? {};
+      const colId = column.getColId();
+      const fromApi = apiModel != null && Object.prototype.hasOwnProperty.call(apiModel, colId);
+      const fromParentMirror = props.isColumnFilterActive?.(colId) ?? false;
+      const fromColumn = column.isFilterActive();
+      return fromApi || fromParentMirror || fromColumn;
+    }, [props.api, props.isColumnFilterActive, column]);
+
+    const [filterActive, setFilterActive] = useState<boolean>(() => computeFilterActive());
 
     useEffect(() => {
       const sync = () => {
         setSortState(column.getSort() ?? null);
         const raw = (column as any)?.getSortIndex?.();
         setSortIndex(typeof raw === 'number' && raw >= 0 ? raw : null);
-        setFilterActive(column.isFilterActive());
+        setFilterActive(computeFilterActive());
       };
       sync();
       column.addEventListener('sortChanged', sync);
       column.addEventListener('filterChanged', sync);
+      props.api?.addEventListener?.('filterChanged', sync);
       return () => {
         column.removeEventListener('sortChanged', sync);
         column.removeEventListener('filterChanged', sync);
+        props.api?.removeEventListener?.('filterChanged', sync);
       };
-    }, [column]);
+    }, [column, computeFilterActive, props.api]);
 
     useImperativeHandle(
       ref,
@@ -119,11 +135,11 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
           setSortState(column.getSort() ?? null);
           const raw = (column as any)?.getSortIndex?.();
           setSortIndex(typeof raw === 'number' && raw >= 0 ? raw : null);
-          setFilterActive(column.isFilterActive());
+          setFilterActive(computeFilterActive());
           return true;
         },
       }),
-      [column],
+      [column, computeFilterActive],
     );
 
     const sortIndicator = useMemo(() => {
@@ -168,9 +184,25 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
           <button
             ref={filterBtnRef}
             type="button"
-            className="flex h-5 w-5 items-center justify-center rounded border border-transparent bg-transparent text-[#6B7280] hover:border-[#D1D5DB] hover:bg-[#F9FAFB]"
+            className="flex h-5 w-5 items-center justify-center rounded border"
             title={translation('Filter')}
             aria-label={translation('Filter')}
+            style={{
+              borderColor: filterActive
+                ? 'rgba(99, 143, 207, 0.4)'
+                : isFilterHovered
+                  ? '#D1D5DB'
+                  : 'transparent',
+              backgroundColor: filterActive
+                ? 'rgba(99, 143, 207, 0.15)'
+                : isFilterHovered
+                  ? '#F9FAFB'
+                  : 'transparent',
+            }}
+            onMouseEnter={() => setIsFilterHovered(true)}
+            onMouseLeave={() => setIsFilterHovered(false)}
+            onFocus={() => setIsFilterHovered(true)}
+            onBlur={() => setIsFilterHovered(false)}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -178,7 +210,7 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
               onOpenFilter({ colId: column.getColId(), anchorEl: filterBtnRef.current });
             }}
           >
-            <FaFilter size={11} color={filterActive ? '#2B5797' : undefined} />
+            <FaFilter size={11} color={filterActive ? '#638FCF' : undefined} />
           </button>
         ) : null}
       </div>

@@ -668,9 +668,11 @@ const AgGrid: FC<IAgGridProps> = ({
   const [selectedFilterName, setSelectedFilterName] = useState<string>('');
   const [selectedSortName, setSelectedSortName] = useState<string>('');
 
-  useEffect(() => {
-    liveFilterModelRef.current = liveFilterModel ?? {};
-  }, [liveFilterModel]);
+  const commitLiveFilterModel = useCallback((nextModel: any) => {
+    const normalized = nextModel ?? {};
+    liveFilterModelRef.current = normalized;
+    setLiveFilterModel(normalized);
+  }, []);
 
   // Bootstrap tracking for `isDefault` auto-apply: once a live value or a
   // default has been applied for a given kind, we leave the grid alone.
@@ -847,6 +849,13 @@ const AgGrid: FC<IAgGridProps> = ({
     [],
   );
 
+  const isColumnFilterActive = useCallback((colId: string): boolean => {
+    const model = liveFilterModelRef.current ?? {};
+    if (model != null && Object.prototype.hasOwnProperty.call(model, colId)) return true;
+    const advancedRules = getAdvancedRulesFromFilterModel(model);
+    return advancedRules.some((rule) => rule.field === colId);
+  }, []);
+
   const colDefs: ColDef[] = useMemo(() => {
     return (
       columns
@@ -878,6 +887,7 @@ const AgGrid: FC<IAgGridProps> = ({
             headerComponentParams: {
               translation,
               filterable: !isRefSource && !!getColumnFilterType(col, isBooleanColumn),
+              isColumnFilterActive,
               onOpenFilter: ({ colId, anchorEl }: { colId: string; anchorEl: HTMLElement }) => {
                 setHeaderFilterPopupState({
                   colId,
@@ -960,6 +970,7 @@ const AgGrid: FC<IAgGridProps> = ({
     manualSelectedCellKeySet,
     showCopyActions,
     translation,
+    isColumnFilterActive,
   ]);
 
   const gridColumnDefs = useMemo(
@@ -1488,8 +1499,8 @@ const AgGrid: FC<IAgGridProps> = ({
     const fromGrid = event.api.getFilterModel() ?? {};
     const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
     const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
-    setLiveFilterModel(next);
-  }, []);
+    commitLiveFilterModel(next);
+  }, [commitLiveFilterModel]);
 
   const applyHeaderFilterModel = useCallback((nextModel: any) => {
     const api = gridRef.current?.api;
@@ -1499,8 +1510,8 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!isEqual(currentAg, nextAg)) {
       api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
     }
-    setLiveFilterModel(nextModel ?? {});
-  }, []);
+    commitLiveFilterModel(nextModel ?? {});
+  }, [commitLiveFilterModel]);
 
   const getState = useCallback(
     async (params: any) => {
@@ -2034,7 +2045,10 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const openAdvancedFilterDialog = () => {
-    setLiveFilterModel(gridRef.current?.api?.getFilterModel() ?? {});
+    const fromGrid = gridRef.current?.api?.getFilterModel() ?? {};
+    const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
+    const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
+    commitLiveFilterModel(next);
     setShowFilterDialog(true);
   };
 
@@ -2435,7 +2449,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         gridRef.current?.api?.setFilterModel(
                           Object.keys(nextAg).length ? nextAg : null,
                         );
-                        setLiveFilterModel(next ?? {});
+                        commitLiveFilterModel(next ?? {});
                       }}
                       savedFilters={filtersManager.savedFilters}
                       savedSorts={sortsManager.savedSorts}

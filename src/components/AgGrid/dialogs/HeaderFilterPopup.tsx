@@ -252,7 +252,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     nextRules: Array<{ field: string; combinator: QodlyFilterCombinator; condition: any }>,
   ) => {
     const agMirror = buildAgGridFilterModelFromAdvancedRules(nextRules);
-    onApply(withAdvancedRulesOnFilterModel(agMirror, nextRules));
+    const nextModel = withAdvancedRulesOnFilterModel(agMirror, nextRules);
+    onApply(nextModel);
   };
 
   return (
