@@ -52,13 +52,10 @@ interface QueryBuilderProps {
 
 /* ----------------------- conversion helpers ----------------------- */
 
-const newId = (): string =>
-  `r_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
+const newId = (): string => `r_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
 
 const findColumnByKey = (columns: IColumn[], key: string): IColumn | undefined =>
-  columns.find(
-    (c) => c.source === key || c.title === key || String(c.id ?? '') === key,
-  );
+  columns.find((c) => c.source === key || c.title === key || String(c.id ?? '') === key);
 
 const filterableColumns = (columns: IColumn[]): IColumn[] =>
   columns.filter((c) => getColumnAgGridFilterType(c) !== null && c.filtering);
@@ -162,9 +159,8 @@ export const rulesToFilterModel = (rules: FilterRule[], columns: IColumn[]): any
       };
     })
     .filter(
-      (
-        item,
-      ): item is { field: string; condition: any; combinator: ColumnCombinator } => item !== null,
+      (item): item is { field: string; condition: any; combinator: ColumnCombinator } =>
+        item !== null,
     );
   const agMirror = buildAgGridFilterModelFromAdvancedRules(compiled);
   const nextModel = withAdvancedRulesOnFilterModel(agMirror, compiled);
@@ -242,7 +238,9 @@ const inputStyle: React.CSSProperties = {
 };
 
 const inputTypeFor = (column: IColumn | undefined): 'text' | 'number' | 'date' => {
-  const dt = String(column?.dataType ?? '').trim().toLowerCase();
+  const dt = String(column?.dataType ?? '')
+    .trim()
+    .toLowerCase();
   if (dt === 'date') return 'date';
   if (['word', 'short', 'long', 'number', 'long64', 'duration'].includes(dt)) return 'number';
   return 'text';
@@ -268,9 +266,7 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
   // Own the rule list locally so "+ Rule" can add an empty row that isn't
   // representable in AG Grid's filterModel yet. The model is only emitted
   // (and the header popups only update) once a rule becomes compilable.
-  const [rules, setRules] = useState<FilterRule[]>(() =>
-    filterModelToRules(filterModel, columns),
-  );
+  const [rules, setRules] = useState<FilterRule[]>(() => filterModelToRules(filterModel, columns));
   // Tracks the last model *we* sent upstream, so external changes (header
   // popup edits, saved-filter loads) can re-seed the rule list without
   // clobbering in-progress rows that the user is still typing into.
@@ -392,7 +388,7 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
 
       {rules.length === 0 ? (
         <div className="text-sm" style={{ color: '#94A3B8', padding: '6px 2px' }}>
-          {translation('No rules yet, click + Rule to start')}
+          {translation('No rules')}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -474,8 +470,7 @@ const RuleRow: FC<RuleRowProps> = ({
     () => getColumnFilterOperators(column),
     [column],
   );
-  const operatorDescriptor =
-    operators.find((op) => op.key === rule.operator) ?? operators[0];
+  const operatorDescriptor = operators.find((op) => op.key === rule.operator) ?? operators[0];
   const inputCount = operatorDescriptor?.inputs ?? 1;
   const htmlInputType = inputTypeFor(column);
 
