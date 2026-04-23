@@ -2071,6 +2071,10 @@ const AgGrid: FC<IAgGridProps> = ({
         const aVisible = !a.isHidden;
         const bVisible = !b.isHidden;
         if (aVisible !== bVisible) return aVisible ? -1 : 1;
+        const aLabel = String(columnLabelByStableField.get(a.field) ?? a.field);
+        const bLabel = String(columnLabelByStableField.get(b.field) ?? b.field);
+        const labelCompare = aLabel.localeCompare(bLabel, undefined, { sensitivity: 'base' });
+        if (labelCompare !== 0) return labelCompare;
         return a.field.localeCompare(b.field);
       })
       .filter((column) => {
