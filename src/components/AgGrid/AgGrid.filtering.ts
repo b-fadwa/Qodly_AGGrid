@@ -527,11 +527,18 @@ export const withAdvancedRulesOnFilterModel = (
 export const buildAgGridFilterModelFromAdvancedRules = (
   rules: QodlyAdvancedRule[],
 ): Record<string, any> => {
+  const normalizeCombinator = (value: any): QodlyFilterCombinator =>
+    value === 'OR' || value === 'EXCEPT' ? value : 'AND';
   const next: Record<string, any> = {};
   rules.forEach((rule) => {
+    const columnCombinator = normalizeCombinator(rule.combinator);
     const existing = next[rule.field];
     if (!existing) {
-      next[rule.field] = rule.condition;
+      next[rule.field] = {
+        ...rule.condition,
+        /** Cross-column combinator used when rebuilding popup/modal state from plain filterModel. */
+        qodlyCombinator: columnCombinator,
+      };
       return;
     }
     if (rule.combinator !== 'AND' && rule.combinator !== 'OR') return;
@@ -544,6 +551,7 @@ export const buildAgGridFilterModelFromAdvancedRules = (
       filterType: existing.filterType,
       operator: rule.combinator,
       conditions: [existing, rule.condition],
+      qodlyCombinator: normalizeCombinator(existing.qodlyCombinator),
     };
   });
   return next;

@@ -89,9 +89,11 @@ const readConditionValues = (
 /** Convert an AG Grid `filterModel` to the modal's flat rule list. */
 export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[] => {
   if (!model || typeof model !== 'object') return [];
+  const readCombinator = (value: any): ColumnCombinator =>
+    value === 'OR' || value === 'EXCEPT' ? value : 'AND';
   const advancedRules = getAdvancedRulesFromFilterModel(model);
   if (advancedRules.length) {
-    return advancedRules.map((rule, index) => {
+    const mapped = advancedRules.map((rule, index) => {
       const column = findColumnByKey(columns, rule.field);
       const filterType = getColumnAgGridFilterType(column);
       const { value, value2 } = readConditionValues(rule.condition, filterType);
@@ -104,6 +106,7 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
         combinator: index === 0 ? undefined : rule.combinator,
       };
     });
+    return mapped;
   }
   const rules: FilterRule[] = [];
   for (const colKey of Object.keys(model)) {
@@ -125,12 +128,16 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
       });
     } else {
       const { value, value2 } = readConditionValues(entry, filterType);
+      const isFirstRule = rules.length === 0;
       rules.push({
         id: newId(),
         field: colKey,
         operator: entry?.type ?? '',
         value,
         value2,
+        combinator: isFirstRule
+          ? undefined
+          : readCombinator(entry?.qodlyCombinator ?? entry?.operator),
       });
     }
   }
@@ -160,7 +167,8 @@ export const rulesToFilterModel = (rules: FilterRule[], columns: IColumn[]): any
       ): item is { field: string; condition: any; combinator: ColumnCombinator } => item !== null,
     );
   const agMirror = buildAgGridFilterModelFromAdvancedRules(compiled);
-  return withAdvancedRulesOnFilterModel(agMirror, compiled);
+  const nextModel = withAdvancedRulesOnFilterModel(agMirror, compiled);
+  return nextModel;
 };
 
 const ZERO_INPUT_OPERATORS = new Set(['isTrue', 'isFalse', 'blank', 'notBlank']);

@@ -84,7 +84,6 @@ import { FaTableColumns, FaCopy } from 'react-icons/fa6';
 import { FaClockRotateLeft } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { FaSortAmountDown, FaFilter } from 'react-icons/fa';
-import { GoTrash } from 'react-icons/go';
 import {
   ROW_NUMBER_COL_ID,
   agGridColumnField,
@@ -99,6 +98,7 @@ import { useFiltersManager } from './state/filters';
 import { useSortsManager } from './state/sorts';
 import { SortingDialog } from './dialogs/SortingDialog';
 import { FilterDialog } from './dialogs/FilterDialog';
+import { ViewDialog } from './dialogs/ViewDialog';
 import AgGridFilterHeader from './AgGridFilterHeader';
 import { HeaderFilterPopup } from './dialogs/HeaderFilterPopup';
 
@@ -175,6 +175,175 @@ const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) 
           {label}
         </div>
       ) : null}
+    </div>
+  );
+};
+
+type QuickShortcutMenuItem = {
+  id: string;
+  label: string;
+};
+
+const QuickShortcutMenu: FC<{
+  menuLabel: string;
+  buttonText: string;
+  sections: Array<{
+    id: string;
+    label: string;
+    emptyLabel: string;
+    items: QuickShortcutMenuItem[];
+    onSelect: (itemId: string) => void;
+  }>;
+}> = ({ menuLabel, buttonText, sections }) => {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const mainPanelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [submenuSide, setSubmenuSide] = useState<'right' | 'left'>('right');
+  const [submenuTop, setSubmenuTop] = useState<number>(0);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onOutsideClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    window.addEventListener('mousedown', onOutsideClick);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', onOutsideClick);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [open]);
+
+  const activeSection = activeSectionId
+    ? (sections.find((section) => section.id === activeSectionId) ?? null)
+    : null;
+
+  const openSectionAtTrigger = useCallback((sectionId: string, triggerEl: HTMLElement) => {
+    const panelRect = mainPanelRef.current?.getBoundingClientRect();
+    const triggerRect = triggerEl.getBoundingClientRect();
+    setActiveSectionId(sectionId);
+    if (!panelRect) return;
+    setSubmenuTop(Math.max(0, triggerRect.top - panelRect.top));
+  }, []);
+
+  useEffect(() => {
+    if (!open || !activeSection) return;
+    const mainRect = mainPanelRef.current?.getBoundingClientRect();
+    if (!mainRect) return;
+
+    const viewportWidth = window.innerWidth;
+    const submenuWidth = 280;
+    const panelGap = 8;
+    const hasRoomOnRight = mainRect.right + panelGap + submenuWidth <= viewportWidth - 8;
+    const hasRoomOnLeft = mainRect.left - panelGap - submenuWidth >= 8;
+
+    if (hasRoomOnRight || !hasRoomOnLeft) {
+      setSubmenuSide('right');
+    } else {
+      setSubmenuSide('left');
+    }
+  }, [open, activeSection]);
+
+  return (
+    <div ref={rootRef} className="relative inline-flex">
+      <button
+        type="button"
+        className="header-button-reload-view inline-flex items-center justify-center rounded-lg border px-2"
+        style={{
+          minWidth: '64px',
+          height: '31px',
+          borderRadius: '8px',
+          borderColor: '#0000001A',
+          color: '#44444C',
+          fontSize: '12px',
+          fontWeight: 500,
+        }}
+        onClick={() =>
+          setOpen((prev) => {
+            const next = !prev;
+            if (next) {
+              setActiveSectionId(null);
+              setSubmenuTop(0);
+            }
+            return next;
+          })
+        }
+        aria-label={menuLabel}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        {buttonText}
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full z-50 mt-1">
+          <div className="relative">
+            <div
+              ref={mainPanelRef}
+              className="min-w-[200px] rounded-lg border bg-white p-2 shadow-lg"
+              style={{ borderColor: '#0000001A' }}
+            >
+              {sections.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  role="menuitem"
+                  className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-[#F5F6FA]"
+                  style={{
+                    color: '#44444C',
+                    fontSize: '12px',
+                    backgroundColor: activeSectionId === section.id ? '#F3F4F6' : 'transparent',
+                  }}
+                  onClick={(event) => openSectionAtTrigger(section.id, event.currentTarget)}
+                  onMouseEnter={(event) => openSectionAtTrigger(section.id, event.currentTarget)}
+                >
+                  <span>
+                    {section.label} {'   >'}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {activeSection && (
+              <div
+                className={`absolute w-max rounded-lg border bg-white p-2 shadow-lg ${
+                  submenuSide === 'right' ? 'left-full ml-2' : 'right-full mr-2'
+                }`}
+                style={{ borderColor: '#0000001A', top: `${submenuTop}px` }}
+              >
+                {activeSection.items.length === 0 ? (
+                  <div className="px-2 py-1.5" style={{ color: '#9CA3AF', fontSize: '12px' }}>
+                    {activeSection.emptyLabel}
+                  </div>
+                ) : (
+                  activeSection.items.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="menuitem"
+                      className="flex w-full items-center rounded-md px-2 py-1.5 text-left hover:bg-[#F5F6FA]"
+                      style={{ color: '#44444C', fontSize: '12px' }}
+                      onClick={() => {
+                        activeSection.onSelect(item.id);
+                        setOpen(false);
+                        setActiveSectionId(null);
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -314,6 +483,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const [containerHeight, setContainerHeight] = useState<number | null>(null);
   const dateFinancialRef = useRef<Date | null>(null);
   const dateFinancialEnabledRef = useRef<boolean>(false);
+  const [hasDateFinancialFilter, setHasDateFinancialFilter] = useState(false);
+  const [dateFinancialFilterEnabled, setDateFinancialFilterEnabled] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -407,6 +578,8 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!dateFinancialDS) {
       dateFinancialRef.current = null;
       dateFinancialEnabledRef.current = false;
+      setHasDateFinancialFilter(false);
+      setDateFinancialFilterEnabled(false);
       return;
     }
     let cancelled = false;
@@ -414,9 +587,14 @@ const AgGrid: FC<IAgGridProps> = ({
       try {
         const v = await dateFinancialDS.getValue();
         if (cancelled) return;
-        dateFinancialRef.current = parseDateFinancial(v);
+        const parsed = parseDateFinancial(v);
+        dateFinancialRef.current = parsed;
+        setHasDateFinancialFilter(parsed != null);
       } catch {
-        if (!cancelled) dateFinancialRef.current = null;
+        if (!cancelled) {
+          dateFinancialRef.current = null;
+          setHasDateFinancialFilter(false);
+        }
       }
     };
     void syncNow();
@@ -876,6 +1054,17 @@ const AgGrid: FC<IAgGridProps> = ({
     },
   });
 
+  const applyDateFinancialFilterToggle = useCallback(
+    (enabled: boolean) => {
+      const next = Boolean(enabled);
+      dateFinancialEnabledRef.current = next;
+      setDateFinancialFilterEnabled(next);
+      filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      gridRef.current?.api?.refreshInfiniteCache();
+    },
+    [filtersManager],
+  );
+
   /** Re-apply grid state whenever one of the 3 live datasources changes externally. */
   useEffect(() => {
     if (!viewDs) return;
@@ -928,6 +1117,7 @@ const AgGrid: FC<IAgGridProps> = ({
         // `onFilterChanged` already triggers `refreshInfiniteCache`; an
         // explicit refresh here would double-fire `getRows`.
         filtersManager.applyPersistedValue(api, data);
+        setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
       } finally {
         setTimeout(() => {
           applyingExternalStateRef.current = false;
@@ -1297,7 +1487,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const onFilterChanged = useCallback((event: FilterChangedEvent) => {
     const fromGrid = event.api.getFilterModel() ?? {};
     const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
-    setLiveFilterModel(withAdvancedRulesOnFilterModel(fromGrid, prevRules));
+    const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
+    setLiveFilterModel(next);
   }, []);
 
   const applyHeaderFilterModel = useCallback((nextModel: any) => {
@@ -1352,6 +1543,7 @@ const AgGrid: FC<IAgGridProps> = ({
           if (filtersManager.applyPersistedValue(api, value)) {
             filterLiveApplied = true;
           }
+          setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
         } catch {
           /* ignore */
         }
@@ -1386,6 +1578,7 @@ const AgGrid: FC<IAgGridProps> = ({
         if (appliedName) {
           filterLiveApplied = true;
           setSelectedFilterName(appliedName);
+          setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
         }
       }
       if (!sortLiveApplied) {
@@ -1808,6 +2001,30 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
+  const handleLoadViewSelection = useCallback(
+    (next: string) => {
+      setSelectedView(next);
+      if (!next) return;
+      viewsManager.loadView(next);
+      const api = gridRef.current?.api;
+      if (!api) return;
+      const currentState = withoutSyntheticRowColumnState(api.getColumnState());
+      setColumnVisibility((prev) =>
+        currentState.map((col: any) => {
+          const previous = prev.find((p) => p.field === col.colId);
+          return {
+            field: col.colId,
+            isHidden: col.hide || false,
+            pinned: col.pinned || null,
+            width: col.width ?? previous?.width ?? null,
+            flex: col.flex ?? previous?.flex ?? null,
+          };
+        }),
+      );
+    },
+    [viewsManager],
+  );
+
   const openAdvancedSortingDialog = () => {
     const fromGrid = buildSortModelFromColumnState(gridRef.current?.api?.getColumnState());
     setSortDialogInitialModel(
@@ -1957,7 +2174,7 @@ const AgGrid: FC<IAgGridProps> = ({
             <>
               {showAnyToolbarSection && (
                 <div
-                  className="grid-header flex items-start justify-between flex-wrap gap-4 "
+                  className="grid-header flex items-start justify-between flex-wrap gap-4 items-end"
                   style={{ boxShadow: '0px 1px 3px 0px rgba(0, 0, 0, 0.1)' }}
                 >
                   {/* AGGrid header actions */}
@@ -2025,6 +2242,22 @@ const AgGrid: FC<IAgGridProps> = ({
                                 <FaFilter size={12} />
                               </button>
                             </IconPopover>
+                            <IconPopover label={translation('Customize columns')}>
+                              <button
+                                className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                onClick={() => setShowPropertiesDialog(true)}
+                                aria-label={translation('Customize columns')}
+                              >
+                                <FaTableColumns size={14} />
+                              </button>
+                            </IconPopover>
                           </div>
                         )}
                         {showCopyActions && (
@@ -2060,30 +2293,65 @@ const AgGrid: FC<IAgGridProps> = ({
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* columns customizer button */}
                         <div className="customizer-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                          <span
-                            className="customizer-title"
-                            style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
-                          >
-                            {translation('View')}
-                          </span>
                           <div className="flex gap-2">
-                            <IconPopover label={translation('Customize columns')}>
-                              <button
-                                className="header-button-customize-view inline-flex items-center justify-center rounded-lg border"
-                                style={{
-                                  width: '31px',
-                                  height: '31px',
-                                  borderRadius: '8px',
-                                  borderColor: '#0000001A',
-                                  color: '#44444C',
-                                }}
-                                onClick={() => setShowPropertiesDialog(true)}
-                                aria-label={translation('Customize columns')}
-                              >
-                                <FaTableColumns size={14} />
-                              </button>
-                            </IconPopover>
-                            <IconPopover label={translation('Reset view')}>
+                            <QuickShortcutMenu
+                              menuLabel={translation('Open quick shortcuts')}
+                              buttonText={translation('Shortcuts')}
+                              sections={[
+                                {
+                                  id: 'views',
+                                  label: translation('Views'),
+                                  emptyLabel: translation('No saved views'),
+                                  items: (showToolbarView ? viewsManager.savedViews : []).map(
+                                    (view) => {
+                                      const key = String(view.name ?? view.title ?? view.id ?? '');
+                                      return { id: key, label: key };
+                                    },
+                                  ),
+                                  onSelect: (itemId) => handleLoadViewSelection(itemId),
+                                },
+                                {
+                                  id: 'filters',
+                                  label: translation('Filters'),
+                                  emptyLabel: translation('No saved filters'),
+                                  items: (showToolbarFiltering
+                                    ? filtersManager.savedFilters
+                                    : []
+                                  ).map((filterRecord) => {
+                                    const key = String(
+                                      filterRecord.name ??
+                                        filterRecord.title ??
+                                        filterRecord.id ??
+                                        '',
+                                    );
+                                    return { id: key, label: key };
+                                  }),
+                                  onSelect: (itemId) => {
+                                    setSelectedFilterName(itemId);
+                                    filtersManager.loadFilter(itemId);
+                                    setDateFinancialFilterEnabled(
+                                      Boolean(dateFinancialEnabledRef.current),
+                                    );
+                                  },
+                                },
+                                {
+                                  id: 'sorts',
+                                  label: translation('Sorts'),
+                                  emptyLabel: translation('No saved sorts'),
+                                  items: (showToolbarSorting ? sortsManager.savedSorts : []).map(
+                                    (sort) => {
+                                      const key = String(sort.name ?? sort.title ?? sort.id ?? '');
+                                      return { id: key, label: key };
+                                    },
+                                  ),
+                                  onSelect: (itemId) => {
+                                    setSelectedSortName(itemId);
+                                    sortsManager.loadSort(itemId);
+                                  },
+                                },
+                              ]}
+                            />
+                            <IconPopover label={translation('Reset')}>
                               <button
                                 className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
                                 style={{
@@ -2094,7 +2362,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   color: '#44444C',
                                 }}
                                 onClick={() => resetColumnview()}
-                                aria-label={translation('Reset view')}
+                                aria-label={translation('Reset')}
                               >
                                 <FaClockRotateLeft size={14} />
                               </button>
@@ -2103,378 +2371,32 @@ const AgGrid: FC<IAgGridProps> = ({
                         </div>
                       </div>
                     )}
-                    {/* new view section */}
-                    {showToolbarSaveView && (
-                      <div className="view-management flex flex-row ">
-                        <div className="view-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                          <span
-                            className="view-title"
-                            style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
-                          >
-                            {translation('Save view')}
-                          </span>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              placeholder={translation('View name')}
-                              className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                              value={viewName}
-                              onChange={(e: any) => {
-                                setViewName(e.target.value);
-                              }}
-                              style={{
-                                height: '31px',
-                                borderRadius: '6px',
-                                borderColor: '#0000001A',
-                                color: '#44444C',
-                                fontSize: '12px',
-                                fontWeight: 500,
-                              }}
-                            />
-                            {!showToolbarSavedViews && (
-                              <button
-                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-                                onClick={() => {
-                                  const trimmed = viewName.trim();
-                                  if (trimmed) {
-                                    const existing = viewsManager.savedViews.find(
-                                      (v) => v.name === trimmed || v.title === trimmed,
-                                    );
-                                    if (existing) {
-                                      viewsManager.updateView(existing.name, {
-                                        isDefault: isViewDefault,
-                                      });
-                                    } else {
-                                      viewsManager.saveView(trimmed, {
-                                        isDefault: isViewDefault,
-                                      });
-                                    }
-                                  } else if (selectedView) {
-                                    viewsManager.updateView(selectedView, {
-                                      isDefault: isViewDefault,
-                                    });
-                                  }
-                                  setViewName('');
-                                  if (!selectedView) setIsViewDefault(false);
-                                }}
-                                disabled={!viewName.trim() && !selectedView}
-                                style={{
-                                  height: '31px',
-                                  borderRadius: '6px',
-                                  borderColor: '#0000001A',
-                                  color: '#44444C',
-                                  fontSize: '12px',
-                                  fontWeight: 500,
-                                }}
-                              >
-                                {(() => {
-                                  const trimmed = viewName.trim();
-                                  const matching = trimmed
-                                    ? viewsManager.savedViews.find(
-                                        (v) => v.name === trimmed || v.title === trimmed,
-                                      )
-                                    : null;
-                                  const willUpdate =
-                                    Boolean(matching) || (!trimmed && !!selectedView);
-                                  return translation(willUpdate ? 'Update' : 'Save');
-                                })()}
-                              </button>
-                            )}
-                            <label
-                              className="inline-flex items-center gap-1 whitespace-nowrap"
-                              style={{
-                                color: '#717182',
-                                fontSize: '12px',
-                                fontWeight: 500,
-                              }}
-                              title={translation('Set as default')}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isViewDefault}
-                                onChange={(e) => setIsViewDefault(e.target.checked)}
-                              />
-                              <span>{translation('Default')}</span>
-                            </label>
-                          </div>
-                        </div>
-                        {/* saved views section */}
-                        {showToolbarSavedViews && (
-                          <div className="views-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
-                            <span
-                              className="views-title "
-                              style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}
-                            >
-                              {translation('Saved views')}
-                            </span>
-                            <div className="flex gap-2">
-                              <select
-                                value={selectedView}
-                                className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                                onChange={(e: any) => {
-                                  const next = e.target.value;
-                                  setSelectedView(next);
-                                  if (next) viewsManager.loadView(next);
-                                }}
-                                style={{
-                                  height: '31px',
-                                  borderRadius: '6px',
-                                  borderColor: '#0000001A',
-                                  color: '#44444C',
-                                  fontSize: '12px',
-                                  fontWeight: 500,
-                                }}
-                              >
-                                <option value="">{translation('Select view')}</option>
-                                {viewsManager.savedViews.map((savedView) => (
-                                  <option key={savedView.name} value={savedView.name}>
-                                    {savedView.name}
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                className="header-button-trash inline-flex items-center justify-center rounded-lg border"
-                                style={{
-                                  width: '31px',
-                                  height: '31px',
-                                  borderRadius: '8px',
-                                  color: '#EC7B80',
-                                  borderColor: '#EC7B80',
-                                  backgroundColor: '#EC7B8033',
-                                }}
-                                onClick={() => {
-                                  if (!selectedView) return;
-                                  viewsManager.deleteView(selectedView);
-                                }}
-                              >
-                                <GoTrash size={14} />
-                              </button>
-                              <button
-                                className="header-button inline-flex gap-2 items-center rounded-lg border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-                                onClick={() => {
-                                  const trimmed = viewName.trim();
-                                  if (trimmed) {
-                                    const existing = viewsManager.savedViews.find(
-                                      (v) => v.name === trimmed || v.title === trimmed,
-                                    );
-                                    if (existing) {
-                                      viewsManager.updateView(existing.name, {
-                                        isDefault: isViewDefault,
-                                      });
-                                    } else {
-                                      viewsManager.saveView(trimmed, {
-                                        isDefault: isViewDefault,
-                                      });
-                                    }
-                                  } else if (selectedView) {
-                                    viewsManager.updateView(selectedView, {
-                                      isDefault: isViewDefault,
-                                    });
-                                  }
-                                  setViewName('');
-                                  if (!selectedView) setIsViewDefault(false);
-                                }}
-                                disabled={!viewName.trim() && !selectedView}
-                                style={{
-                                  height: '31px',
-                                  borderRadius: '6px',
-                                  borderColor: '#0000001A',
-                                  color: '#44444C',
-                                  fontSize: '12px',
-                                  fontWeight: 500,
-                                }}
-                              >
-                                {(() => {
-                                  const trimmed = viewName.trim();
-                                  const matching = trimmed
-                                    ? viewsManager.savedViews.find(
-                                        (v) => v.name === trimmed || v.title === trimmed,
-                                      )
-                                    : null;
-                                  const willUpdate =
-                                    Boolean(matching) || (!trimmed && !!selectedView);
-                                  return translation(willUpdate ? 'Update' : 'Save');
-                                })()}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                   {/* columns customizer dialog */}
-                  {showToolbarView && showPropertiesDialog && (
-                    <div
-                      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-                      onClick={() => setShowPropertiesDialog(false)}
-                    >
-                      <div
-                        className="w-full max-w-4xl rounded-xl border border-slate-200 bg-white shadow-xl"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-start justify-between gap-3  px-5 py-4 rounded-t-xl">
-                          <div>
-                            <h1
-                              className="tracking-wide"
-                              style={{ color: '#0A0A0A', fontSize: '16px', fontWeight: 500 }}
-                            >
-                              {translation('COLUMN STATE')}
-                            </h1>
-                            <span
-                              className="mt-1 block text-sm "
-                              style={{ color: '#6B7280', fontSize: '16px' }}
-                            >
-                              {translation('Show or hide columns for this grid view')}
-                            </span>
-                          </div>
-                          <button
-                            className=" inline-flex items-center justify-center"
-                            style={{
-                              color: '#6A7282',
-                            }}
-                            onClick={() => setShowPropertiesDialog(false)}
-                          >
-                            <IoMdClose />
-                          </button>
-                        </div>
-                        <div className="px-5 py-4">
-                          <div className="sticky top-0 z-10 bg-white pb-3">
-                            <div className="flex flex-row gap-2 md:flex-row md:items-center">
-                              <input
-                                className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-slate-500"
-                                placeholder={translation('Search field')}
-                                value={propertySearch}
-                                onChange={(e) => setPropertySearch(e.target.value)}
-                                style={{
-                                  height: '31px',
-                                  borderColor: '#0000001A',
-                                  borderRadius: '6px',
-                                }}
-                              />
-
-                              <label
-                                className="inline-flex items-center gap-2 whitespace-nowrap text-sm"
-                                style={{ color: '#717182', fontSize: '12px', fontWeight: 500 }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={showVisibleOnly}
-                                  onChange={(e) => setShowVisibleOnly(e.target.checked)}
-                                  style={{
-                                    height: '12px',
-                                    width: '12px',
-                                    backgroundColor: '#2b5797',
-                                    borderRadius: '4px',
-                                  }}
-                                />
-                                <span>{translation('Visible only')}</span>
-                              </label>
-                              <div>
-                                <button
-                                  type="button"
-                                  className="rounded-md border  bg-white px-3 py-2 flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                                  style={{
-                                    borderColor: 'rgba(0, 0, 0, 0.1)',
-                                    color: '#0A0A0A',
-                                    height: '31px',
-                                    fontSize: '12px',
-                                    fontWeight: 500,
-                                  }}
-                                  onClick={() => setFilteredColumnsVisible(true)}
-                                  disabled={filteredColumns.length === 0}
-                                >
-                                  {translation('Select all')}
-                                </button>
-                              </div>
-                              <button
-                                type="button"
-                                className="rounded-md border px-3 flex items-center justify-center py-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                style={{
-                                  borderColor: '#6B8AD4',
-                                  color: '#6B8AD4',
-                                  height: '31px',
-                                  fontSize: '12px',
-                                  fontWeight: 500,
-                                }}
-                                onClick={() => setFilteredColumnsVisible(false)}
-                                disabled={filteredColumns.length === 0}
-                              >
-                                {translation('Clear all')}
-                              </button>
-                            </div>
-                          </div>
-                          {/* <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
-                        <div>
-                          {translation('Visible')} : {visibleCount} / {normalizedColumns.length}
-                        </div>
-                        <div>
-                          <div>
-                            {translation('Showing')}: {filteredColumns.length}
-                          </div>
-                        </div> 
-                      </div> */}
-
-                          <div
-                            className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2"
-                            style={{
-                              backgroundColor: '#FAFAFA',
-                              borderColor: '#D1D5DC',
-                              borderRadius: '10px',
-                            }}
-                          >
-                            {filteredColumns.length === 0 ? (
-                              <div className="px-3 py-8 text-center text-sm text-slate-500">
-                                {translation('No fields match your filter')}.
-                              </div>
-                            ) : (
-                              filteredColumns.map((column) => {
-                                const isVisible = !column.isHidden;
-                                return (
-                                  <div
-                                    key={column.field}
-                                    className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
-                                  >
-                                    <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
-                                      <input
-                                        type="checkbox"
-                                        checked={isVisible}
-                                        onChange={() => handleColumnToggle(column.field)}
-                                        style={{
-                                          height: '12px',
-                                          width: '12px',
-                                          backgroundColor: '#2b5797',
-                                          borderRadius: '4px',
-                                        }}
-                                      />
-                                      <span
-                                        className={`truncate ${
-                                          isVisible ? 'text-gray-700' : 'text-slate-400'
-                                        }`}
-                                      >
-                                        {columnLabelByStableField.get(column.field) ?? column.field}
-                                      </span>
-                                    </label>
-
-                                    <select
-                                      value={column.pinned || 'unpinned'}
-                                      className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
-                                      style={{ height: '31px' }}
-                                      onChange={(e) =>
-                                        handlePinChange(column.field, e.target.value)
-                                      }
-                                    >
-                                      <option value="unpinned">{translation('No pin')}</option>
-                                      <option value="left">{translation('Pin left')}</option>
-                                      <option value="right">{translation('Pin right')}</option>
-                                    </select>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                  {showToolbarView && (
+                    <ViewDialog
+                      open={showPropertiesDialog}
+                      onClose={() => setShowPropertiesDialog(false)}
+                      translation={translation}
+                      showToolbarSaveView={showToolbarSaveView}
+                      showToolbarSavedViews={showToolbarSavedViews}
+                      viewName={viewName}
+                      setViewName={setViewName}
+                      selectedView={selectedView}
+                      onLoadView={handleLoadViewSelection}
+                      isViewDefault={isViewDefault}
+                      setIsViewDefault={setIsViewDefault}
+                      viewsManager={viewsManager}
+                      propertySearch={propertySearch}
+                      setPropertySearch={setPropertySearch}
+                      showVisibleOnly={showVisibleOnly}
+                      setShowVisibleOnly={setShowVisibleOnly}
+                      filteredColumns={filteredColumns}
+                      setFilteredColumnsVisible={setFilteredColumnsVisible}
+                      handleColumnToggle={handleColumnToggle}
+                      handlePinChange={handlePinChange}
+                      columnLabelByStableField={columnLabelByStableField}
+                    />
                   )}
                   {showToolbarSorting && (
                     <SortingDialog
@@ -2504,6 +2426,9 @@ const AgGrid: FC<IAgGridProps> = ({
                       onClose={() => setShowFilterDialog(false)}
                       translation={translation}
                       columns={columns}
+                      showDateFinancialToggle={hasDateFinancialFilter}
+                      dateFinancialFilterEnabled={dateFinancialFilterEnabled}
+                      onDateFinancialFilterEnabledChange={applyDateFinancialFilterToggle}
                       filterModel={liveFilterModel}
                       setFilterModel={(next) => {
                         const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
@@ -2515,7 +2440,10 @@ const AgGrid: FC<IAgGridProps> = ({
                       savedFilters={filtersManager.savedFilters}
                       savedSorts={sortsManager.savedSorts}
                       saveFilter={filtersManager.saveFilter}
-                      loadFilter={filtersManager.loadFilter}
+                      loadFilter={(key) => {
+                        filtersManager.loadFilter(key);
+                        setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
+                      }}
                       updateFilter={filtersManager.updateFilter}
                       deleteFilter={filtersManager.deleteFilter}
                       selectedFilter={selectedFilterName}
@@ -2659,6 +2587,9 @@ const AgGrid: FC<IAgGridProps> = ({
                   ? (liveFilterModel?.[headerFilterPopupState.colId] ?? null)
                   : null
               }
+              showDateFinancialToggle={hasDateFinancialFilter}
+              dateFinancialFilterEnabled={dateFinancialFilterEnabled}
+              onDateFinancialFilterEnabledChange={applyDateFinancialFilterToggle}
               translation={translation}
               onApply={(nextModel) => {
                 applyHeaderFilterModel(nextModel ?? {});

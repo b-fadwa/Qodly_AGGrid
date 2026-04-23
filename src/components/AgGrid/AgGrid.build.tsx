@@ -364,7 +364,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 borderColor: '#0000001A',
                                 color: '#44444C',
                               }}
-                              aria-label={translation('Reset view')}
+                              aria-label={translation('Reset')}
                             >
                               <FaClockRotateLeft size={14} />
                             </button>
@@ -562,7 +562,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         <div>{translation("Showing:")} </div>
                       </div> */}
                       <div
-                        className="max-h-96 space-y-1 overflow-y-auto rounded-lg border p-2 mr-5 ml-5 mb-2"
+                        className="h-96 space-y-1 overflow-y-auto rounded-lg border p-2 mr-5 ml-5 mb-2"
                         style={{
                           backgroundColor: '#FAFAFA',
                           borderColor: '#D1D5DC',

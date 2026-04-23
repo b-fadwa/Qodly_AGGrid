@@ -25,6 +25,9 @@ interface HeaderFilterPopupProps {
   colId: string | null;
   currentEntry: any;
   currentModel: any;
+  showDateFinancialToggle: boolean;
+  dateFinancialFilterEnabled: boolean;
+  onDateFinancialFilterEnabledChange: (enabled: boolean) => void;
   translation: (key: string) => string;
   onApply: (nextModel: any | null) => void;
   onClose: () => void;
@@ -98,6 +101,39 @@ const normalize = (rows: ConditionDraft[], ops: FilterOperatorDescriptor[]): Con
   return next;
 };
 
+const normalizeCombinator = (value: any): QodlyFilterCombinator =>
+  value === 'OR' || value === 'EXCEPT' ? value : 'AND';
+
+const rulesFromPlainFilterModel = (
+  model: any,
+): Array<{ field: string; combinator: QodlyFilterCombinator; condition: any }> => {
+  if (!model || typeof model !== 'object') return [];
+  const rules: Array<{ field: string; combinator: QodlyFilterCombinator; condition: any }> = [];
+  Object.keys(model).forEach((field) => {
+    if (field === '__qodlyAdvancedRules') return;
+    const entry = model[field];
+    if (!entry || typeof entry !== 'object') return;
+    if (Array.isArray(entry.conditions)) {
+      const columnCombinator = normalizeCombinator(entry.qodlyCombinator ?? entry.operator);
+      const rowCombinator = normalizeCombinator(entry.operator);
+      entry.conditions.forEach((condition: any, index: number) => {
+        rules.push({
+          field,
+          condition,
+          combinator: index === 0 ? columnCombinator : rowCombinator,
+        });
+      });
+      return;
+    }
+    rules.push({
+      field,
+      condition: entry,
+      combinator: normalizeCombinator(entry.qodlyCombinator),
+    });
+  });
+  return rules;
+};
+
 const styles = {
   panel: {
     position: 'fixed',
@@ -138,6 +174,9 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   colId,
   currentEntry,
   currentModel,
+  showDateFinancialToggle,
+  dateFinancialFilterEnabled,
+  onDateFinancialFilterEnabledChange,
   translation,
   onApply,
   onClose,
@@ -157,6 +196,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   const [rows, setRows] = useState<ConditionDraft[]>([]);
   const [rowCombinator, setRowCombinator] = useState<QodlyFilterCombinator>('AND');
   const [columnCombinator, setColumnCombinator] = useState<QodlyFilterCombinator>('AND');
+  const [dateFinancialFilterDraft, setDateFinancialFilterDraft] = useState<boolean>(false);
   const hasOtherColumns = useMemo(() => {
     if (!colId) return false;
     if (activeRules.some((r) => r.field !== colId)) return true;
@@ -165,6 +205,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
 
   useEffect(() => {
     if (!open || !colId) return;
+    setDateFinancialFilterDraft(Boolean(dateFinancialFilterEnabled));
     const forCol = activeRules.filter((r) => r.field === colId);
     if (forCol.length) {
       const parsed = forCol.map((r) => parseEntry(r.condition, operators)[0]);
@@ -174,9 +215,16 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
       return;
     }
     setRows(normalize(parseEntry(currentEntry, operators), operators));
-    setColumnCombinator('AND');
-    setRowCombinator(currentEntry?.operator === 'OR' ? 'OR' : 'AND');
-  }, [open, colId, currentEntry, operators, activeRules]);
+    const entryCombinator =
+      currentEntry?.qodlyCombinator === 'OR' || currentEntry?.qodlyCombinator === 'EXCEPT'
+        ? currentEntry.qodlyCombinator
+        : currentEntry?.operator === 'OR' || currentEntry?.operator === 'EXCEPT'
+          ? currentEntry.operator
+          : 'AND';
+    setColumnCombinator(entryCombinator);
+    const rowOp = Array.isArray(currentEntry?.conditions) ? currentEntry?.operator : 'AND';
+    setRowCombinator(rowOp === 'OR' || rowOp === 'EXCEPT' ? rowOp : 'AND');
+  }, [open, colId, currentEntry, operators, activeRules, dateFinancialFilterEnabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -214,7 +262,10 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
         {hasOtherColumns ? (
           <select
             value={columnCombinator}
-            onChange={(e) => setColumnCombinator(e.target.value as QodlyFilterCombinator)}
+            onChange={(e) => {
+              const next = e.target.value as QodlyFilterCombinator;
+              setColumnCombinator(next);
+            }}
             style={{ ...styles.control, width: '120px', height: '28px', fontSize: '12px' }}
           >
             <option value="AND">{translation('AND')}</option>
@@ -249,18 +300,19 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                 <select
                   style={{ ...styles.control, flex: 1 }}
                   value={row.operator}
-                  onChange={(e) =>
-                    setRows((prev) =>
-                      normalize(
+                  onChange={(e) => {
+                    const nextOperator = e.target.value;
+                    setRows((prev) => {
+                      return normalize(
                         prev.map((r) =>
                           r.id === row.id
-                            ? { ...r, operator: e.target.value, value: '', value2: '' }
+                            ? { ...r, operator: nextOperator, value: '', value2: '' }
                             : r,
                         ),
                         operators,
-                      ),
-                    )
-                  }
+                      );
+                    });
+                  }}
                 >
                   {boolOps(operators) ? (
                     <option value="" disabled>
@@ -278,14 +330,14 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     type="button"
                     className="inline-flex items-center justify-center rounded-lg border"
                     style={styles.trash}
-                    onClick={() =>
-                      setRows((prev) =>
-                        normalize(
+                    onClick={() => {
+                      setRows((prev) => {
+                        return normalize(
                           prev.filter((r) => r.id !== row.id),
                           operators,
-                        ),
-                      )
-                    }
+                        );
+                      });
+                    }}
                   >
                     <GoTrash size={14} />
                   </button>
@@ -298,28 +350,29 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     value={row.value}
                     placeholder={translation('Filter...')}
                     style={{ ...styles.control, width: '100%' }}
-                    onChange={(e) =>
-                      setRows((prev) =>
-                        normalize(
-                          prev.map((r) => (r.id === row.id ? { ...r, value: e.target.value } : r)),
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setRows((prev) => {
+                        return normalize(
+                          prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
                           operators,
-                        ),
-                      )
-                    }
+                        );
+                      });
+                    }}
                   />
                   {canDelete ? (
                     <button
                       type="button"
                       className="inline-flex items-center justify-center rounded-lg border"
                       style={styles.trash}
-                      onClick={() =>
-                        setRows((prev) =>
-                          normalize(
+                      onClick={() => {
+                        setRows((prev) => {
+                          return normalize(
                             prev.filter((r) => r.id !== row.id),
                             operators,
-                          ),
-                        )
-                      }
+                          );
+                        });
+                      }}
                     >
                       <GoTrash size={14} />
                     </button>
@@ -332,27 +385,44 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   value={row.value2}
                   placeholder={translation('Filter...')}
                   style={{ ...styles.control, width: '100%' }}
-                  onChange={(e) =>
-                    setRows((prev) =>
-                      normalize(
-                        prev.map((r) => (r.id === row.id ? { ...r, value2: e.target.value } : r)),
+                  onChange={(e) => {
+                    const nextValue2 = e.target.value;
+                    setRows((prev) => {
+                      return normalize(
+                        prev.map((r) => (r.id === row.id ? { ...r, value2: nextValue2 } : r)),
                         operators,
-                      ),
-                    )
-                  }
+                      );
+                    });
+                  }}
                 />
               ) : null}
             </div>
           );
         })}
       </div>
+      <>
+        {showDateFinancialToggle ? (
+          <div className="flex items-center justify-center gap-2 border-t border-[#D1D5DB] bg-[#ECECEC] p-2">
+            <label
+              className="mr-auto inline-flex items-center gap-1.5"
+              style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
+            >
+              <input
+                type="checkbox"
+                checked={dateFinancialFilterDraft}
+                onChange={(e) => setDateFinancialFilterDraft(e.target.checked)}
+              />
+              <span>{translation('filter by fiscal year')}</span>
+            </label>
+          </div>
+        ) : null}
+      </>
       <div className="flex items-center justify-center gap-2 border-t border-[#D1D5DB] bg-[#ECECEC] p-2">
         <button
           type="button"
           style={{ ...styles.control, borderColor: '#0000001A', width: 'auto' }}
           onClick={() => {
-            applyRules(activeRules.filter((r) => r.field !== colId));
-            onClose();
+            applyRules([]);
           }}
         >
           {translation('Clear filters')}
@@ -370,8 +440,12 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
             const built = rows
               .map((r) => toCondition(r, filterType))
               .filter((v): v is any => v !== null);
-            const remaining = activeRules.filter((r) => r.field !== colId);
+            const baseRules = activeRules.length
+              ? activeRules
+              : rulesFromPlainFilterModel(currentModel);
+            const remaining = baseRules.filter((r) => r.field !== colId);
             if (!built.length) {
+              onDateFinancialFilterEnabledChange(dateFinancialFilterDraft);
               applyRules(remaining);
               onClose();
               return;
@@ -388,6 +462,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   : rowCombinator) as QodlyFilterCombinator,
               })),
             ];
+            onDateFinancialFilterEnabledChange(dateFinancialFilterDraft);
             applyRules(nextRules);
             onClose();
           }}

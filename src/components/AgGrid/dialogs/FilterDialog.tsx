@@ -12,6 +12,9 @@ interface FilterDialogProps {
   onClose: () => void;
   translation: Translation;
   columns: IColumn[];
+  showDateFinancialToggle: boolean;
+  dateFinancialFilterEnabled: boolean;
+  onDateFinancialFilterEnabledChange: (enabled: boolean) => void;
   /** AG Grid `getFilterModel()` snapshot — kept in sync with the header filter via `onFilterChanged`. */
   filterModel: any;
   /** Push a new filterModel back to AG Grid (typically `gridApi.setFilterModel`). */
@@ -36,6 +39,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   onClose,
   translation,
   columns,
+  showDateFinancialToggle,
+  dateFinancialFilterEnabled,
+  onDateFinancialFilterEnabledChange,
   filterModel,
   setFilterModel,
   savedFilters,
@@ -145,6 +151,19 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             filterModel={filterModel}
             onChange={setFilterModel}
           />
+          {showDateFinancialToggle ? (
+            <label
+              className="mt-3 inline-flex items-center gap-2"
+              style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
+            >
+              <input
+                type="checkbox"
+                checked={dateFinancialFilterEnabled}
+                onChange={(e) => onDateFinancialFilterEnabledChange(e.target.checked)}
+              />
+              <span>{translation('filter by fiscal year')}</span>
+            </label>
+          ) : null}
         </div>
 
         <div className="px-5 py-3 flex flex-col gap-3" style={{ borderTop: '1px solid #E5E7EB' }}>
