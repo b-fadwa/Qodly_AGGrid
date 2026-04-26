@@ -4,8 +4,10 @@ import Build from './SimpleAgGrid.build';
 import Render from './SimpleAgGrid.render';
 import {
   ClientSideRowModelModule,
+  InfiniteRowModelModule,
   ColumnApiModule,
   RowApiModule,
+  ScrollApiModule,
   ValidationModule,
   CellStyleModule,
   RowStyleModule,
@@ -20,7 +22,9 @@ import {
 
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
+  InfiniteRowModelModule,
   RowApiModule,
+  ScrollApiModule,
   ColumnApiModule,
   ValidationModule,
   CellStyleModule,

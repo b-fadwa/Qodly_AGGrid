@@ -19,7 +19,12 @@ import {
   RowClassParams,
   themeQuartz,
   ICellRendererParams,
+  GridReadyEvent,
+  IGetRowsParams,
 } from 'ag-grid-community';
+
+/** Match `AgGrid.render` infinite row paging (see `cacheBlockSize` there). */
+const CACHE_BLOCK_SIZE = 100;
 
 const ROW_NUMBER_COL_ID = '__qodlyRowNumber';
 
@@ -108,11 +113,9 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
 
   const { fetchIndex, fetchPage } = useDataLoader({ source: ds });
 
-  const [rowData, setRowData] = useState<any[]>([]);
   const [selected, setSelected] = useState(-1);
   const [scrollIndex, setScrollIndex] = useState(0);
   const [, setCount] = useState(0);
-  const loadedRef = useRef(false);
   const isSelectingRef = useRef(false);
 
   const columnsRef = useRef(columns);
@@ -151,35 +154,50 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     setPinnedTopRowData([createEmptyInputRow()]);
   }, [createEmptyInputRow]);
 
+  const resetInputRowRef = useRef(resetInputRow);
+  resetInputRowRef.current = resetInputRow;
+
   useEffect(() => {
     resetInputRow();
   }, [enableAddNewRow, resetInputRow]);
 
-  const loadAllData = useCallback(async () => {
-    const currentDs = dsRef.current;
-    if (!currentDs) return;
-    try {
-      const selLength = (currentDs as any).entitysel?._private?.selLength ?? 0;
-      if (selLength === 0) {
-        setRowData([]);
-        resetInputRow();
-        return;
-      }
-      const entities = await fetchPageRef.current(0, selLength);
-      const cols = columnsRef.current;
-      const rows = entities.map((data: any, index: number) => {
-        const row: any = { __entity: data, __rowIndex: index };
-        cols.forEach((col) => {
-          row[col.title] = data[col.source];
-        });
-        return row;
-      });
-      setRowData(rows);
-      resetInputRow();
-    } catch {
-      setRowData([]);
-    }
-  }, [resetInputRow]);
+  const onGridReady = useCallback((params: GridReadyEvent) => {
+    params.api.setGridOption('datasource', {
+      getRows: async (rowParams: IGetRowsParams) => {
+        const currentDs = dsRef.current;
+        if (!currentDs) {
+          rowParams.successCallback([], 0);
+          return;
+        }
+        const selLength = (currentDs as any).entitysel?._private?.selLength ?? 0;
+        if (selLength === 0) {
+          resetInputRowRef.current();
+          rowParams.successCallback([], 0);
+          return;
+        }
+        const count = rowParams.endRow - rowParams.startRow;
+        if (count <= 0) {
+          rowParams.successCallback([], selLength);
+          return;
+        }
+        try {
+          const entities = await fetchPageRef.current(rowParams.startRow, count);
+          const cols = columnsRef.current;
+          const rows = entities.map((data: any, index: number) => {
+            const globalIndex = rowParams.startRow + index;
+            const row: any = { __entity: data, __rowIndex: globalIndex };
+            cols.forEach((col) => {
+              row[col.title] = data[col.source];
+            });
+            return row;
+          });
+          rowParams.successCallback(rows, selLength);
+        } catch {
+          rowParams.failCallback();
+        }
+      },
+    });
+  }, []);
 
   const { updateCurrentDsValue } = useDsChangeHandler({
     source: ds,
@@ -192,7 +210,8 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     fetchIndex,
     onDsChange: async () => {
       if (isSelectingRef.current) return;
-      await loadAllData();
+      resetInputRow();
+      gridRef.current?.api?.refreshInfiniteCache();
     },
     onCurrentDsChange: (sel) => {
       if (!gridRef.current) return;
@@ -205,12 +224,6 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       });
     },
   });
-
-  useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-    loadAllData();
-  }, [loadAllData]);
 
   // -- Column definitions --
 
@@ -479,7 +492,13 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
           <div style={{ flex: 1, minHeight: 0 }}>
             <AgGridReact
               ref={gridRef}
-              rowData={rowData}
+              rowModelType="infinite"
+              cacheBlockSize={CACHE_BLOCK_SIZE}
+              maxBlocksInCache={10}
+              cacheOverflowSize={2}
+              maxConcurrentDatasourceRequests={1}
+              rowBuffer={0}
+              onGridReady={onGridReady}
               pinnedTopRowData={enableAddNewRow ? pinnedTopRowData : []}
               columnDefs={colDefs}
               defaultColDef={defaultColDef}
