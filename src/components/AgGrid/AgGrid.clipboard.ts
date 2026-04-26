@@ -1,6 +1,40 @@
 import { GridApi } from 'ag-grid-community';
 
 export type GridCopyMode = 'cells' | 'rows';
+
+/** Full tri-state for toolbar / keyboard copy (including disabled). */
+export type GridCopyModeSetting = 'cells' | 'rows' | 'none';
+
+const copyModeStorageKey = (nodeId: string) => `qodly-aggrid:copyMode:${nodeId}`;
+
+/**
+ * Per-grid copy mode so users keep “select + Ctrl+C” after the first visit.
+ * Falls back to `rows` when multi-select is on (desktop-like), else `cells`.
+ */
+export function getInitialGridCopyMode(
+  nodeId: string | undefined,
+  multiSelection: boolean,
+): GridCopyModeSetting {
+  if (typeof localStorage === 'undefined' || !nodeId) {
+    return multiSelection ? 'rows' : 'cells';
+  }
+  try {
+    const raw = localStorage.getItem(copyModeStorageKey(nodeId));
+    if (raw === 'cells' || raw === 'rows' || raw === 'none') return raw;
+  } catch {
+    // ignore
+  }
+  return multiSelection ? 'rows' : 'cells';
+}
+
+export function persistGridCopyMode(nodeId: string | undefined, mode: GridCopyModeSetting): void {
+  if (typeof localStorage === 'undefined' || !nodeId) return;
+  try {
+    localStorage.setItem(copyModeStorageKey(nodeId), mode);
+  } catch {
+    // ignore
+  }
+}
 export type TManualSelectedCell = {
   rowIndex: number;
   colId: string;
