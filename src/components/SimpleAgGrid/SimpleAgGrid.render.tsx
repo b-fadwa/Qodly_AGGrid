@@ -19,12 +19,20 @@ import {
   RowClassParams,
   themeQuartz,
   ICellRendererParams,
+  GridReadyEvent,
+  IGetRowsParams,
 } from 'ag-grid-community';
+import get from 'lodash/get';
+
+/** Match `AgGrid.render` infinite row paging (see `cacheBlockSize` there). */
+const CACHE_BLOCK_SIZE = 100;
 
 const ROW_NUMBER_COL_ID = '__qodlyRowNumber';
 
 const RowNumberCell: FC<ICellRendererParams> = (params) => (
-  <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>{params.value ?? ''}</span>
+  <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+    {params.value ?? ''}
+  </span>
 );
 const SaveActionRenderer: FC<any> = (params: any) => {
   if (!params.data?.__isInputRow) return null;
@@ -108,12 +116,23 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
 
   const { fetchIndex, fetchPage } = useDataLoader({ source: ds });
 
-  const [rowData, setRowData] = useState<any[]>([]);
   const [selected, setSelected] = useState(-1);
   const [scrollIndex, setScrollIndex] = useState(0);
   const [, setCount] = useState(0);
-  const loadedRef = useRef(false);
   const isSelectingRef = useRef(false);
+
+  /**
+   * `rowDragManaged` is only supported with the client-side row model.
+   * When row drag is enabled, we load all rows into `rowData` so AG Grid can
+   * manage reordering.
+   */
+  const [clientRowData, setClientRowData] = useState<any[] | null>(null);
+  const clientLoadKey = useMemo(() => {
+    const colsKey = (columns || [])
+      .map((c) => `${c?.title ?? ''}::${c?.source ?? ''}`)
+      .join('|');
+    return `${datasource ?? ''}__${colsKey}`;
+  }, [datasource, columns]);
 
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
@@ -151,35 +170,114 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     setPinnedTopRowData([createEmptyInputRow()]);
   }, [createEmptyInputRow]);
 
+  const resetInputRowRef = useRef(resetInputRow);
+  resetInputRowRef.current = resetInputRow;
+
   useEffect(() => {
     resetInputRow();
   }, [enableAddNewRow, resetInputRow]);
 
-  const loadAllData = useCallback(async () => {
-    const currentDs = dsRef.current;
-    if (!currentDs) return;
-    try {
-      const selLength = (currentDs as any).entitysel?._private?.selLength ?? 0;
-      if (selLength === 0) {
-        setRowData([]);
-        resetInputRow();
+  const buildRowFromEntity = useCallback((data: any, globalIndex: number, cols: ISimpleColumn[]) => {
+    const row: any = { __entity: data, __rowIndex: globalIndex };
+    cols.forEach((col) => {
+      const source = typeof col?.source === 'string' ? col.source.trim() : '';
+      row[col.title] = source ? get(data, source) : undefined;
+    });
+    return row;
+  }, []);
+
+  // When row drag is enabled, load all rows (client-side model).
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!enableRowDrag) {
+        setClientRowData(null);
         return;
       }
-      const entities = await fetchPageRef.current(0, selLength);
+
+      const currentDs = dsRef.current;
+      if (!currentDs) {
+        setClientRowData([]);
+        return;
+      }
+
       const cols = columnsRef.current;
-      const rows = entities.map((data: any, index: number) => {
-        const row: any = { __entity: data, __rowIndex: index };
-        cols.forEach((col) => {
-          row[col.title] = data[col.source];
-        });
-        return row;
-      });
-      setRowData(rows);
-      resetInputRow();
-    } catch {
-      setRowData([]);
-    }
-  }, [resetInputRow]);
+      const all: any[] = [];
+      let start = 0;
+      // Prefer known total length, but fall back to "fetch until empty".
+      const selLengthRaw = (currentDs as any).entitysel?._private?.selLength;
+      const total =
+        typeof selLengthRaw === 'number' && Number.isFinite(selLengthRaw) && selLengthRaw >= 0
+          ? selLengthRaw
+          : null;
+
+      while (true) {
+        const remaining = total != null ? Math.max(0, total - start) : CACHE_BLOCK_SIZE;
+        if (total != null && remaining === 0) break;
+        const count = total != null ? Math.min(CACHE_BLOCK_SIZE, remaining) : CACHE_BLOCK_SIZE;
+        const entities = await fetchPageRef.current(start, count);
+        if (cancelled) return;
+        if (!Array.isArray(entities) || entities.length === 0) break;
+        const rows = entities.map((e: any, idx: number) =>
+          buildRowFromEntity(e, start + idx, cols),
+        );
+        all.push(...rows);
+        start += entities.length;
+        if (entities.length < count) break;
+      }
+
+      if (cancelled) return;
+      setClientRowData(all);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [enableRowDrag, buildRowFromEntity, ds, clientLoadKey]);
+
+  const onGridReady = useCallback((params: GridReadyEvent) => {
+    // In client-side mode, `rowData` drives the grid (no datasource needed).
+    if (enableRowDrag) return;
+    params.api.setGridOption('datasource', {
+      getRows: async (rowParams: IGetRowsParams) => {
+        const currentDs = dsRef.current;
+        if (!currentDs) {
+          rowParams.successCallback([], 0);
+          return;
+        }
+        const count = rowParams.endRow - rowParams.startRow;
+        if (count <= 0) {
+          rowParams.successCallback([], 0);
+          return;
+        }
+        try {
+          const entities = await fetchPageRef.current(rowParams.startRow, count);
+          const cols = columnsRef.current;
+          const selLength = (currentDs as any).entitysel?._private?.selLength;
+          const rows = entities.map((data: any, index: number) =>
+            buildRowFromEntity(data, rowParams.startRow + index, cols),
+          );
+          // AG Grid infinite model: if we know the total row count, pass it.
+          // Otherwise, only signal "lastRow" when the server returns fewer rows than requested.
+          const total =
+            typeof selLength === 'number' && Number.isFinite(selLength) && selLength >= 0
+              ? selLength
+              : undefined;
+          const lastRow =
+            total != null
+              ? total
+              : Array.isArray(entities) && entities.length < count
+                ? rowParams.startRow + entities.length
+                : undefined;
+          rowParams.successCallback(rows, lastRow as any);
+        } catch {
+          rowParams.failCallback();
+        }
+      },
+    });
+  }, []);
 
   const { updateCurrentDsValue } = useDsChangeHandler({
     source: ds,
@@ -192,7 +290,8 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     fetchIndex,
     onDsChange: async () => {
       if (isSelectingRef.current) return;
-      await loadAllData();
+      resetInputRow();
+      gridRef.current?.api?.refreshInfiniteCache();
     },
     onCurrentDsChange: (sel) => {
       if (!gridRef.current) return;
@@ -205,12 +304,6 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       });
     },
   });
-
-  useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-    loadAllData();
-  }, [loadAllData]);
 
   // -- Column definitions --
 
@@ -261,7 +354,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   const colDefs: ColDef[] = useMemo(() => {
     const dataCols = columns.map((col) => ({
       field: col.title,
-      source: col.source,
+      context: { source: col.source },
       hide: !!col.hidden,
       editable: (params: any) =>
         enableAddNewRow && col.editable !== false && !!params.data?.__isInputRow,
@@ -479,7 +572,14 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
           <div style={{ flex: 1, minHeight: 0 }}>
             <AgGridReact
               ref={gridRef}
-              rowData={rowData}
+              rowModelType={enableRowDrag ? 'clientSide' : 'infinite'}
+              rowData={enableRowDrag ? clientRowData ?? [] : undefined}
+              cacheBlockSize={enableRowDrag ? undefined : CACHE_BLOCK_SIZE}
+              maxBlocksInCache={enableRowDrag ? undefined : 10}
+              cacheOverflowSize={enableRowDrag ? undefined : 2}
+              maxConcurrentDatasourceRequests={enableRowDrag ? undefined : 1}
+              rowBuffer={enableRowDrag ? undefined : 0}
+              onGridReady={onGridReady}
               pinnedTopRowData={enableAddNewRow ? pinnedTopRowData : []}
               columnDefs={colDefs}
               defaultColDef={defaultColDef}

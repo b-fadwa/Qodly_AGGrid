@@ -33,6 +33,9 @@ import {
   isEditableTarget,
   isCopyShortcut,
   type TManualSelectedCell,
+  getInitialGridCopyMode,
+  persistGridCopyMode,
+  type GridCopyModeSetting,
   writeTextToClipboard,
 } from './AgGrid.clipboard';
 import {
@@ -80,6 +83,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { format } from 'date-fns';
 import { get } from 'lodash';
+import set from 'lodash/set';
 import { FaTableColumns, FaCopy } from 'react-icons/fa6';
 import { FaClockRotateLeft } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
@@ -371,7 +375,7 @@ function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
   return undefined;
 }
 
-type CopyMode = 'cells' | 'rows' | 'none';
+type CopyMode = GridCopyModeSetting;
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -642,9 +646,23 @@ const AgGrid: FC<IAgGridProps> = ({
     [multiSelection, i18n, lang, showSelectAllHeaderCheckbox],
   );
 
-  const [copyMode, setCopyMode] = useState<CopyMode>('none');
+  const [copyMode, setCopyMode] = useState<CopyMode>(() =>
+    getInitialGridCopyMode(nodeID, multiSelection),
+  );
   const [showCopyModeDialog, setShowCopyModeDialog] = useState(false);
-  const [copyModeDraft, setCopyModeDraft] = useState<CopyMode>('none');
+
+  const applyUserCopyMode = useCallback(
+    (next: CopyMode) => {
+      setCopyMode(next);
+      persistGridCopyMode(nodeID, next);
+      if (currentSelectionDS && showCopyActions && next === 'cells') {
+        void currentSelectionDS.setValue(null, []);
+      }
+      setShowCopyModeDialog(false);
+    },
+    [nodeID, currentSelectionDS, showCopyActions],
+  );
+
   const [manualSelectedCells, setManualSelectedCells] = useState<TManualSelectedCell[]>([]);
   const [cellRangeSelectionActive, setCellRangeSelectionActive] = useState(false);
   const [isCellSelectionAvailable, setIsCellSelectionAvailable] = useState(false);
@@ -1782,7 +1800,13 @@ const AgGrid: FC<IAgGridProps> = ({
     (columns || []).forEach((col: any) => {
       const key = col.source ?? col.title;
       const stable = agGridColumnField(col);
-      const raw = row?.[stable] ?? row?.[col.title] ?? row?.__entity?.[col.source];
+      const raw =
+        get(row, stable) ??
+        row?.[stable] ??
+        row?.[col.title] ??
+        (typeof col?.source === 'string' && col.source.trim()
+          ? get(row?.__entity, col.source)
+          : undefined);
       result[key] = sanitizeValue(raw);
     });
     return result;
@@ -1866,7 +1890,14 @@ const AgGrid: FC<IAgGridProps> = ({
         __entity: data,
       };
       cols.forEach((col) => {
-        row[agGridColumnField(col)] = data[col.source];
+        const source = typeof col?.source === 'string' ? col.source.trim() : '';
+        const fieldPath = agGridColumnField(col);
+        const value = source ? get(data, source) : undefined;
+        if (typeof fieldPath === 'string' && fieldPath.includes('.')) {
+          set(row, fieldPath, value);
+        } else {
+          row[fieldPath] = value;
+        }
       });
       return row;
     });
@@ -2192,7 +2223,6 @@ const AgGrid: FC<IAgGridProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setCopyModeDraft(copyMode);
                     setShowCopyModeDialog(true);
                   }}
                   className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
@@ -2307,7 +2337,6 @@ const AgGrid: FC<IAgGridProps> = ({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setCopyModeDraft(copyMode);
                                   setShowCopyModeDialog(true);
                                 }}
                                 className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
@@ -2550,22 +2579,27 @@ const AgGrid: FC<IAgGridProps> = ({
                         { value: 'none' as CopyMode, title: translation('Nothing') },
                       ] as const
                     ).map((opt) => {
-                      const selected = copyModeDraft === opt.value;
+                      const selected = copyMode === opt.value;
                       return (
-                        <label
+                        <button
                           key={opt.value}
-                          className="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 transition-colors"
+                          type="button"
+                          className="flex w-full cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors"
                           style={{
                             borderColor: selected ? '#2B5797' : '#E5E7EB',
                             backgroundColor: selected ? '#F3F3F5' : '#FFFFFF',
                           }}
+                          aria-pressed={selected}
+                          onClick={() => applyUserCopyMode(opt.value)}
                         >
-                          <input
-                            type="radio"
-                            name="aggrid-copy-mode"
-                            style={{ accentColor: '#2B5797' }}
-                            checked={selected}
-                            onChange={() => setCopyModeDraft(opt.value)}
+                          <span
+                            className="inline-block h-4 w-4 shrink-0 rounded-full border-2"
+                            style={{
+                              borderColor: selected ? '#2B5797' : '#CBD5E1',
+                              backgroundColor: selected ? '#2B5797' : 'transparent',
+                              boxShadow: selected ? 'inset 0 0 0 3px #F3F3F5' : undefined,
+                            }}
+                            aria-hidden
                           />
                           <span
                             className="min-w-0 flex-1 text-sm font-medium"
@@ -2573,48 +2607,10 @@ const AgGrid: FC<IAgGridProps> = ({
                           >
                             {opt.title}
                           </span>
-                        </label>
+                        </button>
                       );
                     })}
                   </div>
-                </div>
-                <div
-                  className="flex w-full items-center justify-end gap-2 border-t border-slate-200 p-4"
-                  style={{ borderTop: '1px solid #E5E7EB' }}
-                >
-                  <button
-                    type="button"
-                    className="flex items-center justify-center rounded-md border px-3 py-2"
-                    style={{
-                      height: '31px',
-                      borderRadius: '6px',
-                      borderColor: '#0000001A',
-                      color: '#44444C',
-                      fontSize: '12px',
-                    }}
-                    onClick={() => setShowCopyModeDialog(false)}
-                  >
-                    {translation('Cancel')}
-                  </button>
-                  <button
-                    type="button"
-                    className="flex items-center justify-center rounded-md border px-3 py-2 text-sm text-white"
-                    style={{
-                      background: '#2B5797',
-                      height: '31px',
-                      fontSize: '12px',
-                    }}
-                    onClick={() => {
-                      const next = copyModeDraft;
-                      setCopyMode(next);
-                      if (currentSelectionDS && showCopyActions && next === 'cells') {
-                        void currentSelectionDS.setValue(null, []);
-                      }
-                      setShowCopyModeDialog(false);
-                    }}
-                  >
-                    {translation('Apply')}
-                  </button>
                 </div>
               </div>
             </div>
