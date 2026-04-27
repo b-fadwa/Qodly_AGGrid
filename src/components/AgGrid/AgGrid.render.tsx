@@ -83,6 +83,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { format } from 'date-fns';
 import { get } from 'lodash';
+import set from 'lodash/set';
 import { FaTableColumns, FaCopy } from 'react-icons/fa6';
 import { FaClockRotateLeft } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
@@ -1799,7 +1800,13 @@ const AgGrid: FC<IAgGridProps> = ({
     (columns || []).forEach((col: any) => {
       const key = col.source ?? col.title;
       const stable = agGridColumnField(col);
-      const raw = row?.[stable] ?? row?.[col.title] ?? row?.__entity?.[col.source];
+      const raw =
+        get(row, stable) ??
+        row?.[stable] ??
+        row?.[col.title] ??
+        (typeof col?.source === 'string' && col.source.trim()
+          ? get(row?.__entity, col.source)
+          : undefined);
       result[key] = sanitizeValue(raw);
     });
     return result;
@@ -1883,7 +1890,14 @@ const AgGrid: FC<IAgGridProps> = ({
         __entity: data,
       };
       cols.forEach((col) => {
-        row[agGridColumnField(col)] = data[col.source];
+        const source = typeof col?.source === 'string' ? col.source.trim() : '';
+        const fieldPath = agGridColumnField(col);
+        const value = source ? get(data, source) : undefined;
+        if (typeof fieldPath === 'string' && fieldPath.includes('.')) {
+          set(row, fieldPath, value);
+        } else {
+          row[fieldPath] = value;
+        }
       });
       return row;
     });
