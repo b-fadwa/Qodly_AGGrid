@@ -206,6 +206,7 @@ export default {
                     locked: false,
                     hidden: false,
                     sizing: true,
+                    refValues: '',
                     id: generate(),
                     ...(item.attribute.type === 'image'
                       ? {
@@ -362,4 +363,5 @@ export interface IColumn {
   id: string;
   dataType: string;
   flex: number;
+  refValues?: string;
 }

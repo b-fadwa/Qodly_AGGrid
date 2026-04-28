@@ -18,6 +18,11 @@ export type QodlyRefSelectFilterParams = CustomFilterProps & {
   i18n?: any;
   lang?: string;
   maxOptions?: number;
+  /**
+   * Optional explicit allowed values for the dropdown (e.g. `[1,2,3]` or `"1,2,3"`).
+   * When provided, the filter uses exactly these values instead of scanning 1..N.
+   */
+  allowedValues?: number[] | string;
   resolveOptionLabel?: (index: number) => string;
   /** Shown for the empty &lt;option&gt; (e.g. translated "Choose one"). */
   placeholderLabel?: string;
@@ -36,6 +41,8 @@ function resolveRefFilterConfig(props: QodlyRefSelectFilterParams) {
   const i18n = (props as any).i18n ?? fp?.i18n ?? colFp?.i18n;
   const lang = ((props as any).lang ?? fp?.lang ?? colFp?.lang) as string | undefined;
   const maxOptions = Number((props as any).maxOptions ?? fp?.maxOptions ?? colFp?.maxOptions ?? 256) || 256;
+  const allowedValues =
+    (props as any).allowedValues ?? fp?.allowedValues ?? colFp?.allowedValues ?? undefined;
   const resolveOptionLabel = (fp?.resolveOptionLabel ?? colFp?.resolveOptionLabel) as
     | ((index: number) => string)
     | undefined;
@@ -45,7 +52,16 @@ function resolveRefFilterConfig(props: QodlyRefSelectFilterParams) {
   const applyButtonLabel = String(
     (props as any).applyButtonLabel ?? fp?.applyButtonLabel ?? colFp?.applyButtonLabel ?? 'Apply',
   );
-  return { refDatasetKey, i18n, lang, maxOptions, resolveOptionLabel, placeholderLabel, applyButtonLabel };
+  return {
+    refDatasetKey,
+    i18n,
+    lang,
+    maxOptions,
+    allowedValues,
+    resolveOptionLabel,
+    placeholderLabel,
+    applyButtonLabel,
+  };
 }
 
 /** Labels under `keys.{refKey}{i}` with `.lang` / `.default` (Studio reference lists). */
@@ -93,11 +109,50 @@ function loadRefOptions(i18n: any, lang: string | undefined, refKey: string, max
  */
 export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterParams>((props, _ref) => {
   const { model, onModelChange, onUiChange, column, colDef, api } = props;
-  const { refDatasetKey, i18n, lang, maxOptions, resolveOptionLabel, placeholderLabel, applyButtonLabel } =
+  const {
+    refDatasetKey,
+    i18n,
+    lang,
+    maxOptions,
+    allowedValues,
+    resolveOptionLabel,
+    placeholderLabel,
+    applyButtonLabel,
+  } =
     useMemo(() => resolveRefFilterConfig(props), [column, colDef]);
 
   const options = useMemo(() => {
     if (!refDatasetKey) return [];
+
+    const normalizedAllowed: number[] | null = (() => {
+      if (Array.isArray(allowedValues)) {
+        return allowedValues
+          .map((v) => (typeof v === 'number' ? v : Number(String(v ?? '').trim())))
+          .filter((n) => Number.isFinite(n));
+      }
+      if (typeof allowedValues === 'string' && allowedValues.trim()) {
+        return allowedValues
+          .split(/[\n\r,]+/g)
+          .map((s) => Number(String(s).trim()))
+          .filter((n) => Number.isFinite(n));
+      }
+      return null;
+    })();
+
+    if (normalizedAllowed?.length) {
+      const uniq = Array.from(new Set(normalizedAllowed));
+      return uniq.map((value) => {
+        let label = '';
+        if (typeof resolveOptionLabel === 'function') {
+          label = String(resolveOptionLabel(value) ?? '').trim();
+        }
+        if (!label && i18n) {
+          label = pickOptionLabel(i18n, lang, refDatasetKey, value) ?? '';
+        }
+        return { value, label: label || String(value) };
+      });
+    }
+
     if (typeof resolveOptionLabel === 'function') {
       const out: Option[] = [];
       for (let j = 1; j <= maxOptions; j++) {
@@ -109,7 +164,7 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
     }
     if (i18n) return loadRefOptions(i18n, lang, refDatasetKey, maxOptions);
     return [];
-  }, [refDatasetKey, resolveOptionLabel, i18n, lang, maxOptions]);
+  }, [refDatasetKey, resolveOptionLabel, i18n, lang, maxOptions, allowedValues]);
 
   /** Pending UI selection until Apply (applied model lives on the grid wrapper as `model`). */
   const pendingRef = useRef<number | null>(null);

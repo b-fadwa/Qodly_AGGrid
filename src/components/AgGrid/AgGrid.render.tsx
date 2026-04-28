@@ -915,9 +915,20 @@ const AgGrid: FC<IAgGridProps> = ({
             headerComponent: AgGridFilterHeader,
             headerComponentParams: {
               translation,
-              filterable: !isRefSource && !!getColumnFilterType(col, isBooleanColumn),
+              // Ref-backed columns (`*_R_*`) use a custom AG Grid filter component; they are still filterable.
+              filterable: !!getColumnFilterType(col, isBooleanColumn),
               isColumnFilterActive,
               onOpenFilter: ({ colId, anchorEl }: { colId: string; anchorEl: HTMLElement }) => {
+                const api = gridRef.current?.api as any;
+                if (!api || api.isDestroyed?.()) return;
+                // For ref-backed columns, open AG Grid's native column menu so the custom select filter renders.
+                if (isRefSource && typeof api.showColumnMenuAfterButtonClick === 'function') {
+                  const column = api.getColumn?.(colId);
+                  if (column) {
+                    api.showColumnMenuAfterButtonClick(column, anchorEl);
+                    return;
+                  }
+                }
                 setHeaderFilterPopupState({
                   colId,
                   anchorRect: anchorEl.getBoundingClientRect(),
@@ -976,6 +987,7 @@ const AgGrid: FC<IAgGridProps> = ({
             filterParams: isRefSource
               ? {
                   refDatasetKey: refKey,
+                  allowedValues: (col as any)?.refValues,
                   maxOptions: 256,
                   placeholderLabel: translation('Choose one'),
                   applyButtonLabel: translation('Apply'),
@@ -2513,6 +2525,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showFilterDialog}
                       onClose={() => setShowFilterDialog(false)}
                       translation={translation}
+                      i18n={i18n}
+                      lang={lang}
                       columns={columns}
                       showDateFinancialToggle={hasDateFinancialFilter}
                       dateFinancialFilterEnabled={dateFinancialFilterEnabled}
@@ -2651,6 +2665,8 @@ const AgGrid: FC<IAgGridProps> = ({
               anchorRect={headerFilterPopupState?.anchorRect ?? null}
               colId={headerFilterPopupState?.colId ?? null}
               column={headerPopupColumn}
+              i18n={i18n}
+              lang={lang}
               currentModel={liveFilterModel}
               currentEntry={
                 headerFilterPopupState

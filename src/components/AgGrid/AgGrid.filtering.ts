@@ -448,6 +448,10 @@ const BUILT_IN_OPERATOR_INPUTS: Record<string, 0 | 1 | 2> = {
 };
 
 export const getColumnFilterOperators = (column: any): FilterOperatorDescriptor[] => {
+  // Ref-backed (`*_R_*`) columns should behave like a select: one value, equals only.
+  if (getColumnAgGridFilterType(column) === QODLY_REF_SELECT_FILTER_TYPE) {
+    return [{ key: 'equals', label: BUILT_IN_OPERATOR_LABEL.equals ?? 'equals', inputs: 1 }];
+  }
   const isBoolean = isBooleanLikeColumn(column);
   const params = getColumnFilterParams(column, isBoolean);
   return ((params.filterOptions ?? []) as any[])
