@@ -516,7 +516,6 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
-
   const searchDs = useMemo(() => {
     if (ds) {
       const clone: any = cloneDeep(ds);
@@ -1158,6 +1157,14 @@ const AgGrid: FC<IAgGridProps> = ({
         // `onFilterChanged` already triggers `refreshInfiniteCache`; an
         // explicit refresh here would double-fire `getRows`.
         filtersManager.applyPersistedValue(api, data);
+        // Keep the advanced-filter state (`liveFilterModelRef`) in sync with
+        // external datasource changes. Without this, clearing the filter DS
+        // can leave stale advanced rules that still get applied in `getRows`.
+        const nextLive =
+          data && typeof data === 'object' && 'filterModel' in (data as any)
+            ? ((data as any).filterModel ?? {})
+            : {};
+        commitLiveFilterModel(nextLive);
         setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
       } finally {
         setTimeout(() => {
@@ -1525,34 +1532,40 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   }, []);
 
-  const onFilterChanged = useCallback((event: FilterChangedEvent) => {
-    const fromGrid = event.api.getFilterModel() ?? {};
-    const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
-    const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
-    commitLiveFilterModel(next);
-    filtersManager.persistCurrent(fromGrid);
-  }, [commitLiveFilterModel, filtersManager]);
+  const onFilterChanged = useCallback(
+    (event: FilterChangedEvent) => {
+      const fromGrid = event.api.getFilterModel() ?? {};
+      const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
+      const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
+      commitLiveFilterModel(next);
+      filtersManager.persistCurrent(fromGrid);
+    },
+    [commitLiveFilterModel, filtersManager],
+  );
 
-  const applyHeaderFilterModel = useCallback((nextModel: any) => {
-    const api = gridRef.current?.api;
-    if (!api || api.isDestroyed()) return;
-    const prevLiveModel = liveFilterModelRef.current ?? {};
-    const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
-    const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
-    const agChanged = !isEqual(currentAg, nextAg);
-    if (agChanged) {
-      api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
-      persistFilterDsNow(nextAg);
-    }
-    const normalizedNextLive = nextModel ?? {};
-    const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
-    commitLiveFilterModel(normalizedNextLive);
-    if (!agChanged && liveChanged) {
-      persistFilterDsNow(nextAg);
-      filtersManager.persistCurrent(nextAg);
-      api.refreshInfiniteCache();
-    }
-  }, [commitLiveFilterModel, filtersManager, persistFilterDsNow]);
+  const applyHeaderFilterModel = useCallback(
+    (nextModel: any) => {
+      const api = gridRef.current?.api;
+      if (!api || api.isDestroyed()) return;
+      const prevLiveModel = liveFilterModelRef.current ?? {};
+      const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
+      const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
+      const agChanged = !isEqual(currentAg, nextAg);
+      if (agChanged) {
+        api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
+        persistFilterDsNow(nextAg);
+      }
+      const normalizedNextLive = nextModel ?? {};
+      const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
+      commitLiveFilterModel(normalizedNextLive);
+      if (!agChanged && liveChanged) {
+        persistFilterDsNow(nextAg);
+        filtersManager.persistCurrent(nextAg);
+        api.refreshInfiniteCache();
+      }
+    },
+    [commitLiveFilterModel, filtersManager, persistFilterDsNow],
+  );
 
   const getState = useCallback(
     async (params: any) => {
@@ -1595,6 +1608,11 @@ const AgGrid: FC<IAgGridProps> = ({
           if (filtersManager.applyPersistedValue(api, value)) {
             filterLiveApplied = true;
           }
+          const nextLive =
+            value && typeof value === 'object' && 'filterModel' in (value as any)
+              ? ((value as any).filterModel ?? {})
+              : {};
+          commitLiveFilterModel(nextLive);
           setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
         } catch {
           /* ignore */
@@ -2257,7 +2275,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       >
                         {translation('Actions')}
                       </span>
-                      <div className="flex flex-row gap-1">
+                      <div className="flex flex-row gap-2">
                         <div className="flex gap-2">
                           <Element id="agGridActions" is={resolver.StyleBox} canvas />
                         </div>
@@ -2296,7 +2314,7 @@ const AgGrid: FC<IAgGridProps> = ({
                           </div>
                         )}
                         {showToolbarFiltering && (
-                          <div className="filtering-section ">
+                          <div className="filtering-section flex flex-row gap-2">
                             <IconPopover label={translation('Advanced filtering')}>
                               <button
                                 onClick={openAdvancedFilterDialog}
@@ -2505,7 +2523,9 @@ const AgGrid: FC<IAgGridProps> = ({
                         if (!api || api.isDestroyed()) return;
                         const prevLiveModel = liveFilterModelRef.current ?? {};
                         const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
-                        const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
+                        const currentAg = stripAdvancedRulesFromFilterModel(
+                          api.getFilterModel() ?? {},
+                        );
                         const agChanged = !isEqual(currentAg, nextAg);
                         if (agChanged) {
                           api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);

@@ -18,7 +18,7 @@ import {
  * `filterChanged` and triggers a server fetch per character. 400ms feels
  * snappy while keeping a single request per "typed token".
  */
-const VALUE_DEBOUNCE_MS = 400;
+const VALUE_DEBOUNCE_MS = 900;
 
 const COLLECTION_OPERATOR_KEY = 'inCollection';
 
@@ -106,7 +106,8 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
       const filterType = getColumnAgGridFilterType(column);
       const { value, value2 } = readConditionValues(rule.condition, filterType);
       return {
-        id: newId(),
+        // Deterministic id so React keeps input focus while the model syncs.
+        id: `adv_${String(rule.field)}_${index}`,
         field: rule.field,
         operator: rule.condition?.type ?? '',
         value,
@@ -117,7 +118,8 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
     return mapped;
   }
   const rules: FilterRule[] = [];
-  for (const colKey of Object.keys(model)) {
+  // Sort keys for stable ordering (prevents key churn → focus loss).
+  for (const colKey of Object.keys(model).sort()) {
     const entry = model[colKey];
     const column = findColumnByKey(columns, colKey);
     const filterType = getColumnAgGridFilterType(column);
@@ -126,7 +128,8 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
       entry.conditions.forEach((condition: any, index: number) => {
         const { value, value2 } = readConditionValues(condition, filterType);
         rules.push({
-          id: newId(),
+          // Deterministic id so React keeps input focus while the model syncs.
+          id: `col_${String(colKey)}_${index}`,
           field: colKey,
           operator: condition?.type ?? '',
           value,
@@ -138,7 +141,8 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
       const { value, value2 } = readConditionValues(entry, filterType);
       const isFirstRule = rules.length === 0;
       rules.push({
-        id: newId(),
+        // Deterministic id so React keeps input focus while the model syncs.
+        id: `col_${String(colKey)}_0`,
         field: colKey,
         operator: entry?.type ?? '',
         value,

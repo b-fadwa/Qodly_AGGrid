@@ -111,7 +111,12 @@ export function useFiltersManager({
         dateFinancialEnabledRef.current = Boolean(v.dateFinancialFilterEnabled);
       }
       let appliedFilter = false;
-      if ('filterModel' in v) {
+      // Some hosts clear the datasource by setting `{}` instead of
+      // `{ filterModel: {} }`. Treat an empty object as "clear all filters".
+      if (!('filterModel' in v) && Object.keys(v as any).length === 0) {
+        applyGridFilterModel(api, null);
+        appliedFilter = false;
+      } else if ('filterModel' in v) {
         applyGridFilterModel(api, v.filterModel);
         const fm = v.filterModel;
         appliedFilter =
