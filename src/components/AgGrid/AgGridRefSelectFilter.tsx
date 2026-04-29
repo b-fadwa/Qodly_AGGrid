@@ -31,6 +31,13 @@ export type QodlyRefSelectFilterParams = CustomFilterProps & {
 };
 
 type Option = { value: number; label: string };
+type RefSelectModel =
+  | {
+      filterType: typeof QODLY_REF_SELECT_FILTER_TYPE;
+      type?: 'equals' | 'notEqual';
+      value?: number;
+    }
+  | null;
 
 function resolveRefFilterConfig(props: QodlyRefSelectFilterParams) {
   const fp = (props as any).filterParams as Record<string, unknown> | undefined;
@@ -107,8 +114,9 @@ function loadRefOptions(i18n: any, lang: string | undefined, refKey: string, max
  * Uses `onModelChange` / `onUiChange` — AG Grid React's filter wrapper does not pass `filterChangedCallback`
  * into the component (see `FilterComponentWrapper.getProps`).
  */
-export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterParams>((props, _ref) => {
+export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterParams>((props) => {
   const { model, onModelChange, onUiChange, column, colDef, api } = props;
+  const typedModel = (model ?? null) as RefSelectModel;
   const {
     refDatasetKey,
     i18n,
@@ -168,16 +176,24 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
 
   /** Pending UI selection until Apply (applied model lives on the grid wrapper as `model`). */
   const pendingRef = useRef<number | null>(null);
+  const pendingOperatorRef = useRef<'equals' | 'notEqual'>('equals');
   const modelRef = useRef(model);
   modelRef.current = model;
 
+  const [operator, setOperator] = useState<'equals' | 'notEqual'>(() => {
+    return typedModel?.type === 'notEqual' ? 'notEqual' : 'equals';
+  });
   const [selected, setSelected] = useState<string>(() => {
     const v = model?.value;
     return typeof v === 'number' && Number.isFinite(v) ? String(v) : '';
   });
 
   const syncPendingFromAppliedModel = useCallback(() => {
-    const m = modelRef.current;
+    const m = (modelRef.current ?? null) as RefSelectModel;
+    pendingOperatorRef.current = m?.type === 'notEqual' ? 'notEqual' : 'equals';
+    setOperator((s) =>
+      s === pendingOperatorRef.current ? s : (pendingOperatorRef.current as 'equals' | 'notEqual'),
+    );
     const v = m?.value;
     if (typeof v === 'number' && Number.isFinite(v)) {
       pendingRef.current = v;
@@ -194,7 +210,7 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
    * Register a stable object once in `useLayoutEffect` and keep callbacks fresh via mutation.
    */
   const filterMethodsRef = useRef({
-    doesFilterPass: (_params: unknown) => true,
+    doesFilterPass: () => true,
     afterGuiAttached: () => {},
     afterGuiDetached: () => {},
   });
@@ -214,14 +230,17 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
 
   /** Primitive — the grid often passes a new `model` object each render; `[model]` would re-fire forever. */
   const appliedFilterValue =
-    model != null &&
-    typeof model === 'object' &&
-    typeof (model as { value?: unknown }).value === 'number' &&
-    Number.isFinite((model as { value: number }).value)
-      ? (model as { value: number }).value
+    typedModel != null &&
+    typeof typedModel === 'object' &&
+    typeof typedModel.value === 'number' &&
+    Number.isFinite(typedModel.value)
+      ? typedModel.value
       : null;
+  const appliedOperator = typedModel?.type === 'notEqual' ? 'notEqual' : 'equals';
 
   useEffect(() => {
+    pendingOperatorRef.current = appliedOperator;
+    setOperator((s) => (s === appliedOperator ? s : appliedOperator));
     if (appliedFilterValue != null) {
       pendingRef.current = appliedFilterValue;
       setSelected((s) => (s === String(appliedFilterValue) ? s : String(appliedFilterValue)));
@@ -229,7 +248,17 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
       pendingRef.current = null;
       setSelected((s) => (s === '' ? s : ''));
     }
-  }, [appliedFilterValue]);
+  }, [appliedFilterValue, appliedOperator]);
+
+  const onOperatorChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const next = e.target.value === 'notEqual' ? 'notEqual' : 'equals';
+      pendingOperatorRef.current = next;
+      setOperator(next);
+      onUiChange();
+    },
+    [onUiChange],
+  );
 
   const onChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -248,10 +277,11 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
 
   const onApply = useCallback(() => {
     const v = pendingRef.current;
+    const type = pendingOperatorRef.current;
     if (v === null) {
       onModelChange(null);
     } else {
-      onModelChange({ filterType: QODLY_REF_SELECT_FILTER_TYPE, value: v });
+      onModelChange({ filterType: QODLY_REF_SELECT_FILTER_TYPE, type, value: v });
     }
     setTimeout(() => {
       api.refreshInfiniteCache();
@@ -264,6 +294,30 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 180 }}>
       <div className="ag-simple-filter-body-wrapper">
+        <select
+          className="ag-filter-select"
+          aria-label={`${column?.getColDef().headerName ?? column?.getColId() ?? 'Reference filter'} operator`}
+          value={operator}
+          onChange={onOperatorChange}
+          style={{
+            width: '100%',
+            minWidth: 160,
+            height: 32,
+            paddingLeft: 8,
+            paddingRight: 32,
+            borderRadius: 5,
+            border: 'solid 1px #e0e0e0',
+            boxSizing: 'border-box',
+            appearance: 'none',
+            WebkitAppearance: 'none',
+            MozAppearance: 'none',
+            backgroundColor: '#fff',
+            marginBottom: 8,
+          }}
+        >
+          <option value="equals">Equals</option>
+          <option value="notEqual">Not equal</option>
+        </select>
         <select
           className="ag-filter-select"
           aria-label={column?.getColDef().headerName ?? column?.getColId() ?? 'Reference filter'}

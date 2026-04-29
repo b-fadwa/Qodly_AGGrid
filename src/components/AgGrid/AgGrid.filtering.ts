@@ -388,7 +388,9 @@ export const buildFilterQuery = (filter: any, source: string, column?: any): str
       const raw = filter.value ?? filter.filter;
       const num = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
       if (!Number.isFinite(num)) return '';
-      return `${source} == ${num}`;
+      const opKey = String(filter?.type ?? filter?.operator ?? '').trim();
+      const op = opKey === 'notEqual' ? '!=' : '==';
+      return `${source} ${op} ${num}`;
     }
     default:
       return '';
@@ -448,9 +450,12 @@ const BUILT_IN_OPERATOR_INPUTS: Record<string, 0 | 1 | 2> = {
 };
 
 export const getColumnFilterOperators = (column: any): FilterOperatorDescriptor[] => {
-  // Ref-backed (`*_R_*`) columns should behave like a select: one value, equals only.
+  // Ref-backed (`*_R_*`) columns behave like a select: one value, equality operators only.
   if (getColumnAgGridFilterType(column) === QODLY_REF_SELECT_FILTER_TYPE) {
-    return [{ key: 'equals', label: BUILT_IN_OPERATOR_LABEL.equals ?? 'equals', inputs: 1 }];
+    return [
+      { key: 'equals', label: BUILT_IN_OPERATOR_LABEL.equals ?? 'equals', inputs: 1 },
+      { key: 'notEqual', label: BUILT_IN_OPERATOR_LABEL.notEqual ?? 'not equal', inputs: 1 },
+    ];
   }
   const isBoolean = isBooleanLikeColumn(column);
   const params = getColumnFilterParams(column, isBoolean);

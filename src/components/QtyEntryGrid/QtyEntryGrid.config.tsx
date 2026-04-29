@@ -60,6 +60,14 @@ export default {
         label: 'On Cell Value Changed',
         value: 'oncellvaluechanged',
       },
+      {
+        label: 'On Cell Double Click',
+        value: 'oncelldblclick',
+      },
+      {
+        label: 'On Row Double Click',
+        value: 'onrowdblclick',
+      },
     ],
     datasources: {
       declarations: (props) => {
