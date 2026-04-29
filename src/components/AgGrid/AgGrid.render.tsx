@@ -831,6 +831,8 @@ const AgGrid: FC<IAgGridProps> = ({
         field: agGridColumnField(col),
         isHidden: col.hidden || false, // use col.hidden directly from properties
         pinned: null as 'left' | 'right' | null,
+        // Optional header label override that can be persisted in `columnState`.
+        i18n: col.title,
         // Tracking width/flex here lets manual column resizes survive
         // colDef rebuilds. AG Grid resets a column's width whenever the
         // colDef passes a different `width` value, so without this the
@@ -898,11 +900,13 @@ const AgGrid: FC<IAgGridProps> = ({
           const colState = (columnVisibility.find((c) => c.field === stableField) ?? {
             isHidden: false,
             pinned: null,
+            i18n: col.title,
             width: col.width,
             flex: col.flex,
           }) as {
             isHidden: boolean;
             pinned: 'left' | 'right' | null;
+            i18n?: string | null;
             width?: number | null;
             flex?: number | null;
           };
@@ -911,7 +915,7 @@ const AgGrid: FC<IAgGridProps> = ({
           const isRefSource = refKey != null;
           return {
             field: stableField,
-            headerName: col.title,
+            headerName: (colState.i18n ?? col.title) as any,
             headerComponent: AgGridFilterHeader,
             headerComponentParams: {
               translation,
@@ -1135,6 +1139,7 @@ const AgGrid: FC<IAgGridProps> = ({
                 field: col.colId,
                 isHidden: col.hide || false,
                 pinned: col.pinned || null,
+                i18n: col.i18n ?? previous?.i18n ?? null,
                 // Preserve the user's manual resize: if the persisted state
                 // doesn't carry an explicit width/flex (older saved views),
                 // fall back to whatever we already have in memory.
@@ -1602,6 +1607,7 @@ const AgGrid: FC<IAgGridProps> = ({
                     field: col.colId,
                     isHidden: col.hide || false,
                     pinned: col.pinned || null,
+                    i18n: col.i18n ?? previous?.i18n ?? null,
                     width: col.width ?? previous?.width ?? null,
                     flex: col.flex ?? previous?.flex ?? null,
                   };
@@ -2111,6 +2117,7 @@ const AgGrid: FC<IAgGridProps> = ({
             field: col.colId,
             isHidden: col.hide || false,
             pinned: col.pinned || null,
+            i18n: previous?.i18n ?? null,
             width: col.width ?? previous?.width ?? null,
             flex: col.flex ?? previous?.flex ?? null,
           };
