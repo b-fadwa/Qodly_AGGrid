@@ -11,6 +11,8 @@ interface FilterDialogProps {
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  i18n?: any;
+  lang?: string;
   columns: IColumn[];
   showDateFinancialToggle: boolean;
   dateFinancialFilterEnabled: boolean;
@@ -38,6 +40,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   open,
   onClose,
   translation,
+  i18n,
+  lang,
   columns,
   showDateFinancialToggle,
   dateFinancialFilterEnabled,
@@ -148,6 +152,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
           <QueryBuilder
             translation={translation}
             columns={visibleColumns}
+            i18n={i18n}
+            lang={lang}
             filterModel={filterModel}
             onChange={setFilterModel}
           />

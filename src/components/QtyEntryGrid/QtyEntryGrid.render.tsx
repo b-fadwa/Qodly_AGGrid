@@ -2,7 +2,7 @@ import { useDataLoader, useRenderer, useSources } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { CSSProperties, FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { CellValueChangedEvent, ColDef, themeQuartz } from 'ag-grid-community';
+import { CellDoubleClickedEvent, CellValueChangedEvent, ColDef, RowDoubleClickedEvent, themeQuartz } from 'ag-grid-community';
 import CustomCell from '../AgGrid/CustomCell';
 import { IQtyEntryGridProps, IQtyEntryColumn } from './QtyEntryGrid.config';
 
@@ -177,6 +177,47 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     [emit],
   );
 
+  const onCellDoubleClicked = useCallback(
+    (event: CellDoubleClickedEvent) => {
+      const cols = columnsRef.current;
+      const col = cols.find((c) => c.title === event.colDef.field);
+      const rowIndex = event.node?.rowIndex ?? (event.data as any)?.__rowIndex ?? -1;
+
+      const payload: Record<string, any> = {};
+      cols.forEach((c) => {
+        payload[c.source] = (event.data as any)?.[c.title];
+      });
+
+      emit('oncelldblclick', {
+        column: col?.source ?? event.colDef.field,
+        value: event.value,
+        rowIndex,
+        rowData: payload,
+        entity: (event.data as any)?.__entity,
+      });
+    },
+    [emit],
+  );
+
+  const onRowDoubleClicked = useCallback(
+    (event: RowDoubleClickedEvent) => {
+      const cols = columnsRef.current;
+      const rowIndex = event.node?.rowIndex ?? (event.data as any)?.__rowIndex ?? -1;
+
+      const payload: Record<string, any> = {};
+      cols.forEach((c) => {
+        payload[c.source] = (event.data as any)?.[c.title];
+      });
+
+      emit('onrowdblclick', {
+        rowIndex,
+        rowData: payload,
+        entity: (event.data as any)?.__entity,
+      });
+    },
+    [emit],
+  );
+
   return (
     <div ref={connect} style={resolvedStyle} className={cn(className, classNames)}>
       {datasource ? (
@@ -186,6 +227,8 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
           defaultColDef={defaultColDef}
           suppressCellFocus={true}
           onCellValueChanged={onCellValueChanged}
+          onCellDoubleClicked={onCellDoubleClicked}
+          onRowDoubleClicked={onRowDoubleClicked}
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
           theme={theme}

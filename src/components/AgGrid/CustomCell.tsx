@@ -21,6 +21,11 @@ const CustomCell = ({
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
 
+  const translateKey = (key: string): string => {
+    const entry = i18n?.keys?.[key]?.[lang] ?? i18n?.keys?.[key]?.default;
+    return entry ?? key;
+  };
+
   const translateFromHeader = (input: any): any => {
     const headerKey =
       colDef?.context?.source ??
@@ -67,7 +72,11 @@ const CustomCell = ({
     case dataType === 'number' && typeof translatedValue === 'number' && format === 'slider':
       return <input className="slider" type="range" value={translatedValue} disabled />;
     case dataType === 'bool' && typeof translatedValue === 'boolean' && format === 'boolean':
-      return <div className="cell">{translatedValue.toString()}</div>;
+      return (
+        <div className="cell" style={{ textTransform: 'capitalize' }}>
+          {translateKey(translatedValue ? 'yes' : 'no')}
+        </div>
+      );
     default:
       const customValue =
         translatedValue !== undefined && translatedValue !== null

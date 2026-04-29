@@ -1,14 +1,17 @@
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
+import get from 'lodash/get';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
 import type { Translation } from '../state/sorts';
 import {
   buildAgGridFilterModelFromAdvancedRules,
+  extractRefDatasetKeyFromSource,
   getAdvancedRulesFromFilterModel,
   getColumnAgGridFilterType,
   getColumnFilterOperators,
   type FilterOperatorDescriptor,
   type QodlyFilterCombinator,
+  refOptionI18nCompositeKey,
   withAdvancedRulesOnFilterModel,
 } from '../AgGrid.filtering';
 
@@ -18,7 +21,7 @@ import {
  * `filterChanged` and triggers a server fetch per character. 400ms feels
  * snappy while keeping a single request per "typed token".
  */
-const VALUE_DEBOUNCE_MS = 400;
+const VALUE_DEBOUNCE_MS = 900;
 
 const COLLECTION_OPERATOR_KEY = 'inCollection';
 
@@ -57,6 +60,8 @@ export interface FilterRule {
 interface QueryBuilderProps {
   translation: Translation;
   columns: IColumn[];
+  i18n?: any;
+  lang?: string;
   filterModel: any;
   onChange: (nextModel: any) => void;
 }
@@ -106,7 +111,8 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
       const filterType = getColumnAgGridFilterType(column);
       const { value, value2 } = readConditionValues(rule.condition, filterType);
       return {
-        id: newId(),
+        // Deterministic id so React keeps input focus while the model syncs.
+        id: `adv_${String(rule.field)}_${index}`,
         field: rule.field,
         operator: rule.condition?.type ?? '',
         value,
@@ -117,7 +123,8 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
     return mapped;
   }
   const rules: FilterRule[] = [];
-  for (const colKey of Object.keys(model)) {
+  // Sort keys for stable ordering (prevents key churn → focus loss).
+  for (const colKey of Object.keys(model).sort()) {
     const entry = model[colKey];
     const column = findColumnByKey(columns, colKey);
     const filterType = getColumnAgGridFilterType(column);
@@ -126,7 +133,8 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
       entry.conditions.forEach((condition: any, index: number) => {
         const { value, value2 } = readConditionValues(condition, filterType);
         rules.push({
-          id: newId(),
+          // Deterministic id so React keeps input focus while the model syncs.
+          id: `col_${String(colKey)}_${index}`,
           field: colKey,
           operator: condition?.type ?? '',
           value,
@@ -138,7 +146,8 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
       const { value, value2 } = readConditionValues(entry, filterType);
       const isFirstRule = rules.length === 0;
       rules.push({
-        id: newId(),
+        // Deterministic id so React keeps input focus while the model syncs.
+        id: `col_${String(colKey)}_0`,
         field: colKey,
         operator: entry?.type ?? '',
         value,
@@ -195,7 +204,9 @@ const buildCondition = (rule: FilterRule, filterType: string): any | null => {
     };
   }
   if (filterType === 'qodlyRefSelect') {
-    const num = Number(String(rule.value).trim());
+    const raw = String(rule.value ?? '').trim();
+    if (!raw) return null;
+    const num = Number(raw);
     if (!Number.isFinite(num)) return null;
     return { filterType, type: rule.operator, value: num };
   }
@@ -273,6 +284,8 @@ const sameModel = (a: any, b: any): boolean => {
 export const QueryBuilder: FC<QueryBuilderProps> = ({
   translation,
   columns,
+  i18n,
+  lang,
   filterModel,
   onChange,
 }) => {
@@ -420,6 +433,8 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
                 <RuleRow
                   translation={translation}
                   columns={visibleColumns}
+                  i18n={i18n}
+                  lang={lang}
                   rule={rule}
                   onChange={(patch) => updateRule(index, patch)}
                   onValueChange={(patch) => updateRuleValue(index, patch)}
@@ -461,6 +476,8 @@ const CombinatorBadge: FC<CombinatorBadgeProps> = ({ translation, value, onChang
 interface RuleRowProps {
   translation: Translation;
   columns: IColumn[];
+  i18n?: any;
+  lang?: string;
   rule: FilterRule;
   /** Apply a structural change (column/operator) immediately. */
   onChange: (patch: Partial<FilterRule>) => void;
@@ -474,6 +491,8 @@ interface RuleRowProps {
 const RuleRow: FC<RuleRowProps> = ({
   translation,
   columns,
+  i18n,
+  lang,
   rule,
   onChange,
   onValueChange,
@@ -490,6 +509,57 @@ const RuleRow: FC<RuleRowProps> = ({
   const htmlInputType = inputTypeFor(column);
   const isCollection = operatorDescriptor?.key === COLLECTION_OPERATOR_KEY;
   const collectionTokens = useMemo(() => parseCollectionTokens(rule.value), [rule.value]);
+  const filterType = useMemo(() => getColumnAgGridFilterType(column), [column]);
+
+  const refOptions = useMemo(() => {
+    if (filterType !== 'qodlyRefSelect') return [];
+    const source = column?.source;
+    const refKey = extractRefDatasetKeyFromSource(source);
+    if (!refKey) return [];
+
+    const readLabel = (value: number): string | null => {
+      const composite = refOptionI18nCompositeKey(refKey, value);
+      const base = `keys.${composite}`;
+      const fromLang = lang ? get(i18n, `${base}.${lang}`) : undefined;
+      const fromDef = get(i18n, `${base}.default`);
+      const leaf = get(i18n, base);
+      const raw =
+        (fromLang != null && String(fromLang).trim() !== '' ? fromLang : undefined) ??
+        (fromDef != null && String(fromDef).trim() !== '' ? fromDef : undefined) ??
+        (typeof leaf === 'string' || typeof leaf === 'number' ? leaf : undefined);
+      const s = raw != null ? String(raw).trim() : '';
+      return s ? s : null;
+    };
+
+    const rawRefValues = (column as any)?.refValues;
+    const values: any[] | null = Array.isArray(rawRefValues)
+      ? rawRefValues
+      : typeof rawRefValues === 'string' && rawRefValues.trim()
+        ? rawRefValues
+            .split(/[\n\r,]+/g)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : null;
+
+    const out: Array<{ value: number; label: string }> = [];
+    if (values) {
+      values.forEach((v: any) => {
+        const n = typeof v === 'number' ? v : Number(String(v ?? '').trim());
+        if (!Number.isFinite(n)) return;
+        const label = readLabel(n) ?? String(n);
+        out.push({ value: n, label });
+      });
+      return out;
+    }
+
+    // Fallback: scan labels from i18n 1..256 until missing.
+    for (let j = 1; j <= 256; j += 1) {
+      const label = readLabel(j);
+      if (!label) break;
+      out.push({ value: j, label });
+    }
+    return out;
+  }, [column, filterType, i18n, lang]);
 
   const onFieldChange = (nextKey: string) => {
     const nextColumn = columns.find((c) => c.source === nextKey || c.title === nextKey);
@@ -567,7 +637,23 @@ const RuleRow: FC<RuleRowProps> = ({
             </div>
           ) : null}
 
-          {isCollection ? (
+          {filterType === 'qodlyRefSelect' && refOptions.length ? (
+            <select
+              style={{ ...selectStyle, width: '100%' }}
+              value={rule.value ?? ''}
+              onChange={(e) => {
+                // A select change is discrete; apply immediately (no typing debounce).
+                onChange({ value: e.target.value });
+              }}
+            >
+              <option value="">{translation('Choose one')}</option>
+              {refOptions.map((o) => (
+                <option key={o.value} value={String(o.value)}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          ) : isCollection ? (
             <textarea
               placeholder={translation('Enter values separated by commas')}
               style={{

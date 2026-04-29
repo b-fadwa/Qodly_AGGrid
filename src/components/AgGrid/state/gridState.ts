@@ -58,9 +58,13 @@ export function enrichColumnStateWithSource(
     const col = cs?.colId != null ? byKey.get(cs.colId) : undefined;
     if (!col) return { ...cs };
     const stableColId = agGridColumnField(col);
+    const i18n =
+      cs && typeof cs === 'object' && 'i18n' in cs && (cs as any).i18n != null
+        ? (cs as any).i18n
+        : col.title;
     return col.source != null
-      ? { ...cs, colId: stableColId, source: col.source }
-      : { ...cs, colId: stableColId };
+      ? { ...cs, colId: stableColId, source: col.source, i18n }
+      : { ...cs, colId: stableColId, i18n };
   });
 }
 
@@ -70,9 +74,10 @@ export function columnStateForAgGridApply(
 ): any[] {
   if (!Array.isArray(columnState)) return [];
   return columnState.map((s: any) => {
-    if (s && typeof s === 'object' && 'source' in s) {
+    if (s && typeof s === 'object' && ('source' in s || 'i18n' in s)) {
       const next = { ...s };
       delete next.source;
+      delete next.i18n;
       return next;
     }
     return s;
