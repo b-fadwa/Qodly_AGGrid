@@ -80,6 +80,13 @@ const commonSettings: TSetting[] = [
         type: ESetting.CHECKBOX,
         key: 'sizing',
       },
+      {
+        label: 'Ref values (_r_/_R_)',
+        defaultValue: '',
+        type: ESetting.TEXT_FIELD,
+        key: 'refValues',
+        placeholder: 'e.g. 1,2,3',
+      },
     ],
   },
 ];

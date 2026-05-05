@@ -1,13 +1,16 @@
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
+import get from 'lodash/get';
 import {
   buildAgGridFilterModelFromAdvancedRules,
+  extractRefDatasetKeyFromSource,
   getAdvancedRulesFromFilterModel,
   getColumnAgGridFilterType,
   getColumnFilterOperators,
   type FilterOperatorDescriptor,
   type QodlyFilterCombinator,
+  refOptionI18nCompositeKey,
   withAdvancedRulesOnFilterModel,
 } from '../AgGrid.filtering';
 
@@ -36,6 +39,8 @@ interface HeaderFilterPopupProps {
   colId: string | null;
   currentEntry: any;
   currentModel: any;
+  i18n?: any;
+  lang?: string;
   showDateFinancialToggle: boolean;
   dateFinancialFilterEnabled: boolean;
   onDateFinancialFilterEnabledChange: (enabled: boolean) => void;
@@ -84,7 +89,9 @@ const toCondition = (
     return { filterType, type: row.operator, dateFrom: row.value, dateTo: row.value2 || null };
   }
   if (filterType === 'qodlyRefSelect') {
-    const num = Number(String(row.value ?? '').trim());
+    const raw = String(row.value ?? '').trim();
+    if (!raw) return null;
+    const num = Number(raw);
     if (!Number.isFinite(num)) return null;
     return { filterType, type: row.operator, value: num };
   }
@@ -194,6 +201,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   colId,
   currentEntry,
   currentModel,
+  i18n,
+  lang,
   showDateFinancialToggle,
   dateFinancialFilterEnabled,
   onDateFinancialFilterEnabledChange,
@@ -245,6 +254,55 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     const rowOp = Array.isArray(currentEntry?.conditions) ? currentEntry?.operator : 'AND';
     setRowCombinator(rowOp === 'OR' || rowOp === 'EXCEPT' ? rowOp : 'AND');
   }, [open, colId, currentEntry, operators, activeRules, dateFinancialFilterEnabled]);
+
+  const refSelectOptions = useMemo(() => {
+    if (!column) return [];
+    if (filterType !== 'qodlyRefSelect') return [];
+    const refKey = extractRefDatasetKeyFromSource(column.source);
+    if (!refKey) return [];
+
+    const readLabel = (value: number): string | null => {
+      const composite = refOptionI18nCompositeKey(refKey, value);
+      const base = `keys.${composite}`;
+      const fromLang = lang ? get(i18n, `${base}.${lang}`) : undefined;
+      const fromDef = get(i18n, `${base}.default`);
+      const leaf = get(i18n, base);
+      const raw =
+        (fromLang != null && String(fromLang).trim() !== '' ? fromLang : undefined) ??
+        (fromDef != null && String(fromDef).trim() !== '' ? fromDef : undefined) ??
+        (typeof leaf === 'string' || typeof leaf === 'number' ? leaf : undefined);
+      const s = raw != null ? String(raw).trim() : '';
+      return s ? s : null;
+    };
+
+    const rawRefValues: any = (column as any).refValues;
+    const values: number[] | null = Array.isArray(rawRefValues)
+      ? rawRefValues
+          .map((v: any) => (typeof v === 'number' ? v : Number(String(v ?? '').trim())))
+          .filter((n: number) => Number.isFinite(n))
+      : typeof rawRefValues === 'string' && rawRefValues.trim()
+        ? rawRefValues
+            .split(/[\n\r,]+/g)
+            .map((s: string) => Number(String(s).trim()))
+            .filter((n: number) => Number.isFinite(n))
+        : null;
+
+    const out: Array<{ value: number; label: string }> = [];
+    if (values?.length) {
+      Array.from(new Set(values)).forEach((v) => {
+        out.push({ value: v, label: readLabel(v) ?? String(v) });
+      });
+      return out;
+    }
+
+    // fallback: scan i18n 1..256
+    for (let j = 1; j <= 256; j += 1) {
+      const label = readLabel(j);
+      if (!label) break;
+      out.push({ value: j, label });
+    }
+    return out;
+  }, [column, filterType, i18n, lang]);
 
   useEffect(() => {
     if (!open) return;
@@ -404,7 +462,28 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                       </div>
                     ) : null}
 
-                    {isCollection ? (
+                    {filterType === 'qodlyRefSelect' ? (
+                      <select
+                        value={row.value}
+                        style={{ ...styles.control, width: '100%' }}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          setRows((prev) => {
+                            return normalize(
+                              prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
+                              operators,
+                            );
+                          });
+                        }}
+                      >
+                        <option value="">{translation('Choose one')}</option>
+                        {refSelectOptions.map((o) => (
+                          <option key={o.value} value={String(o.value)}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : isCollection ? (
                       <textarea
                         value={row.value}
                         placeholder={translation('Enter values separated by commas')}

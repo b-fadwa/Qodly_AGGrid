@@ -516,7 +516,6 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
-
   const searchDs = useMemo(() => {
     if (ds) {
       const clone: any = cloneDeep(ds);
@@ -832,6 +831,8 @@ const AgGrid: FC<IAgGridProps> = ({
         field: agGridColumnField(col),
         isHidden: col.hidden || false, // use col.hidden directly from properties
         pinned: null as 'left' | 'right' | null,
+        // Optional header label override that can be persisted in `columnState`.
+        i18n: col.title,
         // Tracking width/flex here lets manual column resizes survive
         // colDef rebuilds. AG Grid resets a column's width whenever the
         // colDef passes a different `width` value, so without this the
@@ -899,11 +900,13 @@ const AgGrid: FC<IAgGridProps> = ({
           const colState = (columnVisibility.find((c) => c.field === stableField) ?? {
             isHidden: false,
             pinned: null,
+            i18n: col.title,
             width: col.width,
             flex: col.flex,
           }) as {
             isHidden: boolean;
             pinned: 'left' | 'right' | null;
+            i18n?: string | null;
             width?: number | null;
             flex?: number | null;
           };
@@ -912,13 +915,24 @@ const AgGrid: FC<IAgGridProps> = ({
           const isRefSource = refKey != null;
           return {
             field: stableField,
-            headerName: col.title,
+            headerName: (colState.i18n ?? col.title) as any,
             headerComponent: AgGridFilterHeader,
             headerComponentParams: {
               translation,
-              filterable: !isRefSource && !!getColumnFilterType(col, isBooleanColumn),
+              // Ref-backed columns (`*_R_*`) use a custom AG Grid filter component; they are still filterable.
+              filterable: !!getColumnFilterType(col, isBooleanColumn),
               isColumnFilterActive,
               onOpenFilter: ({ colId, anchorEl }: { colId: string; anchorEl: HTMLElement }) => {
+                const api = gridRef.current?.api as any;
+                if (!api || api.isDestroyed?.()) return;
+                // For ref-backed columns, open AG Grid's native column menu so the custom select filter renders.
+                if (isRefSource && typeof api.showColumnMenuAfterButtonClick === 'function') {
+                  const column = api.getColumn?.(colId);
+                  if (column) {
+                    api.showColumnMenuAfterButtonClick(column, anchorEl);
+                    return;
+                  }
+                }
                 setHeaderFilterPopupState({
                   colId,
                   anchorRect: anchorEl.getBoundingClientRect(),
@@ -977,6 +991,7 @@ const AgGrid: FC<IAgGridProps> = ({
             filterParams: isRefSource
               ? {
                   refDatasetKey: refKey,
+                  allowedValues: (col as any)?.refValues,
                   maxOptions: 256,
                   placeholderLabel: translation('Choose one'),
                   applyButtonLabel: translation('Apply'),
@@ -1124,6 +1139,7 @@ const AgGrid: FC<IAgGridProps> = ({
                 field: col.colId,
                 isHidden: col.hide || false,
                 pinned: col.pinned || null,
+                i18n: col.i18n ?? previous?.i18n ?? null,
                 // Preserve the user's manual resize: if the persisted state
                 // doesn't carry an explicit width/flex (older saved views),
                 // fall back to whatever we already have in memory.
@@ -1158,6 +1174,14 @@ const AgGrid: FC<IAgGridProps> = ({
         // `onFilterChanged` already triggers `refreshInfiniteCache`; an
         // explicit refresh here would double-fire `getRows`.
         filtersManager.applyPersistedValue(api, data);
+        // Keep the advanced-filter state (`liveFilterModelRef`) in sync with
+        // external datasource changes. Without this, clearing the filter DS
+        // can leave stale advanced rules that still get applied in `getRows`.
+        const nextLive =
+          data && typeof data === 'object' && 'filterModel' in (data as any)
+            ? ((data as any).filterModel ?? {})
+            : {};
+        commitLiveFilterModel(nextLive);
         setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
       } finally {
         setTimeout(() => {
@@ -1525,34 +1549,40 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   }, []);
 
-  const onFilterChanged = useCallback((event: FilterChangedEvent) => {
-    const fromGrid = event.api.getFilterModel() ?? {};
-    const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
-    const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
-    commitLiveFilterModel(next);
-    filtersManager.persistCurrent(fromGrid);
-  }, [commitLiveFilterModel, filtersManager]);
+  const onFilterChanged = useCallback(
+    (event: FilterChangedEvent) => {
+      const fromGrid = event.api.getFilterModel() ?? {};
+      const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
+      const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
+      commitLiveFilterModel(next);
+      filtersManager.persistCurrent(fromGrid);
+    },
+    [commitLiveFilterModel, filtersManager],
+  );
 
-  const applyHeaderFilterModel = useCallback((nextModel: any) => {
-    const api = gridRef.current?.api;
-    if (!api || api.isDestroyed()) return;
-    const prevLiveModel = liveFilterModelRef.current ?? {};
-    const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
-    const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
-    const agChanged = !isEqual(currentAg, nextAg);
-    if (agChanged) {
-      api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
-      persistFilterDsNow(nextAg);
-    }
-    const normalizedNextLive = nextModel ?? {};
-    const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
-    commitLiveFilterModel(normalizedNextLive);
-    if (!agChanged && liveChanged) {
-      persistFilterDsNow(nextAg);
-      filtersManager.persistCurrent(nextAg);
-      api.refreshInfiniteCache();
-    }
-  }, [commitLiveFilterModel, filtersManager, persistFilterDsNow]);
+  const applyHeaderFilterModel = useCallback(
+    (nextModel: any) => {
+      const api = gridRef.current?.api;
+      if (!api || api.isDestroyed()) return;
+      const prevLiveModel = liveFilterModelRef.current ?? {};
+      const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
+      const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
+      const agChanged = !isEqual(currentAg, nextAg);
+      if (agChanged) {
+        api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
+        persistFilterDsNow(nextAg);
+      }
+      const normalizedNextLive = nextModel ?? {};
+      const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
+      commitLiveFilterModel(normalizedNextLive);
+      if (!agChanged && liveChanged) {
+        persistFilterDsNow(nextAg);
+        filtersManager.persistCurrent(nextAg);
+        api.refreshInfiniteCache();
+      }
+    },
+    [commitLiveFilterModel, filtersManager, persistFilterDsNow],
+  );
 
   const getState = useCallback(
     async (params: any) => {
@@ -1577,6 +1607,7 @@ const AgGrid: FC<IAgGridProps> = ({
                     field: col.colId,
                     isHidden: col.hide || false,
                     pinned: col.pinned || null,
+                    i18n: col.i18n ?? previous?.i18n ?? null,
                     width: col.width ?? previous?.width ?? null,
                     flex: col.flex ?? previous?.flex ?? null,
                   };
@@ -1595,6 +1626,11 @@ const AgGrid: FC<IAgGridProps> = ({
           if (filtersManager.applyPersistedValue(api, value)) {
             filterLiveApplied = true;
           }
+          const nextLive =
+            value && typeof value === 'object' && 'filterModel' in (value as any)
+              ? ((value as any).filterModel ?? {})
+              : {};
+          commitLiveFilterModel(nextLive);
           setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
         } catch {
           /* ignore */
@@ -2081,6 +2117,7 @@ const AgGrid: FC<IAgGridProps> = ({
             field: col.colId,
             isHidden: col.hide || false,
             pinned: col.pinned || null,
+            i18n: previous?.i18n ?? null,
             width: col.width ?? previous?.width ?? null,
             flex: col.flex ?? previous?.flex ?? null,
           };
@@ -2257,7 +2294,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       >
                         {translation('Actions')}
                       </span>
-                      <div className="flex flex-row gap-1">
+                      <div className="flex flex-row gap-2">
                         <div className="flex gap-2">
                           <Element id="agGridActions" is={resolver.StyleBox} canvas />
                         </div>
@@ -2296,7 +2333,7 @@ const AgGrid: FC<IAgGridProps> = ({
                           </div>
                         )}
                         {showToolbarFiltering && (
-                          <div className="filtering-section ">
+                          <div className="filtering-section flex flex-row gap-2">
                             <IconPopover label={translation('Advanced filtering')}>
                               <button
                                 onClick={openAdvancedFilterDialog}
@@ -2495,6 +2532,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showFilterDialog}
                       onClose={() => setShowFilterDialog(false)}
                       translation={translation}
+                      i18n={i18n}
+                      lang={lang}
                       columns={columns}
                       showDateFinancialToggle={hasDateFinancialFilter}
                       dateFinancialFilterEnabled={dateFinancialFilterEnabled}
@@ -2505,7 +2544,9 @@ const AgGrid: FC<IAgGridProps> = ({
                         if (!api || api.isDestroyed()) return;
                         const prevLiveModel = liveFilterModelRef.current ?? {};
                         const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
-                        const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
+                        const currentAg = stripAdvancedRulesFromFilterModel(
+                          api.getFilterModel() ?? {},
+                        );
                         const agChanged = !isEqual(currentAg, nextAg);
                         if (agChanged) {
                           api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
@@ -2631,6 +2672,8 @@ const AgGrid: FC<IAgGridProps> = ({
               anchorRect={headerFilterPopupState?.anchorRect ?? null}
               colId={headerFilterPopupState?.colId ?? null}
               column={headerPopupColumn}
+              i18n={i18n}
+              lang={lang}
               currentModel={liveFilterModel}
               currentEntry={
                 headerFilterPopupState

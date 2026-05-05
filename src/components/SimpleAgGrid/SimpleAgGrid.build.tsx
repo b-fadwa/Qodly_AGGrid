@@ -1,8 +1,14 @@
-import { useDatasourceSub, useEnhancedNode } from '@ws-ui/webform-editor';
+import {
+  useDatasourceSub,
+  useEnhancedNode,
+  useI18n,
+  useLocalization,
+} from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { FC, useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { ISimpleAgGridProps } from './SimpleAgGrid.config';
+import { resolveSimpleColumnTitle, simpleAgGridRowField } from './simpleAgGridColumns';
 import { ColDef, themeQuartz } from 'ag-grid-community';
 import { BsFillInfoCircleFill } from 'react-icons/bs';
 
@@ -32,10 +38,13 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   const {
     connectors: { connect },
   } = useEnhancedNode();
+  const { i18n } = useI18n();
+  const { selected: lang } = useLocalization();
 
   const colDefs: ColDef[] = useMemo(() => {
     const dataCols = columns.map((col) => ({
-      field: col.title,
+      field: simpleAgGridRowField(col),
+      headerName: resolveSimpleColumnTitle(col.title, i18n, lang),
       hide: !!col.hidden,
       editable: enableAddNewRow && col.editable !== false,
       sortable: !!col.sorting,
@@ -109,9 +118,9 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       });
     }
     return base;
-  }, [columns, enableAddNewRow, enableRowDrag, showRowNumbers]);
+  }, [columns, enableAddNewRow, enableRowDrag, i18n, lang, showRowNumbers]);
 
-  // No CustomCell here: design canvas lacks useI18n / useLocalization providers (runtime uses CustomCell in .render).
+  // No CustomCell here (canvas); headers still resolve via useI18n when the editor provides I18nProvider.
   const defaultColDef = useMemo<ColDef>(() => ({ flex: 1, minWidth: 80 }), []);
 
   const rowSelection = useMemo(
@@ -128,7 +137,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     if (!enableAddNewRow) return [];
     const row: any = { __isInputRow: true };
     columns.forEach((col) => {
-      row[col.title] = '';
+      row[simpleAgGridRowField(col)] = '';
     });
     return [row];
   }, [columns, enableAddNewRow]);
@@ -138,7 +147,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       Array.from({ length: 10 }, () => {
         const row: any = {};
         columns.forEach((col) => {
-          row[col.title] = col.source;
+          row[simpleAgGridRowField(col)] = col.source;
         });
         return row;
       }),

@@ -18,6 +18,11 @@ export type QodlyRefSelectFilterParams = CustomFilterProps & {
   i18n?: any;
   lang?: string;
   maxOptions?: number;
+  /**
+   * Optional explicit allowed values for the dropdown (e.g. `[1,2,3]` or `"1,2,3"`).
+   * When provided, the filter uses exactly these values instead of scanning 1..N.
+   */
+  allowedValues?: number[] | string;
   resolveOptionLabel?: (index: number) => string;
   /** Shown for the empty &lt;option&gt; (e.g. translated "Choose one"). */
   placeholderLabel?: string;
@@ -26,6 +31,13 @@ export type QodlyRefSelectFilterParams = CustomFilterProps & {
 };
 
 type Option = { value: number; label: string };
+type RefSelectModel =
+  | {
+      filterType: typeof QODLY_REF_SELECT_FILTER_TYPE;
+      type?: 'equals' | 'notEqual';
+      value?: number;
+    }
+  | null;
 
 function resolveRefFilterConfig(props: QodlyRefSelectFilterParams) {
   const fp = (props as any).filterParams as Record<string, unknown> | undefined;
@@ -36,6 +48,8 @@ function resolveRefFilterConfig(props: QodlyRefSelectFilterParams) {
   const i18n = (props as any).i18n ?? fp?.i18n ?? colFp?.i18n;
   const lang = ((props as any).lang ?? fp?.lang ?? colFp?.lang) as string | undefined;
   const maxOptions = Number((props as any).maxOptions ?? fp?.maxOptions ?? colFp?.maxOptions ?? 256) || 256;
+  const allowedValues =
+    (props as any).allowedValues ?? fp?.allowedValues ?? colFp?.allowedValues ?? undefined;
   const resolveOptionLabel = (fp?.resolveOptionLabel ?? colFp?.resolveOptionLabel) as
     | ((index: number) => string)
     | undefined;
@@ -45,7 +59,16 @@ function resolveRefFilterConfig(props: QodlyRefSelectFilterParams) {
   const applyButtonLabel = String(
     (props as any).applyButtonLabel ?? fp?.applyButtonLabel ?? colFp?.applyButtonLabel ?? 'Apply',
   );
-  return { refDatasetKey, i18n, lang, maxOptions, resolveOptionLabel, placeholderLabel, applyButtonLabel };
+  return {
+    refDatasetKey,
+    i18n,
+    lang,
+    maxOptions,
+    allowedValues,
+    resolveOptionLabel,
+    placeholderLabel,
+    applyButtonLabel,
+  };
 }
 
 /** Labels under `keys.{refKey}{i}` with `.lang` / `.default` (Studio reference lists). */
@@ -91,13 +114,53 @@ function loadRefOptions(i18n: any, lang: string | undefined, refKey: string, max
  * Uses `onModelChange` / `onUiChange` — AG Grid React's filter wrapper does not pass `filterChangedCallback`
  * into the component (see `FilterComponentWrapper.getProps`).
  */
-export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterParams>((props, _ref) => {
+export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterParams>((props) => {
   const { model, onModelChange, onUiChange, column, colDef, api } = props;
-  const { refDatasetKey, i18n, lang, maxOptions, resolveOptionLabel, placeholderLabel, applyButtonLabel } =
+  const typedModel = (model ?? null) as RefSelectModel;
+  const {
+    refDatasetKey,
+    i18n,
+    lang,
+    maxOptions,
+    allowedValues,
+    resolveOptionLabel,
+    placeholderLabel,
+    applyButtonLabel,
+  } =
     useMemo(() => resolveRefFilterConfig(props), [column, colDef]);
 
   const options = useMemo(() => {
     if (!refDatasetKey) return [];
+
+    const normalizedAllowed: number[] | null = (() => {
+      if (Array.isArray(allowedValues)) {
+        return allowedValues
+          .map((v) => (typeof v === 'number' ? v : Number(String(v ?? '').trim())))
+          .filter((n) => Number.isFinite(n));
+      }
+      if (typeof allowedValues === 'string' && allowedValues.trim()) {
+        return allowedValues
+          .split(/[\n\r,]+/g)
+          .map((s) => Number(String(s).trim()))
+          .filter((n) => Number.isFinite(n));
+      }
+      return null;
+    })();
+
+    if (normalizedAllowed?.length) {
+      const uniq = Array.from(new Set(normalizedAllowed));
+      return uniq.map((value) => {
+        let label = '';
+        if (typeof resolveOptionLabel === 'function') {
+          label = String(resolveOptionLabel(value) ?? '').trim();
+        }
+        if (!label && i18n) {
+          label = pickOptionLabel(i18n, lang, refDatasetKey, value) ?? '';
+        }
+        return { value, label: label || String(value) };
+      });
+    }
+
     if (typeof resolveOptionLabel === 'function') {
       const out: Option[] = [];
       for (let j = 1; j <= maxOptions; j++) {
@@ -109,20 +172,28 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
     }
     if (i18n) return loadRefOptions(i18n, lang, refDatasetKey, maxOptions);
     return [];
-  }, [refDatasetKey, resolveOptionLabel, i18n, lang, maxOptions]);
+  }, [refDatasetKey, resolveOptionLabel, i18n, lang, maxOptions, allowedValues]);
 
   /** Pending UI selection until Apply (applied model lives on the grid wrapper as `model`). */
   const pendingRef = useRef<number | null>(null);
+  const pendingOperatorRef = useRef<'equals' | 'notEqual'>('equals');
   const modelRef = useRef(model);
   modelRef.current = model;
 
+  const [operator, setOperator] = useState<'equals' | 'notEqual'>(() => {
+    return typedModel?.type === 'notEqual' ? 'notEqual' : 'equals';
+  });
   const [selected, setSelected] = useState<string>(() => {
     const v = model?.value;
     return typeof v === 'number' && Number.isFinite(v) ? String(v) : '';
   });
 
   const syncPendingFromAppliedModel = useCallback(() => {
-    const m = modelRef.current;
+    const m = (modelRef.current ?? null) as RefSelectModel;
+    pendingOperatorRef.current = m?.type === 'notEqual' ? 'notEqual' : 'equals';
+    setOperator((s) =>
+      s === pendingOperatorRef.current ? s : (pendingOperatorRef.current as 'equals' | 'notEqual'),
+    );
     const v = m?.value;
     if (typeof v === 'number' && Number.isFinite(v)) {
       pendingRef.current = v;
@@ -139,7 +210,7 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
    * Register a stable object once in `useLayoutEffect` and keep callbacks fresh via mutation.
    */
   const filterMethodsRef = useRef({
-    doesFilterPass: (_params: unknown) => true,
+    doesFilterPass: () => true,
     afterGuiAttached: () => {},
     afterGuiDetached: () => {},
   });
@@ -159,14 +230,17 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
 
   /** Primitive — the grid often passes a new `model` object each render; `[model]` would re-fire forever. */
   const appliedFilterValue =
-    model != null &&
-    typeof model === 'object' &&
-    typeof (model as { value?: unknown }).value === 'number' &&
-    Number.isFinite((model as { value: number }).value)
-      ? (model as { value: number }).value
+    typedModel != null &&
+    typeof typedModel === 'object' &&
+    typeof typedModel.value === 'number' &&
+    Number.isFinite(typedModel.value)
+      ? typedModel.value
       : null;
+  const appliedOperator = typedModel?.type === 'notEqual' ? 'notEqual' : 'equals';
 
   useEffect(() => {
+    pendingOperatorRef.current = appliedOperator;
+    setOperator((s) => (s === appliedOperator ? s : appliedOperator));
     if (appliedFilterValue != null) {
       pendingRef.current = appliedFilterValue;
       setSelected((s) => (s === String(appliedFilterValue) ? s : String(appliedFilterValue)));
@@ -174,7 +248,17 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
       pendingRef.current = null;
       setSelected((s) => (s === '' ? s : ''));
     }
-  }, [appliedFilterValue]);
+  }, [appliedFilterValue, appliedOperator]);
+
+  const onOperatorChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const next = e.target.value === 'notEqual' ? 'notEqual' : 'equals';
+      pendingOperatorRef.current = next;
+      setOperator(next);
+      onUiChange();
+    },
+    [onUiChange],
+  );
 
   const onChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -193,10 +277,11 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
 
   const onApply = useCallback(() => {
     const v = pendingRef.current;
+    const type = pendingOperatorRef.current;
     if (v === null) {
       onModelChange(null);
     } else {
-      onModelChange({ filterType: QODLY_REF_SELECT_FILTER_TYPE, value: v });
+      onModelChange({ filterType: QODLY_REF_SELECT_FILTER_TYPE, type, value: v });
     }
     setTimeout(() => {
       api.refreshInfiniteCache();
@@ -209,6 +294,30 @@ export const QodlyRefSelectFilter = forwardRef<unknown, QodlyRefSelectFilterPara
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 180 }}>
       <div className="ag-simple-filter-body-wrapper">
+        <select
+          className="ag-filter-select"
+          aria-label={`${column?.getColDef().headerName ?? column?.getColId() ?? 'Reference filter'} operator`}
+          value={operator}
+          onChange={onOperatorChange}
+          style={{
+            width: '100%',
+            minWidth: 160,
+            height: 32,
+            paddingLeft: 8,
+            paddingRight: 32,
+            borderRadius: 5,
+            border: 'solid 1px #e0e0e0',
+            boxSizing: 'border-box',
+            appearance: 'none',
+            WebkitAppearance: 'none',
+            MozAppearance: 'none',
+            backgroundColor: '#fff',
+            marginBottom: 8,
+          }}
+        >
+          <option value="equals">Equals</option>
+          <option value="notEqual">Not equal</option>
+        </select>
         <select
           className="ag-filter-select"
           aria-label={column?.getColDef().headerName ?? column?.getColId() ?? 'Reference filter'}

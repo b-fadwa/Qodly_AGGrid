@@ -6,6 +6,8 @@ import {
   entitySubject,
   EntityActions,
   useEnhancedNode,
+  useI18n,
+  useLocalization,
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { CSSProperties, FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -23,6 +25,7 @@ import {
   IGetRowsParams,
 } from 'ag-grid-community';
 import get from 'lodash/get';
+import { resolveSimpleColumnTitle, simpleAgGridRowField } from './simpleAgGridColumns';
 
 /** Match `AgGrid.render` infinite row paging (see `cacheBlockSize` there). */
 const CACHE_BLOCK_SIZE = 100;
@@ -97,6 +100,8 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     sources: { datasource: ds, currentElement },
   } = useSources({ acceptIteratorSel: true });
   const { id: nodeID } = useEnhancedNode();
+  const { i18n } = useI18n();
+  const { selected: lang } = useLocalization();
   const gridRef = useRef<AgGridReact>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState<number | null>(null);
@@ -129,7 +134,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
   const [clientRowData, setClientRowData] = useState<any[] | null>(null);
   const clientLoadKey = useMemo(() => {
     const colsKey = (columns || [])
-      .map((c) => `${c?.title ?? ''}::${c?.source ?? ''}`)
+      .map((c) => `${simpleAgGridRowField(c)}::${c?.source ?? ''}`)
       .join('|');
     return `${datasource ?? ''}__${colsKey}`;
   }, [datasource, columns]);
@@ -148,7 +153,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     const cols = columnsRef.current;
     const row: any = { __isInputRow: true, __isNew: true };
     cols.forEach((col) => {
-      row[col.title] = '';
+      row[simpleAgGridRowField(col)] = '';
     });
     return row;
   }, []);
@@ -157,7 +162,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     if (!enableAddNewRow) return [];
     const row: any = { __isInputRow: true, __isNew: true };
     columns.forEach((col) => {
-      row[col.title] = '';
+      row[simpleAgGridRowField(col)] = '';
     });
     return [row];
   });
@@ -177,14 +182,17 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     resetInputRow();
   }, [enableAddNewRow, resetInputRow]);
 
-  const buildRowFromEntity = useCallback((data: any, globalIndex: number, cols: ISimpleColumn[]) => {
-    const row: any = { __entity: data, __rowIndex: globalIndex };
-    cols.forEach((col) => {
-      const source = typeof col?.source === 'string' ? col.source.trim() : '';
-      row[col.title] = source ? get(data, source) : undefined;
-    });
-    return row;
-  }, []);
+  const buildRowFromEntity = useCallback(
+    (data: any, globalIndex: number, cols: ISimpleColumn[]) => {
+      const row: any = { __entity: data, __rowIndex: globalIndex };
+      cols.forEach((col) => {
+        const source = typeof col?.source === 'string' ? col.source.trim() : '';
+        row[simpleAgGridRowField(col)] = source ? get(data, source) : undefined;
+      });
+      return row;
+    },
+    [],
+  );
 
   // When row drag is enabled, load all rows (client-side model).
   useEffect(() => {
@@ -312,7 +320,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       const cols = columnsRef.current;
       const payload: Record<string, any> = {};
       cols.forEach((c) => {
-        payload[c.source] = data?.[c.title];
+        payload[c.source] = data?.[simpleAgGridRowField(c)];
       });
       emit('onsaverow', { rowData: payload });
       resetInputRow();
@@ -353,7 +361,8 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
 
   const colDefs: ColDef[] = useMemo(() => {
     const dataCols = columns.map((col) => ({
-      field: col.title,
+      field: simpleAgGridRowField(col),
+      headerName: resolveSimpleColumnTitle(col.title, i18n, lang),
       context: { source: col.source },
       hide: !!col.hidden,
       editable: (params: any) =>
@@ -396,7 +405,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       });
     }
     return base;
-  }, [columns, enableAddNewRow, enableRowDrag, rowNumberColDef, showRowNumbers]);
+  }, [columns, enableAddNewRow, enableRowDrag, i18n, lang, rowNumberColDef, showRowNumbers]);
 
   const defaultColDef = useMemo<ColDef>(
     () => ({
@@ -466,13 +475,13 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
     (event: CellValueChangedEvent) => {
       if (event.column?.getColId?.() === ROW_NUMBER_COL_ID) return;
       const cols = columnsRef.current;
-      const col = cols.find((c) => c.title === event.colDef.field);
+      const col = cols.find((c) => simpleAgGridRowField(c) === event.colDef.field);
       const isInputRow = !!event.data?.__isInputRow;
       const rowIndex = event.node?.rowIndex ?? -1;
 
       const payload: Record<string, any> = {};
       cols.forEach((c) => {
-        payload[c.source] = event.data?.[c.title];
+        payload[c.source] = event.data?.[simpleAgGridRowField(c)];
       });
 
       emit('onsetvalue', {
@@ -536,7 +545,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       const cols = columnsRef.current;
       const payload: Record<string, any> = {};
       cols.forEach((c) => {
-        payload[c.source] = event.data?.[c.title];
+        payload[c.source] = event.data?.[simpleAgGridRowField(c)];
       });
       emit('onrowdblclick', {
         rowIndex: event.rowIndex,
@@ -573,7 +582,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
             <AgGridReact
               ref={gridRef}
               rowModelType={enableRowDrag ? 'clientSide' : 'infinite'}
-              rowData={enableRowDrag ? clientRowData ?? [] : undefined}
+              rowData={enableRowDrag ? (clientRowData ?? []) : undefined}
               cacheBlockSize={enableRowDrag ? undefined : CACHE_BLOCK_SIZE}
               maxBlocksInCache={enableRowDrag ? undefined : 10}
               cacheOverflowSize={enableRowDrag ? undefined : 2}
@@ -624,7 +633,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
 
 function findValueBySource(data: any, sourceField: string, columns: ISimpleColumn[]): any {
   const col = columns.find((c) => c.source === sourceField);
-  return col ? data[col.title] : undefined;
+  return col ? data[simpleAgGridRowField(col)] : undefined;
 }
 
 export default SimpleAgGrid;
