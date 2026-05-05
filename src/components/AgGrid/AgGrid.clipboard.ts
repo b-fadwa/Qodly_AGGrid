@@ -74,12 +74,37 @@ const stringifyClipboardValue = (value: any): string => {
   }
 };
 
+const getValueByDottedPath = (obj: any, path: string): any => {
+  if (!obj || !path) return '';
+  // Prefer exact match when backend flattens keys containing dots.
+  if (typeof obj === 'object' && obj !== null && path in obj) return obj[path];
+  if (!path.includes('.')) return '';
+
+  const parts = path.split('.').filter(Boolean);
+  let current: any = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined) return '';
+    if (typeof current !== 'object') return '';
+    if (!(part in current)) return '';
+    current = current[part];
+  }
+  return current;
+};
+
 const getColumnCellValue = (rowData: any, column: any): any => {
   if (!rowData || !column) return '';
   const colId = column.getColId?.();
   const field = column.getColDef?.()?.field;
   if (colId && colId in rowData) return rowData[colId];
   if (field && field in rowData) return rowData[field];
+  if (typeof colId === 'string') {
+    const viaColIdPath = getValueByDottedPath(rowData, colId);
+    if (viaColIdPath !== '') return viaColIdPath;
+  }
+  if (typeof field === 'string') {
+    const viaFieldPath = getValueByDottedPath(rowData, field);
+    if (viaFieldPath !== '') return viaFieldPath;
+  }
   return '';
 };
 
