@@ -295,6 +295,10 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
   // representable in AG Grid's filterModel yet. The model is only emitted
   // (and the header popups only update) once a rule becomes compilable.
   const [rules, setRules] = useState<FilterRule[]>(() => filterModelToRules(filterModel, columns));
+  const rulesRef = useRef<FilterRule[]>(rules);
+  useEffect(() => {
+    rulesRef.current = rules;
+  }, [rules]);
   // Tracks the last model *we* sent upstream, so external changes (header
   // popup edits, saved-filter loads) can re-seed the rule list without
   // clobbering in-progress rows that the user is still typing into.
@@ -321,6 +325,20 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
     [],
   );
 
+  const isRuleCompilable = (rule: FilterRule): boolean => {
+    if (!rule.field || !rule.operator) return false;
+    const column = findColumnByKey(columnsRef.current, rule.field);
+    const filterType = getColumnAgGridFilterType(column);
+    if (!filterType) return false;
+    return buildCondition(rule, filterType) != null;
+  };
+
+  const areAllRulesCompilable = (nextRules: FilterRule[]): boolean => {
+    // Empty draft rows are allowed in the UI, but MUST NOT be pushed upstream
+    // as they can't be represented in AG Grid's filterModel yet.
+    return nextRules.every((r) => isRuleCompilable(r));
+  };
+
   const flushNow = (nextRules: FilterRule[]) => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -331,6 +349,11 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
     onChangeRef.current(model);
   };
 
+  /** Update local draft rules only (no upstream emit). */
+  const setDraftRulesOnly = (nextRules: FilterRule[]) => {
+    setRules(nextRules);
+  };
+
   /**
    * Push the rules immediately. Used for structural changes (add/remove rule,
    * column/operator/combinator change) where the user expects an instant grid
@@ -338,6 +361,9 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
    */
   const emit = (nextRules: FilterRule[]) => {
     setRules(nextRules);
+    if (!areAllRulesCompilable(nextRules)) {
+      return;
+    }
     flushNow(nextRules);
   };
 
@@ -352,6 +378,9 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       debounceTimerRef.current = null;
+      if (!areAllRulesCompilable(nextRules)) {
+        return;
+      }
       const model = rulesToFilterModel(nextRules, columnsRef.current);
       lastEmittedRef.current = model;
       onChangeRef.current(model);
@@ -388,7 +417,8 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
       operator: defaultOp,
       value: '',
     });
-    emit(next);
+    // Keep the new rule as a local draft row until it becomes compilable.
+    setDraftRulesOnly(next);
   };
 
   return (
@@ -438,7 +468,13 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
                   rule={rule}
                   onChange={(patch) => updateRule(index, patch)}
                   onValueChange={(patch) => updateRuleValue(index, patch)}
-                  onValueCommit={() => flushNow(rules)}
+                  onValueCommit={() => {
+                    const current = rulesRef.current;
+                    if (!areAllRulesCompilable(current)) {
+                      return;
+                    }
+                    flushNow(current);
+                  }}
                   onRemove={() => removeRule(index)}
                 />
               </div>
