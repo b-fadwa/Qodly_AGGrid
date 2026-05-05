@@ -7,7 +7,11 @@ import type { ISimpleColumn } from './SimpleAgGrid.config';
  */
 export function simpleAgGridRowField(col: Pick<ISimpleColumn, 'id' | 'title' | 'source'>): string {
   const s = typeof col.source === 'string' ? col.source.trim() : '';
-  if (s) return s;
+  if (s) {
+    // AG Grid treats dots in `field` as deep references unless suppressed.
+    // We keep `source` as-is (for get() / payload keys), but use a safe key for row objects.
+    return s.replace(/\./g, '__');
+  }
   const t = col.title as unknown;
   if (typeof t === 'string' && t.trim()) return t.trim();
   return col.id ? `__col_${col.id}` : '__col';
