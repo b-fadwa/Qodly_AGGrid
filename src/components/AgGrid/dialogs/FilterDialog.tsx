@@ -102,7 +102,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
     if (saveButtonDisabled) return;
     const filterModelDraft = queryBuilderRef.current?.getCompiledFilterModel();
     const persistOpts =
-      filterModelDraft !== undefined ? { linkedSort, filterModel: filterModelDraft } : { linkedSort };
+      filterModelDraft !== undefined
+        ? { linkedSort, filterModel: filterModelDraft }
+        : { linkedSort };
     if (trimmedName) {
       if (matchingExisting) {
         updateFilter(matchingExisting.name, persistOpts);
@@ -235,7 +237,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             <select
               value={linkedSort}
               onChange={(e) => setLinkedSort(e.target.value)}
-              className="rounded-lg border border-gray-300 px-2 py-1"
+              className="filter-input rounded-lg border border-gray-300 px-2 py-1"
               style={{
                 height: '31px',
                 borderRadius: '6px',

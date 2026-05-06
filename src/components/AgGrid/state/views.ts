@@ -27,6 +27,30 @@ interface UseViewsManagerArgs {
 /** Options accepted by save / update to flag the record as the default. */
 export interface SaveViewOptions {
   isDefault?: boolean;
+  /**
+   * `SavedFilter.id` to associate with this view.
+   * On update, `null` or `''` clears the association. If the key is omitted, the existing link is kept.
+   */
+  linkedFilter?: string | number | null;
+}
+
+function normalizeLinkedFilterId(raw: string | number): string | number {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    const n = Number(t);
+    if (t !== '' && String(n) === t && Number.isFinite(n)) return n;
+    return t;
+  }
+  return raw;
+}
+
+function linkedFilterFromSaveOptions(
+  options?: SaveViewOptions,
+): string | number | undefined {
+  if (!options || !('linkedFilter' in options)) return undefined;
+  if (options.linkedFilter === null || options.linkedFilter === '') return undefined;
+  return normalizeLinkedFilterId(options.linkedFilter as string | number);
 }
 
 /**
@@ -172,14 +196,26 @@ export function useViewsManager({
       if (!name) return;
       const columnState = captureCurrentColumnState();
       const isDefault = Boolean(options?.isDefault);
-      const view: SavedView = { name, columnState, isDefault };
+      const linkedFilter = linkedFilterFromSaveOptions(options);
+      const view: SavedView = {
+        name,
+        columnState,
+        isDefault,
+        ...(linkedFilter !== undefined ? { linkedFilter } : {}),
+      };
       const withoutOtherDefaults = isDefault
         ? savedViewsRef.current.map((v) => ({ ...v, isDefault: false }))
         : savedViewsRef.current;
       const updated = [...withoutOtherDefaults, view];
       setSavedViews(updated);
       if (viewsDs) viewsDs.setValue(null, updated);
-      emit('onsaveview', { name, columnState, isDefault, view });
+      emit('onsaveview', {
+        name,
+        columnState,
+        isDefault,
+        linkedFilter: view.linkedFilter,
+        view,
+      });
     },
     [captureCurrentColumnState, emit, viewsDs],
   );
@@ -206,6 +242,7 @@ export function useViewsManager({
       emit('onloadview', {
         selectedView: selectedKey,
         columnState: view.columnState,
+        linkedFilter: view.linkedFilter,
         view,
       });
     },
@@ -219,17 +256,29 @@ export function useViewsManager({
       const columnState = captureCurrentColumnState();
       const hasDefaultOpt = options !== undefined && 'isDefault' in options;
       const isDefault = Boolean(options?.isDefault);
+      const hasLinkedFilterOpt = options !== undefined && 'linkedFilter' in options;
       const updated = savedViewsRef.current.map((view) => {
         const matches =
           view.name === selectedKey ||
           view.title === selectedKey ||
           (view.id != null && String(view.id) === selectedKey);
         if (matches) {
-          return {
+          const base: SavedView = {
             ...view,
             name: view.name || view.title || String(view.id ?? selectedKey),
             columnState,
             ...(hasDefaultOpt ? { isDefault } : {}),
+          };
+          if (!hasLinkedFilterOpt) {
+            return base;
+          }
+          if (options!.linkedFilter === null || options!.linkedFilter === '') {
+            const { linkedFilter: _drop, ...cleared } = base;
+            return cleared as SavedView;
+          }
+          return {
+            ...base,
+            linkedFilter: normalizeLinkedFilterId(options!.linkedFilter as string | number),
           };
         }
         // When the caller sets this record as default, clear the flag on the
@@ -246,6 +295,7 @@ export function useViewsManager({
         selectedView: selectedKey,
         columnState,
         isDefault: hasDefaultOpt ? isDefault : row?.isDefault,
+        linkedFilter: row?.linkedFilter,
         view: row,
       });
     },

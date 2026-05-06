@@ -21,6 +21,8 @@ export interface SavedRecordBase {
 
 export interface SavedView extends SavedRecordBase {
   columnState: any[];
+  /** Id of a saved filter record (`SavedFilter.id`) associated with this view. */
+  linkedFilter?: string | number;
 }
 
 export interface SavedFilter extends SavedRecordBase {

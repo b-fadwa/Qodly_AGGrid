@@ -644,6 +644,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const [viewName, setViewName] = useState<string>('');
   const [selectedView, setSelectedView] = useState<string>('');
   const [isViewDefault, setIsViewDefault] = useState<boolean>(false);
+  /** Saved filter id (`SavedFilter.id`) linked to the view being saved/updated in the column dialog. */
+  const [viewLinkedFilterId, setViewLinkedFilterId] = useState<string>('');
   // Currently selected saved filter / sort (toolbar + dialogs).
   const [selectedFilterName, setSelectedFilterName] = useState<string>('');
   const [selectedSortName, setSelectedSortName] = useState<string>('');
@@ -1677,6 +1679,7 @@ const AgGrid: FC<IAgGridProps> = ({
   useEffect(() => {
     if (!selectedView) {
       setIsViewDefault(false);
+      setViewLinkedFilterId('');
       return;
     }
     const record = viewsManager.savedViews.find(
@@ -1686,6 +1689,7 @@ const AgGrid: FC<IAgGridProps> = ({
         (v.id != null && String(v.id) === selectedView),
     );
     setIsViewDefault(Boolean(record?.isDefault));
+    setViewLinkedFilterId(record?.linkedFilter != null ? String(record.linkedFilter) : '');
   }, [selectedView, viewsManager.savedViews]);
 
   useEffect(() => {
@@ -2465,6 +2469,9 @@ const AgGrid: FC<IAgGridProps> = ({
                       handleColumnToggle={handleColumnToggle}
                       handlePinChange={handlePinChange}
                       columnLabelByStableField={columnLabelByStableField}
+                      savedFilters={filtersManager.savedFilters}
+                      viewLinkedFilterId={viewLinkedFilterId}
+                      setViewLinkedFilterId={setViewLinkedFilterId}
                     />
                   )}
                   {showToolbarSorting && (
