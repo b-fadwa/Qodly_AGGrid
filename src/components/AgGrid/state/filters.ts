@@ -17,6 +17,8 @@ interface UseFiltersManagerArgs {
   applyingExternalRef: React.MutableRefObject<boolean>;
   /** Mutable ref holding the fiscal-year toggle so it persists alongside the filter model. */
   dateFinancialEnabledRef: React.MutableRefObject<boolean>;
+  /** Mutable ref for “filter inactive records” toggle (persisted with filter model). */
+  filterInactiveRecordsEnabledRef: React.MutableRefObject<boolean>;
   /** Optional hook to apply a linked sort when a filter gets loaded. */
   onFilterLoaded?: (record: SavedFilter, selectedKey: string) => void;
 }
@@ -51,6 +53,7 @@ export function useFiltersManager({
   emit,
   applyingExternalRef,
   dateFinancialEnabledRef,
+  filterInactiveRecordsEnabledRef,
   onFilterLoaded,
 }: UseFiltersManagerArgs): FiltersManager {
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
@@ -97,10 +100,11 @@ export function useFiltersManager({
       const next: FilterStateValue = {
         filterModel: normalizeAgGridFilterModel(filterModel) ?? {},
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+        filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
       };
       filterDs.setValue(null, next);
     },
-    [filterDs, dateFinancialEnabledRef, applyingExternalRef],
+    [filterDs, dateFinancialEnabledRef, filterInactiveRecordsEnabledRef, applyingExternalRef],
   );
 
   const applyPersistedValue = useCallback(
@@ -109,6 +113,9 @@ export function useFiltersManager({
       const v = value as FilterStateValue;
       if ('dateFinancialFilterEnabled' in v) {
         dateFinancialEnabledRef.current = Boolean(v.dateFinancialFilterEnabled);
+      }
+      if ('filterInactiveRecords' in v) {
+        filterInactiveRecordsEnabledRef.current = Boolean(v.filterInactiveRecords);
       }
       let appliedFilter = false;
       // Some hosts clear the datasource by setting `{}` instead of
@@ -124,7 +131,7 @@ export function useFiltersManager({
       }
       return appliedFilter;
     },
-    [dateFinancialEnabledRef],
+    [dateFinancialEnabledRef, filterInactiveRecordsEnabledRef],
   );
 
   const captureCurrentFilterModel = useCallback(() => {
@@ -143,6 +150,7 @@ export function useFiltersManager({
         name,
         filterModel,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+        filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
         isDefault,
         linkedSort: options?.linkedSort?.trim() || undefined,
       };
@@ -158,10 +166,17 @@ export function useFiltersManager({
         isDefault,
         linkedSort: record.linkedSort,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
+        filterInactiveRecords: record.filterInactiveRecords,
         filter: record,
       });
     },
-    [captureCurrentFilterModel, emit, filtersDs, dateFinancialEnabledRef],
+    [
+      captureCurrentFilterModel,
+      emit,
+      filtersDs,
+      dateFinancialEnabledRef,
+      filterInactiveRecordsEnabledRef,
+    ],
   );
 
   const loadFilter = useCallback(
@@ -180,17 +195,21 @@ export function useFiltersManager({
         if ('dateFinancialFilterEnabled' in record) {
           dateFinancialEnabledRef.current = Boolean(record.dateFinancialFilterEnabled);
         }
+        if ('filterInactiveRecords' in record) {
+          filterInactiveRecordsEnabledRef.current = Boolean(record.filterInactiveRecords);
+        }
       }
       emit('onloadfilter', {
         selectedFilter: selectedKey,
         filterModel: record.filterModel,
         linkedSort: record.linkedSort,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
+        filterInactiveRecords: record.filterInactiveRecords,
         filter: record,
       });
       onFilterLoaded?.(record, selectedKey);
     },
-    [emit, gridRef, dateFinancialEnabledRef, onFilterLoaded],
+    [emit, gridRef, dateFinancialEnabledRef, filterInactiveRecordsEnabledRef, onFilterLoaded],
   );
 
   const updateFilter = useCallback(
@@ -211,6 +230,7 @@ export function useFiltersManager({
             name: record.name || record.title || String(record.id ?? selectedKey),
             filterModel,
             dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+            filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
             linkedSort:
               options?.linkedSort !== undefined
                 ? options.linkedSort?.trim() || undefined
@@ -232,10 +252,17 @@ export function useFiltersManager({
         linkedSort: row?.linkedSort,
         isDefault: hasDefaultOpt ? isDefault : row?.isDefault,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+        filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
         filter: row,
       });
     },
-    [captureCurrentFilterModel, emit, filtersDs, dateFinancialEnabledRef],
+    [
+      captureCurrentFilterModel,
+      emit,
+      filtersDs,
+      dateFinancialEnabledRef,
+      filterInactiveRecordsEnabledRef,
+    ],
   );
 
   const deleteFilter = useCallback(

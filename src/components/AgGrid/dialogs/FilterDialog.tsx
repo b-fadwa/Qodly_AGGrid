@@ -1,11 +1,11 @@
-import { FC, useEffect, useMemo, useState } from 'react';
+import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
 import type { SavedFilter, SavedSort } from '../state/types';
 import type { Translation } from '../state/sorts';
 import { isHiddenIdColumn } from '../state/gridState';
-import { QueryBuilder } from './QueryBuilder';
+import { QueryBuilder, type QueryBuilderHandle } from './QueryBuilder';
 
 interface FilterDialogProps {
   open: boolean;
@@ -17,6 +17,9 @@ interface FilterDialogProps {
   showDateFinancialToggle: boolean;
   dateFinancialFilterEnabled: boolean;
   onDateFinancialFilterEnabledChange: (enabled: boolean) => void;
+  showFilterInactiveRecordsToggle: boolean;
+  filterInactiveRecordsEnabled: boolean;
+  onFilterInactiveRecordsEnabledChange: (enabled: boolean) => void;
   /** AG Grid `getFilterModel()` snapshot — kept in sync with the header filter via `onFilterChanged`. */
   filterModel: any;
   /** Push a new filterModel back to AG Grid (typically `gridApi.setFilterModel`). */
@@ -46,6 +49,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   showDateFinancialToggle,
   dateFinancialFilterEnabled,
   onDateFinancialFilterEnabledChange,
+  showFilterInactiveRecordsToggle,
+  filterInactiveRecordsEnabled,
+  onFilterInactiveRecordsEnabledChange,
   filterModel,
   setFilterModel,
   savedFilters,
@@ -60,6 +66,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   const [filterName, setFilterName] = useState('');
   const [isDefault, setIsDefault] = useState(false);
   const [linkedSort, setLinkedSort] = useState('');
+  const queryBuilderRef = useRef<QueryBuilderHandle>(null);
 
   useEffect(() => {
     if (!selectedFilter) {
@@ -150,6 +157,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
 
         <div className="px-5 py-4" style={{ overflowY: 'auto' }}>
           <QueryBuilder
+            ref={queryBuilderRef}
+            deferEmit
             translation={translation}
             columns={visibleColumns}
             i18n={i18n}
@@ -168,6 +177,19 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                 onChange={(e) => onDateFinancialFilterEnabledChange(e.target.checked)}
               />
               <span>{translation('filter by fiscal year')}</span>
+            </label>
+          ) : null}
+          {showFilterInactiveRecordsToggle ? (
+            <label
+              className="mt-2 inline-flex items-center gap-2"
+              style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
+            >
+              <input
+                type="checkbox"
+                checked={filterInactiveRecordsEnabled}
+                onChange={(e) => onFilterInactiveRecordsEnabledChange(e.target.checked)}
+              />
+              <span>{translation('filter inactive records')}</span>
             </label>
           ) : null}
         </div>
@@ -305,14 +327,17 @@ export const FilterDialog: FC<FilterDialogProps> = ({
           <button
             type="button"
             className="rounded-md border px-3 py-2 text-sm text-white flex text-center items-center justify-center"
-            onClick={onClose}
+            onClick={() => {
+              queryBuilderRef.current?.commitToGrid();
+              onClose();
+            }}
             style={{
               background: '#2B5797',
               height: '31px',
               fontSize: '12px',
             }}
           >
-            {translation('Close')}
+            {translation('Apply')}
           </button>
         </div>
       </div>

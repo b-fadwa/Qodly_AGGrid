@@ -25,8 +25,10 @@ export interface SavedView extends SavedRecordBase {
 
 export interface SavedFilter extends SavedRecordBase {
   filterModel: any;
-  /** Toggle for the Date_Financial companion filter (see AgGrid.render.tsx). */
+  /** Fiscal-year companion toggle (see AgGrid.render.tsx). */
   dateFinancialFilterEnabled?: boolean;
+  /** Hide inactive records toggle persisted with saved filters. */
+  filterInactiveRecords?: boolean;
   /** Optional saved sort name applied automatically when this filter loads. */
   linkedSort?: string;
 }
@@ -42,10 +44,11 @@ export interface ViewStateValue {
   columnState?: any[];
 }
 
-/** Scalar object datasource bound to the live filter model (+ fiscal year toggle). */
+/** Scalar object datasource bound to the live filter model (+ companion toggles). */
 export interface FilterStateValue {
   filterModel?: any;
   dateFinancialFilterEnabled?: boolean;
+  filterInactiveRecords?: boolean;
 }
 
 /** Scalar object datasource bound to the live sort model. */

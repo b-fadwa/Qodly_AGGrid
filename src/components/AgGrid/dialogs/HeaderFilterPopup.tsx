@@ -44,6 +44,9 @@ interface HeaderFilterPopupProps {
   showDateFinancialToggle: boolean;
   dateFinancialFilterEnabled: boolean;
   onDateFinancialFilterEnabledChange: (enabled: boolean) => void;
+  showFilterInactiveRecordsToggle: boolean;
+  filterInactiveRecordsEnabled: boolean;
+  onFilterInactiveRecordsEnabledChange: (enabled: boolean) => void;
   translation: (key: string) => string;
   onApply: (nextModel: any | null) => void;
   onClose: () => void;
@@ -206,6 +209,9 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   showDateFinancialToggle,
   dateFinancialFilterEnabled,
   onDateFinancialFilterEnabledChange,
+  showFilterInactiveRecordsToggle,
+  filterInactiveRecordsEnabled,
+  onFilterInactiveRecordsEnabledChange,
   translation,
   onApply,
   onClose,
@@ -226,6 +232,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   const [rowCombinator, setRowCombinator] = useState<QodlyFilterCombinator>('AND');
   const [columnCombinator, setColumnCombinator] = useState<QodlyFilterCombinator>('AND');
   const [dateFinancialFilterDraft, setDateFinancialFilterDraft] = useState<boolean>(false);
+  const [filterInactiveRecordsDraft, setFilterInactiveRecordsDraft] = useState<boolean>(false);
   const hasOtherColumns = useMemo(() => {
     if (!colId) return false;
     if (activeRules.some((r) => r.field !== colId)) return true;
@@ -235,6 +242,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   useEffect(() => {
     if (!open || !colId) return;
     setDateFinancialFilterDraft(Boolean(dateFinancialFilterEnabled));
+    setFilterInactiveRecordsDraft(Boolean(filterInactiveRecordsEnabled));
     const forCol = activeRules.filter((r) => r.field === colId);
     if (forCol.length) {
       const parsed = forCol.map((r) => parseEntry(r.condition, operators)[0]);
@@ -253,7 +261,15 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     setColumnCombinator(entryCombinator);
     const rowOp = Array.isArray(currentEntry?.conditions) ? currentEntry?.operator : 'AND';
     setRowCombinator(rowOp === 'OR' || rowOp === 'EXCEPT' ? rowOp : 'AND');
-  }, [open, colId, currentEntry, operators, activeRules, dateFinancialFilterEnabled]);
+  }, [
+    open,
+    colId,
+    currentEntry,
+    operators,
+    activeRules,
+    dateFinancialFilterEnabled,
+    filterInactiveRecordsEnabled,
+  ]);
 
   const refSelectOptions = useMemo(() => {
     if (!column) return [];
@@ -564,19 +580,34 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
         })}
       </div>
       <>
-        {showDateFinancialToggle ? (
-          <div className="flex items-center justify-center gap-2 border-t border-[#D1D5DB] bg-[#ECECEC] p-2">
-            <label
-              className="mr-auto inline-flex items-center gap-1.5"
-              style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
-            >
-              <input
-                type="checkbox"
-                checked={dateFinancialFilterDraft}
-                onChange={(e) => setDateFinancialFilterDraft(e.target.checked)}
-              />
-              <span>{translation('filter by fiscal year')}</span>
-            </label>
+        {showDateFinancialToggle || showFilterInactiveRecordsToggle ? (
+          <div className="flex flex-col gap-2 border-t border-[#D1D5DB] bg-[#ECECEC] p-2">
+            {showDateFinancialToggle ? (
+              <label
+                className="mr-auto inline-flex items-center gap-1.5"
+                style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
+              >
+                <input
+                  type="checkbox"
+                  checked={dateFinancialFilterDraft}
+                  onChange={(e) => setDateFinancialFilterDraft(e.target.checked)}
+                />
+                <span>{translation('filter by fiscal year')}</span>
+              </label>
+            ) : null}
+            {showFilterInactiveRecordsToggle ? (
+              <label
+                className="mr-auto inline-flex items-center gap-1.5"
+                style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
+              >
+                <input
+                  type="checkbox"
+                  checked={filterInactiveRecordsDraft}
+                  onChange={(e) => setFilterInactiveRecordsDraft(e.target.checked)}
+                />
+                <span>{translation('filter inactive records')}</span>
+              </label>
+            ) : null}
           </div>
         ) : null}
       </>
@@ -609,6 +640,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
             const remaining = baseRules.filter((r) => r.field !== colId);
             if (!built.length) {
               onDateFinancialFilterEnabledChange(dateFinancialFilterDraft);
+              onFilterInactiveRecordsEnabledChange(filterInactiveRecordsDraft);
               applyRules(remaining);
               onClose();
               return;
@@ -626,6 +658,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
               })),
             ];
             onDateFinancialFilterEnabledChange(dateFinancialFilterDraft);
+            onFilterInactiveRecordsEnabledChange(filterInactiveRecordsDraft);
             applyRules(nextRules);
             onClose();
           }}
