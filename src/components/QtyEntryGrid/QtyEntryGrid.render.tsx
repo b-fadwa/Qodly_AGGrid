@@ -192,16 +192,23 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     return s;
   }, [style]);
 
+  const buildPayloadFromRow = useCallback((data: any) => {
+    const cols = columnsRef.current;
+    const payload: Record<string, any> = {};
+    cols.forEach((c) => {
+      const fromDisplayedRow = data?.[c.title];
+      const fromEntity = get(data?.__entity, c.source);
+      payload[c.source] = fromDisplayedRow !== undefined ? fromDisplayedRow : fromEntity;
+    });
+    return payload;
+  }, []);
+
   const onCellValueChanged = useCallback(
     (event: CellValueChangedEvent) => {
       const cols = columnsRef.current;
       const col = cols.find((c) => c.title === event.colDef.field);
       const rowIndex = event.node?.rowIndex ?? event.data?.__rowIndex ?? -1;
-
-      const payload: Record<string, any> = {};
-      cols.forEach((c) => {
-        payload[c.source] = event.data?.[c.title];
-      });
+      const payload = buildPayloadFromRow(event.data);
 
       emit('oncellvaluechanged', {
         column: col?.source ?? event.colDef.field,
@@ -215,7 +222,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
       // Keep React state in sync in case grid mutates row objects in-place.
       setRowData((prev) => prev.map((r, i) => (i === rowIndex ? { ...event.data } : r)));
     },
-    [emit],
+    [emit, buildPayloadFromRow],
   );
 
   const onCellDoubleClicked = useCallback(
@@ -223,11 +230,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
       const cols = columnsRef.current;
       const col = cols.find((c) => c.title === event.colDef.field);
       const rowIndex = event.node?.rowIndex ?? (event.data as any)?.__rowIndex ?? -1;
-
-      const payload: Record<string, any> = {};
-      cols.forEach((c) => {
-        payload[c.source] = (event.data as any)?.[c.title];
-      });
+      const payload = buildPayloadFromRow(event.data);
 
       emit('oncelldblclick', {
         column: col?.source ?? event.colDef.field,
@@ -237,18 +240,13 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
         entity: (event.data as any)?.__entity,
       });
     },
-    [emit],
+    [emit, buildPayloadFromRow],
   );
 
   const onRowDoubleClicked = useCallback(
     (event: RowDoubleClickedEvent) => {
-      const cols = columnsRef.current;
       const rowIndex = event.node?.rowIndex ?? (event.data as any)?.__rowIndex ?? -1;
-
-      const payload: Record<string, any> = {};
-      cols.forEach((c) => {
-        payload[c.source] = (event.data as any)?.[c.title];
-      });
+      const payload = buildPayloadFromRow(event.data);
 
       emit('onrowdblclick', {
         rowIndex,
@@ -256,7 +254,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
         entity: (event.data as any)?.__entity,
       });
     },
-    [emit],
+    [emit, buildPayloadFromRow],
   );
 
   return (
