@@ -95,6 +95,8 @@ export default {
       { label: 'On Sort', value: 'onsort' },
 
       { label: 'On Calculs statistique', value: 'oncalculstatistique' },
+
+      { label: 'On Calculated search', value: 'oncalculatedsearch' },
     ],
     datasources: {
       declarations: (props) => {
@@ -274,6 +276,7 @@ export default {
     showToolbarSorting: true,
     showToolbarFiltering: true,
     showToolbarStatistics: false,
+    showToolbarCalculatedSearch: true,
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
     showRecordCount: true,
@@ -339,6 +342,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarFiltering?: boolean;
   /** Toolbar: Calculs statistique (numeric column aggregates) */
   showToolbarStatistics?: boolean;
+  /** Toolbar: Calculated search (opens modal) */
+  showToolbarCalculatedSearch?: boolean;
   /** Toolbar: Save new view */
   showToolbarSaveView?: boolean;
   /** Toolbar: Load / overwrite / delete saved views */

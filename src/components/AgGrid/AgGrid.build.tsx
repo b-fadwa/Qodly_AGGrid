@@ -14,11 +14,15 @@ import { ColDef, themeQuartz } from 'ag-grid-community';
 import { BsFillInfoCircleFill } from 'react-icons/bs';
 import { Element } from '@ws-ui/craftjs-core';
 import { useState } from 'react';
-import { FaTableColumns } from 'react-icons/fa6';
+import { FaTableColumns, FaMagnifyingGlass } from 'react-icons/fa6';
 import { FaClockRotateLeft } from 'react-icons/fa6';
 import { GoTrash } from 'react-icons/go';
 import { IoMdClose } from 'react-icons/io';
 import { FaCalculator, FaSortAmountDown, FaFilter } from 'react-icons/fa';
+import {
+  CalculatedSearchDialog,
+  type CalculatedSearchEmitPayload,
+} from './dialogs/CalculatedSearchDialog';
 
 const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) => {
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -115,6 +119,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarSorting = true,
   showToolbarFiltering = true,
   showToolbarStatistics = true,
+  showToolbarCalculatedSearch = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
   showRecordCount = true,
@@ -192,6 +197,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
   const [showStatisticsDialog, setShowStatisticsDialog] = useState(false);
+  const [showCalculatedSearchDialog, setShowCalculatedSearchDialog] = useState(false);
   const [sortRules, setSortRules] = useState<{ field: string; sort: 'asc' | 'desc' }[]>([]);
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
@@ -240,6 +246,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarSorting ||
     showToolbarFiltering ||
     showToolbarStatistics ||
+    showToolbarCalculatedSearch ||
     showToolbarSaveView ||
     showToolbarSavedViews;
 
@@ -285,6 +292,27 @@ const AgGrid: FC<IAgGridProps> = ({
                                   aria-label={translation('Statistics')}
                                 >
                                   <FaCalculator size={14} />
+                                </button>
+                              </IconPopover>
+                            </div>
+                          )}
+                          {showToolbarCalculatedSearch && (
+                            <div className="calculated-search-section flex flex-col gap-2 mr-4 bg-white px-4 py-2">
+                              <IconPopover label={translation('Calculated search')}>
+                                <button
+                                  type="button"
+                                  className="header-button inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-800"
+                                  onClick={() => setShowCalculatedSearchDialog(true)}
+                                  style={{
+                                    width: '31px',
+                                    height: '31px',
+                                    borderRadius: '6px',
+                                    borderColor: '#0000001A',
+                                    color: '#44444C',
+                                  }}
+                                  aria-label={translation('Calculated search')}
+                                >
+                                  <FaMagnifyingGlass size={12} />
                                 </button>
                               </IconPopover>
                             </div>
@@ -660,6 +688,20 @@ const AgGrid: FC<IAgGridProps> = ({
                       </div>
                     </div>
                   </div>
+                )}
+                {showToolbarCalculatedSearch && (
+                  <CalculatedSearchDialog
+                    open={showCalculatedSearchDialog}
+                    onClose={() => setShowCalculatedSearchDialog(false)}
+                    translation={translation}
+                    savedSorts={[]}
+                    selectedSortKey=""
+                    filterOnFiscalYearsInitial={false}
+                    onApply={async (payload: CalculatedSearchEmitPayload) => {
+                      void payload;
+                      setShowCalculatedSearchDialog(false);
+                    }}
+                  />
                 )}
                 {showToolbarSorting && showSortingDialog && (
                   <div

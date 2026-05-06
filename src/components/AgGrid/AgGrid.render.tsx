@@ -83,7 +83,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
 import set from 'lodash/set';
-import { FaTableColumns, FaCopy } from 'react-icons/fa6';
+import { FaTableColumns, FaCopy, FaMagnifyingGlass } from 'react-icons/fa6';
 import { FaClockRotateLeft } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { FaSortAmountDown, FaFilter } from 'react-icons/fa';
@@ -102,6 +102,10 @@ import { useSortsManager } from './state/sorts';
 import { SortingDialog } from './dialogs/SortingDialog';
 import { FilterDialog } from './dialogs/FilterDialog';
 import { ViewDialog } from './dialogs/ViewDialog';
+import {
+  CalculatedSearchDialog,
+  type CalculatedSearchEmitPayload,
+} from './dialogs/CalculatedSearchDialog';
 import AgGridFilterHeader from './AgGridFilterHeader';
 import { HeaderFilterPopup } from './dialogs/HeaderFilterPopup';
 
@@ -420,6 +424,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarSorting = true,
   showToolbarFiltering = true,
   showToolbarStatistics = true,
+  showToolbarCalculatedSearch = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
   className,
@@ -453,6 +458,7 @@ const AgGrid: FC<IAgGridProps> = ({
       'onupdatesort',
       'ondeletesort',
       'oncalculstatistique',
+      'oncalculatedsearch',
     ],
   });
   const { resolver } = useEnhancedEditor(selectResolver);
@@ -631,6 +637,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const [isCellSelectionAvailable, setIsCellSelectionAvailable] = useState(false);
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
+  const [showCalculatedSearchDialog, setShowCalculatedSearchDialog] = useState(false);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [liveFilterModel, setLiveFilterModel] = useState<any>({});
   const liveFilterModelRef = useRef<any>({});
@@ -2176,6 +2183,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarView ||
     showToolbarSorting ||
     showToolbarStatistics ||
+    showToolbarCalculatedSearch ||
     showToolbarSaveView ||
     showToolbarSavedViews;
 
@@ -2275,6 +2283,27 @@ const AgGrid: FC<IAgGridProps> = ({
                               | undefined
                           }
                         />
+                        {showToolbarCalculatedSearch && (
+                          <div className="calculated-search-section">
+                            <IconPopover label={translation('Calculated search')}>
+                              <button
+                                type="button"
+                                onClick={() => setShowCalculatedSearchDialog(true)}
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                aria-label={translation('Calculated search')}
+                              >
+                                <FaMagnifyingGlass size={12} />
+                              </button>
+                            </IconPopover>
+                          </div>
+                        )}
                         {showToolbarSorting && (
                           <div className="sorting-section ">
                             <IconPopover label={translation('Advanced sorting')}>
@@ -2472,6 +2501,20 @@ const AgGrid: FC<IAgGridProps> = ({
                       savedFilters={filtersManager.savedFilters}
                       viewLinkedFilterId={viewLinkedFilterId}
                       setViewLinkedFilterId={setViewLinkedFilterId}
+                    />
+                  )}
+                  {showToolbarCalculatedSearch && (
+                    <CalculatedSearchDialog
+                      open={showCalculatedSearchDialog}
+                      onClose={() => setShowCalculatedSearchDialog(false)}
+                      translation={translation}
+                      savedSorts={sortsManager.savedSorts}
+                      selectedSortKey={selectedSortName}
+                      filterOnFiscalYearsInitial={dateFinancialFilterEnabled}
+                      onApply={async (payload: CalculatedSearchEmitPayload) => {
+                        await emit('oncalculatedsearch', payload);
+                        setShowCalculatedSearchDialog(false);
+                      }}
                     />
                   )}
                   {showToolbarSorting && (
