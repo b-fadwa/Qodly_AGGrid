@@ -68,6 +68,8 @@ export interface FilterRule {
 export type QueryBuilderHandle = {
   /** Push the current draft rules to AG Grid / parent `onChange`. */
   commitToGrid: () => void;
+  /** Compiled AG Grid `filterModel` from the current draft (does not call `onChange`). For save/update without Apply. */
+  getCompiledFilterModel: () => any;
 };
 
 interface QueryBuilderProps {
@@ -319,9 +321,7 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
   // (and the header popups only update) once a rule becomes compilable.
   const [rules, setRules] = useState<FilterRule[]>(() => filterModelToRules(filterModel, columns));
   const rulesRef = useRef<FilterRule[]>(rules);
-  useEffect(() => {
-    rulesRef.current = rules;
-  }, [rules]);
+  rulesRef.current = rules;
   // Tracks the last model *we* sent upstream, so external changes (header
   // popup edits, saved-filter loads) can re-seed the rule list without
   // clobbering in-progress rows that the user is still typing into.
@@ -384,6 +384,13 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
         const model = rulesToFilterModel(draft, columnsRef.current);
         lastEmittedRef.current = model;
         onChangeRef.current(model);
+      },
+      getCompiledFilterModel: () => {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        return rulesToFilterModel(rulesRef.current, columnsRef.current);
       },
     }),
     [],

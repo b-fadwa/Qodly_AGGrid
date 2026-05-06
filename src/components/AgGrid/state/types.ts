@@ -11,10 +11,10 @@ export interface SavedRecordBase {
   title?: string;
   id?: string | number;
   /**
-   * When true, this record is the one auto-applied on grid bootstrap if the
-   * live DS (`view` / `filter` / `sort`) does not already carry a value.
-   * Only one record per list should have `isDefault: true` — the managers
-   * enforce this on save/update.
+   * When true, this record is auto-applied on grid bootstrap for views or sorts
+   * if the live DS does not already carry a value. Only one record per list
+   * should have `isDefault: true` — the managers enforce this on save/update.
+   * Saved filters no longer use defaults; legacy JSON may still carry the flag.
    */
   isDefault?: boolean;
 }

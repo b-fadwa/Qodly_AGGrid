@@ -4,7 +4,7 @@ import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
 import type { SavedFilter, SavedSort } from '../state/types';
 import type { Translation } from '../state/sorts';
-import { isHiddenIdColumn } from '../state/gridState';
+import { isHiddenIdColumn, findSavedRecord } from '../state/gridState';
 import { QueryBuilder, type QueryBuilderHandle } from './QueryBuilder';
 
 interface FilterDialogProps {
@@ -26,15 +26,11 @@ interface FilterDialogProps {
   setFilterModel: (next: any) => void;
   savedFilters: SavedFilter[];
   savedSorts: SavedSort[];
-  saveFilter: (name: string, options?: { isDefault?: boolean; linkedSort?: string }) => void;
+  saveFilter: (name: string, options?: { linkedSort?: string; filterModel?: any }) => void;
   loadFilter: (key: string) => void;
-  updateFilter: (key: string, options?: { isDefault?: boolean; linkedSort?: string }) => void;
+  updateFilter: (key: string, options?: { linkedSort?: string; filterModel?: any }) => void;
   deleteFilter: (key: string) => void;
-  /**
-   * Currently selected saved filter — owned by the parent so that an
-   * auto-applied default (via `tryApplyDefault`) is reflected in the dropdown
-   * even before the user opens the dialog.
-   */
+  /** Currently selected saved filter — owned by the parent for toolbar + dialog dropdowns. */
   selectedFilter: string;
   setSelectedFilter: (next: string) => void;
 }
@@ -64,25 +60,23 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   setSelectedFilter,
 }) => {
   const [filterName, setFilterName] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
   const [linkedSort, setLinkedSort] = useState('');
   const queryBuilderRef = useRef<QueryBuilderHandle>(null);
 
   useEffect(() => {
     if (!selectedFilter) {
-      setIsDefault(false);
       setLinkedSort('');
       return;
     }
-    const record = savedFilters.find(
-      (r) =>
-        r.name === selectedFilter ||
-        r.title === selectedFilter ||
-        (r.id != null && String(r.id) === selectedFilter),
-    );
-    setIsDefault(Boolean(record?.isDefault));
-    setLinkedSort(record?.linkedSort ?? '');
-  }, [selectedFilter, savedFilters]);
+    const record = findSavedRecord(savedFilters, selectedFilter);
+    const raw = record?.linkedSort?.trim();
+    if (!raw) {
+      setLinkedSort('');
+      return;
+    }
+    const sortHit = findSavedRecord(savedSorts, raw);
+    setLinkedSort(sortHit?.name ?? raw);
+  }, [selectedFilter, savedFilters, savedSorts]);
 
   /**
    * Hide internal id columns from the column picker (Feature 3) — they still
@@ -106,18 +100,20 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   const saveButtonDisabled = !trimmedName && !selectedFilter;
   const handleSavePressed = () => {
     if (saveButtonDisabled) return;
+    const filterModelDraft = queryBuilderRef.current?.getCompiledFilterModel();
+    const persistOpts =
+      filterModelDraft !== undefined ? { linkedSort, filterModel: filterModelDraft } : { linkedSort };
     if (trimmedName) {
       if (matchingExisting) {
-        updateFilter(matchingExisting.name, { isDefault });
+        updateFilter(matchingExisting.name, persistOpts);
       } else {
-        saveFilter(trimmedName, { isDefault, linkedSort });
+        saveFilter(trimmedName, persistOpts);
       }
     } else if (selectedFilter) {
-      updateFilter(selectedFilter, { isDefault, linkedSort });
+      updateFilter(selectedFilter, persistOpts);
     }
     setFilterName('');
     if (!selectedFilter) {
-      setIsDefault(false);
       setLinkedSort('');
     }
   };
@@ -213,18 +209,6 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                 fontSize: '12px',
               }}
             />
-            <label
-              className="inline-flex items-center gap-1 whitespace-nowrap"
-              style={{ color: '#717182', fontSize: '12px', fontWeight: 500 }}
-              title={translation('Set as default')}
-            >
-              <input
-                type="checkbox"
-                checked={isDefault}
-                onChange={(e) => setIsDefault(e.target.checked)}
-              />
-              <span>{translation('Default')}</span>
-            </label>
             <select
               value={selectedFilter}
               onChange={(e) => {
@@ -262,6 +246,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               title={translation('Linked sort')}
             >
               <option value="">{translation('No linked sort')}</option>
+              {linkedSort && !findSavedRecord(savedSorts, linkedSort) ? (
+                <option value={linkedSort}>{linkedSort}</option>
+              ) : null}
               {savedSorts.map((record) => (
                 <option key={record.name} value={record.name}>
                   {record.name}

@@ -644,9 +644,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const [viewName, setViewName] = useState<string>('');
   const [selectedView, setSelectedView] = useState<string>('');
   const [isViewDefault, setIsViewDefault] = useState<boolean>(false);
-  // Currently selected saved filter / sort. Lifted here so that an
-  // auto-applied default (via `tryApplyDefault`) is reflected in the
-  // dialog's dropdown even before the user opens it.
+  // Currently selected saved filter / sort (toolbar + dialogs).
   const [selectedFilterName, setSelectedFilterName] = useState<string>('');
   const [selectedSortName, setSelectedSortName] = useState<string>('');
 
@@ -668,12 +666,14 @@ const AgGrid: FC<IAgGridProps> = ({
     [filterDs],
   );
 
-  // Bootstrap tracking for `isDefault` auto-apply: once a live value or a
-  // default has been applied for a given kind, we leave the grid alone.
+  // Bootstrap tracking for saved defaults (views / sorts): once a live value or a
+  // default has been applied for that kind, we leave the grid alone.
   const [gridReady, setGridReady] = useState(false);
   const viewDefaultTriedRef = useRef(false);
-  const filterDefaultTriedRef = useRef(false);
-  const sortDefaultTriedRef = useRef(false);
+  /** Live `sort` datasource applied a non-empty sort during bootstrap (or linked sort) — do not override with a named default. */
+  const skipAutoSortDefaultRef = useRef(false);
+  /** Last named default sort we applied (record name); cleared when list has no default. */
+  const sortDefaultAppliedKeyRef = useRef<string>('');
   const linkedSortAppliedFromFilterRef = useRef(false);
 
   // columns dialog
@@ -1188,6 +1188,7 @@ const AgGrid: FC<IAgGridProps> = ({
         }, 0);
       }
     };
+    void listener();
     sortDs.addListener('changed', listener);
     return () => {
       sortDs.removeListener('changed', listener);
@@ -1559,7 +1560,6 @@ const AgGrid: FC<IAgGridProps> = ({
       const api: GridApi = params.api;
       let applied = false;
       let viewLiveApplied = false;
-      let filterLiveApplied = false;
       let sortLiveApplied = false;
       linkedSortAppliedFromFilterRef.current = false;
 
@@ -1593,9 +1593,7 @@ const AgGrid: FC<IAgGridProps> = ({
       if (filterDs) {
         try {
           const value = await filterDs.getValue();
-          if (filtersManager.applyPersistedValue(api, value)) {
-            filterLiveApplied = true;
-          }
+          filtersManager.applyPersistedValue(api, value);
           const nextLive =
             value && typeof value === 'object' && 'filterModel' in (value as any)
               ? ((value as any).filterModel ?? {})
@@ -1619,7 +1617,7 @@ const AgGrid: FC<IAgGridProps> = ({
         }
       }
 
-      // Fallback: if no live value was applied for a given kind, try the
+      // Fallback: if no live value was applied for view/sort, try the
       // record flagged `isDefault` (if the list is already populated at this
       // point — otherwise the bootstrap useEffect below will retry once the
       // saved list arrives). When a default is applied, also reflect its
@@ -1632,15 +1630,6 @@ const AgGrid: FC<IAgGridProps> = ({
           setSelectedView(appliedName);
         }
       }
-      if (!filterLiveApplied) {
-        const appliedName = filtersManager.tryApplyDefault();
-        if (appliedName) {
-          filterLiveApplied = true;
-          setSelectedFilterName(appliedName);
-          setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
-          setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
-        }
-      }
       if (!sortLiveApplied) {
         if (linkedSortAppliedFromFilterRef.current) {
           sortLiveApplied = true;
@@ -1650,13 +1639,13 @@ const AgGrid: FC<IAgGridProps> = ({
         const appliedName = sortsManager.tryApplyDefault();
         if (appliedName) {
           sortLiveApplied = true;
+          sortDefaultAppliedKeyRef.current = appliedName;
           setSelectedSortName(appliedName);
         }
       }
 
       viewDefaultTriedRef.current = viewLiveApplied;
-      filterDefaultTriedRef.current = filterLiveApplied;
-      sortDefaultTriedRef.current = sortLiveApplied;
+      skipAutoSortDefaultRef.current = sortLiveApplied;
 
       if (!applied) {
         const columnState = withoutSyntheticRowColumnState(api.getColumnState());
@@ -1671,7 +1660,7 @@ const AgGrid: FC<IAgGridProps> = ({
   );
 
   // Deferred bootstrap for defaults: if the saved list DS finishes loading
-  // _after_ `getState` ran (common: the `views`/`filters`/`sorts` datasource
+  // _after_ `getState` ran (common: the `views`/`sorts` datasource
   // is populated asynchronously), fall back to the record flagged `isDefault`.
   // Each kind has its own "tried" flag so we only apply once.
   useEffect(() => {
@@ -1701,25 +1690,22 @@ const AgGrid: FC<IAgGridProps> = ({
 
   useEffect(() => {
     if (!gridReady) return;
-    if (filterDefaultTriedRef.current) return;
-    if (filtersManager.savedFilters.length === 0) return;
-    const appliedName = filtersManager.tryApplyDefault();
-    if (appliedName) setSelectedFilterName(appliedName);
-    filterDefaultTriedRef.current = true;
-  }, [gridReady, filtersManager.savedFilters, filtersManager]);
-
-  useEffect(() => {
-    if (!gridReady) return;
-    if (sortDefaultTriedRef.current) return;
-    if (selectedSortName) {
-      sortDefaultTriedRef.current = true;
+    const list = sortsManager.savedSorts;
+    const defaultRecord = list.find((r) => r.isDefault);
+    if (!defaultRecord) {
+      sortDefaultAppliedKeyRef.current = '';
       return;
     }
-    if (sortsManager.savedSorts.length === 0) return;
+    const key = defaultRecord.name;
+    if (sortDefaultAppliedKeyRef.current === key) return;
+    if (skipAutoSortDefaultRef.current) return;
+
     const appliedName = sortsManager.tryApplyDefault();
-    if (appliedName) setSelectedSortName(appliedName);
-    sortDefaultTriedRef.current = true;
-  }, [gridReady, sortsManager.savedSorts, sortsManager, selectedSortName]);
+    if (appliedName) {
+      setSelectedSortName(appliedName);
+      sortDefaultAppliedKeyRef.current = appliedName;
+    }
+  }, [gridReady, sortsManager.savedSorts]);
 
   /**
    * Translate an AG Grid `sortModel` into the tail of a 4D/Qodly `query()`
@@ -2000,7 +1986,18 @@ const AgGrid: FC<IAgGridProps> = ({
         try {
           if (allowServerFilterSortEmitRef.current) {
             if (!isEqual(filterFingerprint, lastEmittedOnFilterPayloadRef.current)) {
-              await emitRef.current('onfilter', onFilterEmitPayload);
+              const strippedFm = stripAdvancedRulesFromFilterModel(filterFingerprint.filterModel ?? {});
+              const normalizedCols = normalizeAgGridFilterModel(strippedFm) ?? {};
+              const hasColumnFilters =
+                normalizedCols != null &&
+                typeof normalizedCols === 'object' &&
+                !Array.isArray(normalizedCols) &&
+                Object.keys(normalizedCols).length > 0;
+              const adv = filterFingerprint.advancedRules;
+              const hasAdvancedRules = Array.isArray(adv) && adv.length > 0;
+              if (hasColumnFilters || hasAdvancedRules) {
+                await emitRef.current('onfilter', onFilterEmitPayload);
+              }
               lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
             }
             if (!isEqual(sortFingerprint, lastEmittedOnSortPayloadRef.current)) {
@@ -2475,6 +2472,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showSortingDialog}
                       onClose={() => setShowSortingDialog(false)}
                       translation={translation}
+                      columns={columns}
                       sortableColumns={sortableColumns}
                       initialSortModel={sortDialogInitialModel}
                       onApply={(model) => {
@@ -2485,7 +2483,6 @@ const AgGrid: FC<IAgGridProps> = ({
                       }}
                       savedSorts={sortsManager.savedSorts}
                       saveSort={sortsManager.saveSort}
-                      loadSort={sortsManager.loadSort}
                       updateSort={sortsManager.updateSort}
                       deleteSort={sortsManager.deleteSort}
                       selectedSort={selectedSortName}
