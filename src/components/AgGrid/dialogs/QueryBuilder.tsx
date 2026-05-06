@@ -1,4 +1,12 @@
-import { FC, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type { FC } from 'react';
 import get from 'lodash/get';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
@@ -57,6 +65,13 @@ export interface FilterRule {
   combinator?: ColumnCombinator;
 }
 
+export type QueryBuilderHandle = {
+  /** Push the current draft rules to AG Grid / parent `onChange`. */
+  commitToGrid: () => void;
+  /** Compiled AG Grid `filterModel` from the current draft (does not call `onChange`). For save/update without Apply. */
+  getCompiledFilterModel: () => any;
+};
+
 interface QueryBuilderProps {
   translation: Translation;
   columns: IColumn[];
@@ -64,6 +79,11 @@ interface QueryBuilderProps {
   lang?: string;
   filterModel: any;
   onChange: (nextModel: any) => void;
+  /**
+   * When true, rule edits only update local draft state until `commitToGrid()` runs
+   * (advanced filter modal — Apply button).
+   */
+  deferEmit?: boolean;
 }
 
 /* ----------------------- conversion helpers ----------------------- */
@@ -281,14 +301,19 @@ const sameModel = (a: any, b: any): boolean => {
   }
 };
 
-export const QueryBuilder: FC<QueryBuilderProps> = ({
-  translation,
-  columns,
-  i18n,
-  lang,
-  filterModel,
-  onChange,
-}) => {
+export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
+  function QueryBuilder(
+    {
+      translation,
+      columns,
+      i18n,
+      lang,
+      filterModel,
+      onChange,
+      deferEmit = false,
+    },
+    ref,
+  ) {
   const visibleColumns = useMemo(() => filterableColumns(columns), [columns]);
 
   // Own the rule list locally so "+ Rule" can add an empty row that isn't
@@ -296,9 +321,7 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
   // (and the header popups only update) once a rule becomes compilable.
   const [rules, setRules] = useState<FilterRule[]>(() => filterModelToRules(filterModel, columns));
   const rulesRef = useRef<FilterRule[]>(rules);
-  useEffect(() => {
-    rulesRef.current = rules;
-  }, [rules]);
+  rulesRef.current = rules;
   // Tracks the last model *we* sent upstream, so external changes (header
   // popup edits, saved-filter loads) can re-seed the rule list without
   // clobbering in-progress rows that the user is still typing into.
@@ -349,18 +372,42 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
     onChangeRef.current(model);
   };
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      commitToGrid: () => {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        const draft = rulesRef.current;
+        const model = rulesToFilterModel(draft, columnsRef.current);
+        lastEmittedRef.current = model;
+        onChangeRef.current(model);
+      },
+      getCompiledFilterModel: () => {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        return rulesToFilterModel(rulesRef.current, columnsRef.current);
+      },
+    }),
+    [],
+  );
+
   /** Update local draft rules only (no upstream emit). */
   const setDraftRulesOnly = (nextRules: FilterRule[]) => {
     setRules(nextRules);
   };
 
   /**
-   * Push the rules immediately. Used for structural changes (add/remove rule,
-   * column/operator/combinator change) where the user expects an instant grid
-   * update.
+   * Push the rules immediately when not `deferEmit`. Used for structural changes
+   * (add/remove rule, column/operator/combinator change).
    */
   const emit = (nextRules: FilterRule[]) => {
     setRules(nextRules);
+    if (deferEmit) return;
     if (!areAllRulesCompilable(nextRules)) {
       return;
     }
@@ -368,14 +415,15 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
   };
 
   /**
-   * Push the rules after a short delay. Used for value-input typing so the
-   * server isn't pinged for every keystroke (e.g. typing "ABAD" used to send
-   * a request for "A", "AB", "ABA", "ABAD"). The debounce coalesces those
-   * into a single fetch when the user pauses.
+   * After value typing: debounced upstream emit, or local-only when `deferEmit`.
    */
   const emitDebounced = (nextRules: FilterRule[]) => {
     setRules(nextRules);
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    if (deferEmit) {
+      debounceTimerRef.current = null;
+      return;
+    }
     debounceTimerRef.current = setTimeout(() => {
       debounceTimerRef.current = null;
       if (!areAllRulesCompilable(nextRules)) {
@@ -469,6 +517,13 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
                   onChange={(patch) => updateRule(index, patch)}
                   onValueChange={(patch) => updateRuleValue(index, patch)}
                   onValueCommit={() => {
+                    if (deferEmit) {
+                      if (debounceTimerRef.current) {
+                        clearTimeout(debounceTimerRef.current);
+                        debounceTimerRef.current = null;
+                      }
+                      return;
+                    }
                     const current = rulesRef.current;
                     if (!areAllRulesCompilable(current)) {
                       return;
@@ -484,7 +539,8 @@ export const QueryBuilder: FC<QueryBuilderProps> = ({
       )}
     </div>
   );
-};
+  },
+);
 
 interface CombinatorBadgeProps {
   translation: Translation;

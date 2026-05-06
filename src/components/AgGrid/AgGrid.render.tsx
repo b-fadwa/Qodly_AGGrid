@@ -81,7 +81,6 @@ import {
 import { StatisticCalculations } from './StatisticCalculations';
 import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
-import { format } from 'date-fns';
 import { get } from 'lodash';
 import set from 'lodash/set';
 import { FaTableColumns, FaCopy } from 'react-icons/fa6';
@@ -386,7 +385,8 @@ const AgGrid: FC<IAgGridProps> = ({
   filters = '',
   sort = '',
   sorts = '',
-  dateFinancial = '',
+  dateFinancial = false,
+  filterInactiveRecords = false,
   calculStatistiqueResult = '',
   currentSelection = '',
   spacing,
@@ -459,36 +459,35 @@ const AgGrid: FC<IAgGridProps> = ({
   const {
     sources: { datasource: ds, currentElement },
   } = useSources({ acceptIteratorSel: true });
+  /** `onGridReady` uses `[]` deps — read datasource via ref so `getRows` always sees the current iterator / entitysel after backend swaps the selection. */
+  const dsRef = useRef(ds);
+  dsRef.current = ds;
   const { id: nodeID } = useEnhancedNode();
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
+  /** Skip `refreshInfiniteCache` from `useDsChangeHandler` while `getRows` runs emit + page fetch. */
+  const suppressDsChangeRefreshRef = useRef(false);
   /**
-   * `applySorting` dedupe key. Tracks both the last sortModel AND the entitysel
-   * it was applied to. A fresh entitysel (e.g. `searchDs.entitysel = dataclass.query(...)`
-   * when loading a filter) has no orderby, even when the sortModel itself
-   * hasn't changed — comparing against the entitysel reference forces a
-   * re-apply so the outgoing request keeps the orderby.
+   * Last fingerprints successfully synced via `onfilter` / `onsort`. Dedupes infinite-cache blocks.
+   * Filter fingerprint excludes sort so sort-only changes do not fire `onfilter`.
+   * Cleared when the bound datasource identity (`ds.id`) changes.
    */
-  const prevSortInfoRef = useRef<{ sortModel: SortModelItem[]; entitysel: any }>({
-    sortModel: [],
-    entitysel: null,
-  });
-  /**
-   * Consume-once flag for `onDsChange` → `refreshInfiniteCache`. Set to `true`
-   * just before `await activeDs.orderBy(...)` inside `applySorting`; the
-   * resulting `onDsChange` would otherwise fire a duplicate `getRows` for the
-   * same block (the first one lacking the orderby, the second one with it).
-   */
-  const skipDsChangeRefreshOnceRef = useRef(false);
+  const lastEmittedOnFilterPayloadRef = useRef<unknown>(null);
+  const lastEmittedOnSortPayloadRef = useRef<unknown>(null);
+  /** When false, `getRows` loads pages but does not emit `onfilter`/`onsort` (initial render). Set true after baseline fingerprints sync. */
+  const allowServerFilterSortEmitRef = useRef(false);
+
+  const emitRef = useRef(emit);
+  emitRef.current = emit;
   /** Skip persisting to `state` while we apply datasource → grid (avoids echo with external updates). */
   const applyingExternalStateRef = useRef(false);
   const gridRef = useRef<AgGridReact>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [containerHeight, setContainerHeight] = useState<number | null>(null);
-  const dateFinancialRef = useRef<Date | null>(null);
   const dateFinancialEnabledRef = useRef<boolean>(false);
-  const [hasDateFinancialFilter, setHasDateFinancialFilter] = useState(false);
+  const filterInactiveRecordsEnabledRef = useRef<boolean>(false);
   const [dateFinancialFilterEnabled, setDateFinancialFilterEnabled] = useState(false);
+  const [filterInactiveRecordsEnabled, setFilterInactiveRecordsEnabled] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -516,23 +515,35 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   };
 
-  const searchDs = useMemo(() => {
-    if (ds) {
-      const clone: any = cloneDeep(ds);
-      clone.id = `${clone.id}_clone`;
-      clone.children = {};
-      return clone;
-    }
-    return null;
-  }, [ds?.id, (ds as any)?.entitysel]);
-
-  const { fetchIndex, fetchPage } = useDataLoader({
+  const { fetchIndex } = useDataLoader({
     source: ds,
   });
 
-  const { fetchPage: fetchClone } = useDataLoader({
-    source: searchDs,
-  });
+  /**
+   * Do not use `useDataLoader().fetchPage` for grid rows: that helper reads an internal datasource
+   * snapshot from the loader hook mount. After `onfilter`/`onsort` the server replaces `entitysel`
+   * on the **live** iterator — load slices via `dsRef.current.getCollection`.
+   */
+  const fetchGridPageFromSource = useCallback(async (startRow: number, pageSize: number) => {
+    const src = dsRef.current as any;
+    if (src == null || typeof src.getCollection !== 'function') return [];
+    const filterAttrs =
+      (typeof src.filterAttributesText === 'string' && src.filterAttributesText) ||
+      src._private?.filterAttributes ||
+      '';
+    const chunk = await src.getCollection(startRow, pageSize, filterAttrs);
+    return Array.isArray(chunk) ? chunk : [];
+  }, []);
+
+  const fetchGridPageFromSourceRef = useRef(fetchGridPageFromSource);
+  fetchGridPageFromSourceRef.current = fetchGridPageFromSource;
+
+  /** New iterator binding → forget sync state until baseline runs again. */
+  useEffect(() => {
+    allowServerFilterSortEmitRef.current = false;
+    lastEmittedOnFilterPayloadRef.current = null;
+    lastEmittedOnSortPayloadRef.current = null;
+  }, [ds?.id]);
 
   const path = useWebformPath();
   const viewDs = useMemo(
@@ -559,59 +570,12 @@ const AgGrid: FC<IAgGridProps> = ({
     () => (sorts ? window.DataSource.getSource(sorts, path) : null),
     [sorts, path],
   );
-  const dateFinancialDS = useMemo(() => {
-    const id = dateFinancial?.trim();
-    if (!id) return null;
-    return window.DataSource.getSource(id, path);
-  }, [dateFinancial, path]);
   const calculStatistiqueResultDS = useMemo(() => {
     const id = calculStatistiqueResult?.trim();
     if (!id) return null;
     return window.DataSource.getSource(id, path);
   }, [calculStatistiqueResult, path]);
   const currentSelectionDS = window.DataSource.getSource(currentSelection, path);
-
-  const parseDateFinancial = useCallback((raw: any): Date | null => {
-    if (raw == null || raw === '') return null;
-    if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw;
-    const d = new Date(raw);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }, []);
-
-  useEffect(() => {
-    if (!dateFinancialDS) {
-      dateFinancialRef.current = null;
-      dateFinancialEnabledRef.current = false;
-      setHasDateFinancialFilter(false);
-      setDateFinancialFilterEnabled(false);
-      return;
-    }
-    let cancelled = false;
-    const syncNow = async () => {
-      try {
-        const v = await dateFinancialDS.getValue();
-        if (cancelled) return;
-        const parsed = parseDateFinancial(v);
-        dateFinancialRef.current = parsed;
-        setHasDateFinancialFilter(parsed != null);
-      } catch {
-        if (!cancelled) {
-          dateFinancialRef.current = null;
-          setHasDateFinancialFilter(false);
-        }
-      }
-    };
-    void syncNow();
-    const listener = async () => {
-      await syncNow();
-      gridRef.current?.api?.refreshInfiniteCache();
-    };
-    dateFinancialDS.addListener('changed', listener);
-    return () => {
-      cancelled = true;
-      dateFinancialDS.removeListener('changed', listener);
-    };
-  }, [dateFinancialDS, parseDateFinancial]);
 
   const [selected, setSelected] = useState(-1);
   const [scrollIndex, setScrollIndex] = useState(0);
@@ -680,9 +644,9 @@ const AgGrid: FC<IAgGridProps> = ({
   const [viewName, setViewName] = useState<string>('');
   const [selectedView, setSelectedView] = useState<string>('');
   const [isViewDefault, setIsViewDefault] = useState<boolean>(false);
-  // Currently selected saved filter / sort. Lifted here so that an
-  // auto-applied default (via `tryApplyDefault`) is reflected in the
-  // dialog's dropdown even before the user opens it.
+  /** Saved filter id (`SavedFilter.id`) linked to the view being saved/updated in the column dialog. */
+  const [viewLinkedFilterId, setViewLinkedFilterId] = useState<string>('');
+  // Currently selected saved filter / sort (toolbar + dialogs).
   const [selectedFilterName, setSelectedFilterName] = useState<string>('');
   const [selectedSortName, setSelectedSortName] = useState<string>('');
 
@@ -698,17 +662,20 @@ const AgGrid: FC<IAgGridProps> = ({
       filterDs.setValue(null, {
         filterModel: normalizeAgGridFilterModel(filterModel) ?? {},
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+        filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
       });
     },
     [filterDs],
   );
 
-  // Bootstrap tracking for `isDefault` auto-apply: once a live value or a
-  // default has been applied for a given kind, we leave the grid alone.
+  // Bootstrap tracking for saved defaults (views / sorts): once a live value or a
+  // default has been applied for that kind, we leave the grid alone.
   const [gridReady, setGridReady] = useState(false);
   const viewDefaultTriedRef = useRef(false);
-  const filterDefaultTriedRef = useRef(false);
-  const sortDefaultTriedRef = useRef(false);
+  /** Live `sort` datasource applied a non-empty sort during bootstrap (or linked sort) — do not override with a named default. */
+  const skipAutoSortDefaultRef = useRef(false);
+  /** Last named default sort we applied (record name); cleared when list has no default. */
+  const sortDefaultAppliedKeyRef = useRef<string>('');
   const linkedSortAppliedFromFilterRef = useRef(false);
 
   // columns dialog
@@ -1101,6 +1068,7 @@ const AgGrid: FC<IAgGridProps> = ({
     emit,
     applyingExternalRef: applyingExternalStateRef,
     dateFinancialEnabledRef,
+    filterInactiveRecordsEnabledRef,
     onFilterLoaded: (record) => {
       const linkedSort = record?.linkedSort?.trim();
       if (!linkedSort) return;
@@ -1115,6 +1083,17 @@ const AgGrid: FC<IAgGridProps> = ({
       const next = Boolean(enabled);
       dateFinancialEnabledRef.current = next;
       setDateFinancialFilterEnabled(next);
+      filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      gridRef.current?.api?.refreshInfiniteCache();
+    },
+    [filtersManager],
+  );
+
+  const applyFilterInactiveRecordsToggle = useCallback(
+    (enabled: boolean) => {
+      const next = Boolean(enabled);
+      filterInactiveRecordsEnabledRef.current = next;
+      setFilterInactiveRecordsEnabled(next);
       filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
       gridRef.current?.api?.refreshInfiniteCache();
     },
@@ -1183,6 +1162,7 @@ const AgGrid: FC<IAgGridProps> = ({
             : {};
         commitLiveFilterModel(nextLive);
         setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
+        setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
       } finally {
         setTimeout(() => {
           applyingExternalStateRef.current = false;
@@ -1210,6 +1190,7 @@ const AgGrid: FC<IAgGridProps> = ({
         }, 0);
       }
     };
+    void listener();
     sortDs.addListener('changed', listener);
     return () => {
       sortDs.removeListener('changed', listener);
@@ -1268,17 +1249,9 @@ const AgGrid: FC<IAgGridProps> = ({
 
     onDsChange: ({ length, selected }) => {
       if (!gridRef.current) return;
-      // Keep user view/sort/filter state when datasource changes (e.g. sort requests).
       setManualSelectedCells([]);
       gridRef.current.api.deselectAll();
-      // `applySorting` just called `ds.orderBy(...)` and that's what fired
-      // this `onDsChange`. AG Grid is already in the middle of the same
-      // `getRows` block — refreshing again would start a second request
-      // (the first one racing the entitysel swap and landing without the
-      // orderby). Consume the one-shot flag and skip the refresh.
-      if (skipDsChangeRefreshOnceRef.current) {
-        skipDsChangeRefreshOnceRef.current = false;
-      } else {
+      if (!suppressDsChangeRefreshRef.current) {
         gridRef.current.api.refreshInfiniteCache();
       }
       if (multiSelection && gridRef.current.api.getSelectedNodes().length > 0) {
@@ -1589,7 +1562,6 @@ const AgGrid: FC<IAgGridProps> = ({
       const api: GridApi = params.api;
       let applied = false;
       let viewLiveApplied = false;
-      let filterLiveApplied = false;
       let sortLiveApplied = false;
       linkedSortAppliedFromFilterRef.current = false;
 
@@ -1623,15 +1595,14 @@ const AgGrid: FC<IAgGridProps> = ({
       if (filterDs) {
         try {
           const value = await filterDs.getValue();
-          if (filtersManager.applyPersistedValue(api, value)) {
-            filterLiveApplied = true;
-          }
+          filtersManager.applyPersistedValue(api, value);
           const nextLive =
             value && typeof value === 'object' && 'filterModel' in (value as any)
               ? ((value as any).filterModel ?? {})
               : {};
           commitLiveFilterModel(nextLive);
           setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
+          setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
         } catch {
           /* ignore */
         }
@@ -1648,7 +1619,7 @@ const AgGrid: FC<IAgGridProps> = ({
         }
       }
 
-      // Fallback: if no live value was applied for a given kind, try the
+      // Fallback: if no live value was applied for view/sort, try the
       // record flagged `isDefault` (if the list is already populated at this
       // point — otherwise the bootstrap useEffect below will retry once the
       // saved list arrives). When a default is applied, also reflect its
@@ -1661,14 +1632,6 @@ const AgGrid: FC<IAgGridProps> = ({
           setSelectedView(appliedName);
         }
       }
-      if (!filterLiveApplied) {
-        const appliedName = filtersManager.tryApplyDefault();
-        if (appliedName) {
-          filterLiveApplied = true;
-          setSelectedFilterName(appliedName);
-          setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
-        }
-      }
       if (!sortLiveApplied) {
         if (linkedSortAppliedFromFilterRef.current) {
           sortLiveApplied = true;
@@ -1678,28 +1641,19 @@ const AgGrid: FC<IAgGridProps> = ({
         const appliedName = sortsManager.tryApplyDefault();
         if (appliedName) {
           sortLiveApplied = true;
+          sortDefaultAppliedKeyRef.current = appliedName;
           setSelectedSortName(appliedName);
         }
       }
 
       viewDefaultTriedRef.current = viewLiveApplied;
-      filterDefaultTriedRef.current = filterLiveApplied;
-      sortDefaultTriedRef.current = sortLiveApplied;
+      skipAutoSortDefaultRef.current = sortLiveApplied;
 
       if (!applied) {
         const columnState = withoutSyntheticRowColumnState(api.getColumnState());
         const filterModel = api.getFilterModel() ?? {};
         const sortModel = buildSortModelFromColumnState(columnState);
-        prevSortInfoRef.current = {
-          sortModel,
-          entitysel: (ds as any)?.entitysel ?? null,
-        };
         persistGridState(columnState, filterModel, sortModel);
-      } else {
-        prevSortInfoRef.current = {
-          sortModel: buildSortModelFromColumnState(api.getColumnState()),
-          entitysel: (ds as any)?.entitysel ?? null,
-        };
       }
 
       setGridReady(true);
@@ -1708,7 +1662,7 @@ const AgGrid: FC<IAgGridProps> = ({
   );
 
   // Deferred bootstrap for defaults: if the saved list DS finishes loading
-  // _after_ `getState` ran (common: the `views`/`filters`/`sorts` datasource
+  // _after_ `getState` ran (common: the `views`/`sorts` datasource
   // is populated asynchronously), fall back to the record flagged `isDefault`.
   // Each kind has its own "tried" flag so we only apply once.
   useEffect(() => {
@@ -1725,6 +1679,7 @@ const AgGrid: FC<IAgGridProps> = ({
   useEffect(() => {
     if (!selectedView) {
       setIsViewDefault(false);
+      setViewLinkedFilterId('');
       return;
     }
     const record = viewsManager.savedViews.find(
@@ -1734,79 +1689,33 @@ const AgGrid: FC<IAgGridProps> = ({
         (v.id != null && String(v.id) === selectedView),
     );
     setIsViewDefault(Boolean(record?.isDefault));
+    setViewLinkedFilterId(record?.linkedFilter != null ? String(record.linkedFilter) : '');
   }, [selectedView, viewsManager.savedViews]);
 
   useEffect(() => {
     if (!gridReady) return;
-    if (filterDefaultTriedRef.current) return;
-    if (filtersManager.savedFilters.length === 0) return;
-    const appliedName = filtersManager.tryApplyDefault();
-    if (appliedName) setSelectedFilterName(appliedName);
-    filterDefaultTriedRef.current = true;
-  }, [gridReady, filtersManager.savedFilters, filtersManager]);
-
-  useEffect(() => {
-    if (!gridReady) return;
-    if (sortDefaultTriedRef.current) return;
-    if (selectedSortName) {
-      sortDefaultTriedRef.current = true;
+    const list = sortsManager.savedSorts;
+    const defaultRecord = list.find((r) => r.isDefault);
+    if (!defaultRecord) {
+      sortDefaultAppliedKeyRef.current = '';
       return;
     }
-    if (sortsManager.savedSorts.length === 0) return;
+    const key = defaultRecord.name;
+    if (sortDefaultAppliedKeyRef.current === key) return;
+    if (skipAutoSortDefaultRef.current) return;
+
     const appliedName = sortsManager.tryApplyDefault();
-    if (appliedName) setSelectedSortName(appliedName);
-    sortDefaultTriedRef.current = true;
-  }, [gridReady, sortsManager.savedSorts, sortsManager, selectedSortName]);
+    if (appliedName) {
+      setSelectedSortName(appliedName);
+      sortDefaultAppliedKeyRef.current = appliedName;
+    }
+  }, [gridReady, sortsManager.savedSorts]);
 
   /**
    * Translate an AG Grid `sortModel` into the tail of a 4D/Qodly `query()`
    * string (`colA desc, colB asc`). Returns an empty string when the model
    * is empty or no rule resolves to a known `source` attribute.
    */
-  const buildOrderByClause = useCallback((sortModel: SortModelItem[], cols: IColumn[]): string => {
-    return sortModel
-      .map((rule) => {
-        const matchedColumn = cols.find(
-          (column) => column.title === rule.colId || column.source === rule.colId,
-        );
-        if (!matchedColumn?.source || !rule.sort) return '';
-        return `${matchedColumn.source} ${rule.sort}`;
-      })
-      .filter(Boolean)
-      .join(', ');
-  }, []);
-
-  const applySorting = useCallback(
-    async (params: IGetRowsParams, cols: IColumn[], activeDs: any) => {
-      const currentEntitysel = (activeDs as any)?.entitysel ?? null;
-      const prev = prevSortInfoRef.current;
-      if (params.sortModel.length === 0) {
-        prevSortInfoRef.current = { sortModel: [], entitysel: currentEntitysel };
-        return;
-      }
-      // Dedupe per-entitysel: if the entitysel changed (e.g. searchDs was
-      // re-queried for a new filter) we MUST re-apply the orderby even when
-      // the sortModel itself is unchanged — the new entitysel has no sort.
-      if (prev.entitysel === currentEntitysel && isEqual(params.sortModel, prev.sortModel)) {
-        return;
-      }
-
-      const orderBy = buildOrderByClause(params.sortModel, cols);
-      if (!orderBy) return;
-      prevSortInfoRef.current = {
-        sortModel: params.sortModel,
-        entitysel: currentEntitysel,
-      };
-      // Our own `activeDs.orderBy(...)` will fire `onDsChange`; swallow the
-      // refresh it would trigger so we don't issue a duplicate `getRows` for
-      // the same block.
-      skipDsChangeRefreshOnceRef.current = true;
-      await activeDs.orderBy(orderBy);
-    },
-    [buildOrderByClause],
-  );
-
-  // (fix bug when calling 4d function on aggrid that displayes related values)
   // sanitize values to plain JSON-safe primitives/objects to avoid circular refs
   const sanitizeValue = (v: any): any => {
     if (v == null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
@@ -1917,6 +1826,22 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }, [isCellSelectionAvailable]);
 
+  /** Maps AG Grid sort model to a `DataClass.query`-style `order by` clause (attribute paths + asc/desc). */
+  const buildOrderByClause = useCallback((sortModel: SortModelItem[], cols: IColumn[]): string => {
+    return sortModel
+      .map((rule) => {
+        const matchedColumn = cols.find(
+          (column) => column.title === rule.colId || column.source === rule.colId,
+        );
+        if (!matchedColumn?.source || !rule.sort) return '';
+        const src = String(matchedColumn.source).trim();
+        if (!src) return '';
+        return `${src} ${rule.sort}`;
+      })
+      .filter(Boolean)
+      .join(', ');
+  }, []);
+
   const fetchData = useCallback(async (fetchCallback: any, params: IGetRowsParams) => {
     const count = params.endRow - params.startRow;
     const cols = columnsRef.current;
@@ -1940,6 +1865,67 @@ const AgGrid: FC<IAgGridProps> = ({
     return { entities, rowData };
   }, []);
 
+  const buildServerEmitPack = useCallback(
+    (api: GridApi, rowParams: IGetRowsParams | null) => {
+      const apiFm = api.getFilterModel() ?? {};
+      const rowFm = rowParams?.filterModel ?? {};
+      const effectiveFilterModel = withAdvancedRulesOnFilterModel(
+        rowParams != null && !isEqual(rowFm, {}) ? rowFm : apiFm,
+        getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
+      );
+      const cols = columnsRef.current;
+
+      const rawSort = buildSortModelFromColumnState(
+        withoutSyntheticRowColumnState(api.getColumnState()),
+      );
+      const normalizedSort = normalizeSortModel(rawSort, cols, sortableColIdsRef.current);
+      const orderByClause = buildOrderByClause(normalizedSort, cols);
+
+      const filterQueries = buildFilterQueries(effectiveFilterModel, cols);
+      const filterQuery = filterQueries.filter(Boolean).join(' AND ');
+
+      const combinedQuery = [filterQuery.trim(), orderByClause ? `order by ${orderByClause}` : '']
+        .filter(Boolean)
+        .join(' ');
+
+      const filterFingerprint = {
+        filterModel: normalizeAgGridFilterModel(effectiveFilterModel) ?? {},
+        advancedRules: getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
+        dateFinancial: Boolean(dateFinancial && dateFinancialEnabledRef.current),
+        filterInactiveRecords: Boolean(filterInactiveRecords && filterInactiveRecordsEnabledRef.current),
+        filterQuery,
+      };
+
+      const sortFingerprint = {
+        sortModel: normalizedSort,
+        orderBy: orderByClause,
+      };
+
+      const onFilterEmitPayload = {
+        ...filterFingerprint,
+        orderBy: orderByClause,
+        sortModel: normalizedSort,
+        combinedQuery,
+      };
+
+      const onSortEmitPayload = {
+        sortModel: normalizedSort,
+        orderBy: orderByClause,
+      };
+
+      return {
+        filterFingerprint,
+        sortFingerprint,
+        onFilterEmitPayload,
+        onSortEmitPayload,
+      };
+    },
+    [buildOrderByClause, dateFinancial, filterInactiveRecords],
+  );
+
+  const buildServerEmitPackRef = useRef(buildServerEmitPack);
+  buildServerEmitPackRef.current = buildServerEmitPack;
+
   const getSelectedRow = useCallback(async (api: GridApi) => {
     // select current element
     if (multiSelection) return;
@@ -1951,7 +1937,7 @@ const AgGrid: FC<IAgGridProps> = ({
           if (entity) {
             const pos = entity.getPos();
             const ownerSel = entity.getSelection();
-            const sel = (ds as any)?.getSelection();
+            const sel = (dsRef.current as any)?.getSelection();
             if (sel && sel !== ownerSel) {
               // fixes qs#461
               sel.findEntityPosition(entity).then((posInSel: number) => {
@@ -1973,9 +1959,7 @@ const AgGrid: FC<IAgGridProps> = ({
           index = (currentElement as any).getPos();
         }
         const rowNode = api.getRowNode(index.toString());
-        (ds as any)?.getSelection().getServerRef() !==
-          (searchDs as any).getSelection().getServerRef() &&
-          api.ensureIndexVisible(index, 'middle');
+        api.ensureIndexVisible(index, 'middle');
         rowNode?.setSelected(true);
       } catch (e) {
         // proceed
@@ -1983,94 +1967,73 @@ const AgGrid: FC<IAgGridProps> = ({
     }
   }, []);
 
+  /** After bootstrap (`getState` + deferred saved defaults), baseline fingerprints so initial `getRows` never emits `onfilter`/`onsort`. */
+  useEffect(() => {
+    if (!gridReady) return;
+    const api = gridRef.current?.api;
+    if (!api || api.isDestroyed()) return;
+    const { filterFingerprint, sortFingerprint } = buildServerEmitPack(api, null);
+    lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+    lastEmittedOnSortPayloadRef.current = cloneDeep(sortFingerprint);
+    allowServerFilterSortEmitRef.current = true;
+  }, [gridReady, ds?.id, buildServerEmitPack]);
+
   const onGridReady = useCallback((params: GridReadyEvent) => {
     // save initial column state on first load
     setInitialColumnState(params.api.getColumnState());
     params.api.setGridOption('datasource', {
       getRows: async (rowParams: IGetRowsParams) => {
-        const rowFm = rowParams.filterModel ?? {};
-        const apiFm = params.api.getFilterModel() ?? {};
-        /** Infinite row model can call `getRows` before `rowParams.filterModel` is synced after `refreshInfiniteCache`; `api.getFilterModel()` is the source of truth. */
-        const effectiveFilterModel = withAdvancedRulesOnFilterModel(
-          !isEqual(rowFm, {}) ? rowFm : apiFm,
-          getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
-        );
-        const financialDate = dateFinancialRef.current;
-        const hasFinancialFilter = financialDate != null && dateFinancialEnabledRef.current;
-        const hasColumnFilters = normalizeAgGridFilterModel(effectiveFilterModel) != null;
-        const hasActiveFilter = hasColumnFilters || hasFinancialFilter;
+        const { filterFingerprint, sortFingerprint, onFilterEmitPayload, onSortEmitPayload } =
+          buildServerEmitPackRef.current(params.api, rowParams);
 
-        let entities = null;
-        let length = 0;
-        let rowData: any[] = [];
-        const cols = columnsRef.current;
-        if (hasActiveFilter) {
-          // Unfiltered getRows uses `ds` only; `searchDs.entitysel` would stay narrowed after a prior
-          // filter. Re-sync from the main DS so each filter applies to the full current selection.
-          if (ds && searchDs) {
-            const mainSel = (ds as any).entitysel;
-            if (mainSel != null) {
-              (searchDs as any).entitysel = mainSel;
+        suppressDsChangeRefreshRef.current = true;
+        try {
+          if (allowServerFilterSortEmitRef.current) {
+            if (!isEqual(filterFingerprint, lastEmittedOnFilterPayloadRef.current)) {
+              const strippedFm = stripAdvancedRulesFromFilterModel(filterFingerprint.filterModel ?? {});
+              const normalizedCols = normalizeAgGridFilterModel(strippedFm) ?? {};
+              const hasColumnFilters =
+                normalizedCols != null &&
+                typeof normalizedCols === 'object' &&
+                !Array.isArray(normalizedCols) &&
+                Object.keys(normalizedCols).length > 0;
+              const adv = filterFingerprint.advancedRules;
+              const hasAdvancedRules = Array.isArray(adv) && adv.length > 0;
+              if (hasColumnFilters || hasAdvancedRules) {
+                await emitRef.current('onfilter', onFilterEmitPayload);
+              }
+              lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+            }
+            if (!isEqual(sortFingerprint, lastEmittedOnSortPayloadRef.current)) {
+              await emitRef.current('onsort', onSortEmitPayload);
+              lastEmittedOnSortPayloadRef.current = cloneDeep(sortFingerprint);
             }
           }
 
-          const filterQueries = buildFilterQueries(effectiveFilterModel, cols);
-          const extra =
-            hasFinancialFilter && financialDate
-              ? `Date_Document >= ${format(financialDate, 'yyyy-MM-dd')}`
-              : '';
-          const baseQuery = [...filterQueries.filter(Boolean), extra].filter(Boolean).join(' AND ');
-          // Embed `order by` directly in the query string so `dataclass.query()`
-          // produces an already-sorted entitysel. `DataClass.query()` is
-          // synchronous (local), only `fetchPage()` hits the server, so this
-          // collapses what was previously two server requests per filter+sort
-          // apply (orderBy + fetchPage) into a single request.
-          const sortClause = buildOrderByClause(rowParams.sortModel, cols);
-          const queryStr = sortClause ? `${baseQuery} order by ${sortClause}` : baseQuery;
+          const result = await fetchData(fetchGridPageFromSourceRef.current, rowParams);
+          const entities = result.entities;
+          const rowData = result.rowData;
+          const entitySel = (dsRef.current as any)?.entitysel;
+          const length = entitySel?._private?.selLength ?? 0;
 
-          const { entitysel } = searchDs as any;
-          const dataSetName = entitysel?.getServerRef();
-          (searchDs as any).entitysel = searchDs.dataclass.query(queryStr, {
-            dataSetName,
-            filterAttributes: searchDs.filterAttributesText || searchDs._private.filterAttributes,
-          });
-
-          // Remember the sort we just baked into the entitysel so the
-          // no-filter branch (below) can still dedupe correctly after the
-          // user clears the filter.
-          prevSortInfoRef.current = {
-            sortModel: rowParams.sortModel,
-            entitysel: (searchDs as any).entitysel,
-          };
-
-          const result = await fetchData(fetchClone, rowParams);
-          entities = result.entities;
-          rowData = result.rowData;
-          length = searchDs.entitysel._private.selLength;
-        } else {
-          await applySorting(rowParams, cols, ds);
-
-          const result = await fetchData(fetchPage, rowParams);
-          entities = result.entities;
-          rowData = result.rowData;
-          length = (ds as any).entitysel._private.selLength;
-        }
-
-        if (Array.isArray(entities)) {
-          // Only evaluate on the first block: later infinite-range requests can return 0 rows and would
-          // incorrectly clear the flag (e.g. rowData.length 0 while length is still the total).
-          if (rowParams.startRow === 0) {
-            setShowSelectAllHeaderCheckbox(
-              multiSelection && length > 0 && rowData.length >= length,
-            );
-            setDisplayedRecordCount(length);
+          if (Array.isArray(entities)) {
+            // Only evaluate on the first block: later infinite-range requests can return 0 rows and would
+            // incorrectly clear the flag (e.g. rowData.length 0 while length is still the total).
+            if (rowParams.startRow === 0) {
+              setShowSelectAllHeaderCheckbox(
+                multiSelection && length > 0 && rowData.length >= length,
+              );
+              setDisplayedRecordCount(length);
+            }
+            rowParams.successCallback(rowData, length);
+          } else {
+            setShowSelectAllHeaderCheckbox(false);
+            rowParams.failCallback();
           }
-          rowParams.successCallback(rowData, length);
-        } else {
-          setShowSelectAllHeaderCheckbox(false);
-          rowParams.failCallback();
+          getSelectedRow(params.api);
+        } finally {
+          suppressDsChangeRefreshRef.current = false;
         }
-        getSelectedRow(params.api);
       },
     });
     getState(params);
@@ -2439,6 +2402,9 @@ const AgGrid: FC<IAgGridProps> = ({
                                     setDateFinancialFilterEnabled(
                                       Boolean(dateFinancialEnabledRef.current),
                                     );
+                                    setFilterInactiveRecordsEnabled(
+                                      Boolean(filterInactiveRecordsEnabledRef.current),
+                                    );
                                   },
                                 },
                                 {
@@ -2503,6 +2469,9 @@ const AgGrid: FC<IAgGridProps> = ({
                       handleColumnToggle={handleColumnToggle}
                       handlePinChange={handlePinChange}
                       columnLabelByStableField={columnLabelByStableField}
+                      savedFilters={filtersManager.savedFilters}
+                      viewLinkedFilterId={viewLinkedFilterId}
+                      setViewLinkedFilterId={setViewLinkedFilterId}
                     />
                   )}
                   {showToolbarSorting && (
@@ -2510,6 +2479,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showSortingDialog}
                       onClose={() => setShowSortingDialog(false)}
                       translation={translation}
+                      columns={columns}
                       sortableColumns={sortableColumns}
                       initialSortModel={sortDialogInitialModel}
                       onApply={(model) => {
@@ -2520,7 +2490,6 @@ const AgGrid: FC<IAgGridProps> = ({
                       }}
                       savedSorts={sortsManager.savedSorts}
                       saveSort={sortsManager.saveSort}
-                      loadSort={sortsManager.loadSort}
                       updateSort={sortsManager.updateSort}
                       deleteSort={sortsManager.deleteSort}
                       selectedSort={selectedSortName}
@@ -2535,9 +2504,12 @@ const AgGrid: FC<IAgGridProps> = ({
                       i18n={i18n}
                       lang={lang}
                       columns={columns}
-                      showDateFinancialToggle={hasDateFinancialFilter}
+                      showDateFinancialToggle={Boolean(dateFinancial)}
                       dateFinancialFilterEnabled={dateFinancialFilterEnabled}
                       onDateFinancialFilterEnabledChange={applyDateFinancialFilterToggle}
+                      showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
+                      filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
+                      onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
                       filterModel={liveFilterModel}
                       setFilterModel={(next) => {
                         const api = gridRef.current?.api;
@@ -2567,6 +2539,9 @@ const AgGrid: FC<IAgGridProps> = ({
                       loadFilter={(key) => {
                         filtersManager.loadFilter(key);
                         setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
+                        setFilterInactiveRecordsEnabled(
+                          Boolean(filterInactiveRecordsEnabledRef.current),
+                        );
                       }}
                       updateFilter={filtersManager.updateFilter}
                       deleteFilter={filtersManager.deleteFilter}
@@ -2680,9 +2655,12 @@ const AgGrid: FC<IAgGridProps> = ({
                   ? (liveFilterModel?.[headerFilterPopupState.colId] ?? null)
                   : null
               }
-              showDateFinancialToggle={hasDateFinancialFilter}
+              showDateFinancialToggle={Boolean(dateFinancial)}
               dateFinancialFilterEnabled={dateFinancialFilterEnabled}
               onDateFinancialFilterEnabledChange={applyDateFinancialFilterToggle}
+              showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
+              filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
+              onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
               translation={translation}
               onApply={(nextModel) => {
                 applyHeaderFilterModel(nextModel ?? {});

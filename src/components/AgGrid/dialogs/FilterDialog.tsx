@@ -1,11 +1,11 @@
-import { FC, useEffect, useMemo, useState } from 'react';
+import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
 import type { SavedFilter, SavedSort } from '../state/types';
 import type { Translation } from '../state/sorts';
-import { isHiddenIdColumn } from '../state/gridState';
-import { QueryBuilder } from './QueryBuilder';
+import { isHiddenIdColumn, findSavedRecord } from '../state/gridState';
+import { QueryBuilder, type QueryBuilderHandle } from './QueryBuilder';
 
 interface FilterDialogProps {
   open: boolean;
@@ -17,21 +17,20 @@ interface FilterDialogProps {
   showDateFinancialToggle: boolean;
   dateFinancialFilterEnabled: boolean;
   onDateFinancialFilterEnabledChange: (enabled: boolean) => void;
+  showFilterInactiveRecordsToggle: boolean;
+  filterInactiveRecordsEnabled: boolean;
+  onFilterInactiveRecordsEnabledChange: (enabled: boolean) => void;
   /** AG Grid `getFilterModel()` snapshot — kept in sync with the header filter via `onFilterChanged`. */
   filterModel: any;
   /** Push a new filterModel back to AG Grid (typically `gridApi.setFilterModel`). */
   setFilterModel: (next: any) => void;
   savedFilters: SavedFilter[];
   savedSorts: SavedSort[];
-  saveFilter: (name: string, options?: { isDefault?: boolean; linkedSort?: string }) => void;
+  saveFilter: (name: string, options?: { linkedSort?: string; filterModel?: any }) => void;
   loadFilter: (key: string) => void;
-  updateFilter: (key: string, options?: { isDefault?: boolean; linkedSort?: string }) => void;
+  updateFilter: (key: string, options?: { linkedSort?: string; filterModel?: any }) => void;
   deleteFilter: (key: string) => void;
-  /**
-   * Currently selected saved filter — owned by the parent so that an
-   * auto-applied default (via `tryApplyDefault`) is reflected in the dropdown
-   * even before the user opens the dialog.
-   */
+  /** Currently selected saved filter — owned by the parent for toolbar + dialog dropdowns. */
   selectedFilter: string;
   setSelectedFilter: (next: string) => void;
 }
@@ -46,6 +45,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   showDateFinancialToggle,
   dateFinancialFilterEnabled,
   onDateFinancialFilterEnabledChange,
+  showFilterInactiveRecordsToggle,
+  filterInactiveRecordsEnabled,
+  onFilterInactiveRecordsEnabledChange,
   filterModel,
   setFilterModel,
   savedFilters,
@@ -58,24 +60,23 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   setSelectedFilter,
 }) => {
   const [filterName, setFilterName] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
   const [linkedSort, setLinkedSort] = useState('');
+  const queryBuilderRef = useRef<QueryBuilderHandle>(null);
 
   useEffect(() => {
     if (!selectedFilter) {
-      setIsDefault(false);
       setLinkedSort('');
       return;
     }
-    const record = savedFilters.find(
-      (r) =>
-        r.name === selectedFilter ||
-        r.title === selectedFilter ||
-        (r.id != null && String(r.id) === selectedFilter),
-    );
-    setIsDefault(Boolean(record?.isDefault));
-    setLinkedSort(record?.linkedSort ?? '');
-  }, [selectedFilter, savedFilters]);
+    const record = findSavedRecord(savedFilters, selectedFilter);
+    const raw = record?.linkedSort?.trim();
+    if (!raw) {
+      setLinkedSort('');
+      return;
+    }
+    const sortHit = findSavedRecord(savedSorts, raw);
+    setLinkedSort(sortHit?.name ?? raw);
+  }, [selectedFilter, savedFilters, savedSorts]);
 
   /**
    * Hide internal id columns from the column picker (Feature 3) — they still
@@ -99,18 +100,22 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   const saveButtonDisabled = !trimmedName && !selectedFilter;
   const handleSavePressed = () => {
     if (saveButtonDisabled) return;
+    const filterModelDraft = queryBuilderRef.current?.getCompiledFilterModel();
+    const persistOpts =
+      filterModelDraft !== undefined
+        ? { linkedSort, filterModel: filterModelDraft }
+        : { linkedSort };
     if (trimmedName) {
       if (matchingExisting) {
-        updateFilter(matchingExisting.name, { isDefault });
+        updateFilter(matchingExisting.name, persistOpts);
       } else {
-        saveFilter(trimmedName, { isDefault, linkedSort });
+        saveFilter(trimmedName, persistOpts);
       }
     } else if (selectedFilter) {
-      updateFilter(selectedFilter, { isDefault, linkedSort });
+      updateFilter(selectedFilter, persistOpts);
     }
     setFilterName('');
     if (!selectedFilter) {
-      setIsDefault(false);
       setLinkedSort('');
     }
   };
@@ -150,6 +155,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
 
         <div className="px-5 py-4" style={{ overflowY: 'auto' }}>
           <QueryBuilder
+            ref={queryBuilderRef}
+            deferEmit
             translation={translation}
             columns={visibleColumns}
             i18n={i18n}
@@ -168,6 +175,19 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                 onChange={(e) => onDateFinancialFilterEnabledChange(e.target.checked)}
               />
               <span>{translation('filter by fiscal year')}</span>
+            </label>
+          ) : null}
+          {showFilterInactiveRecordsToggle ? (
+            <label
+              className="mt-2 inline-flex items-center gap-2"
+              style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
+            >
+              <input
+                type="checkbox"
+                checked={filterInactiveRecordsEnabled}
+                onChange={(e) => onFilterInactiveRecordsEnabledChange(e.target.checked)}
+              />
+              <span>{translation('filter inactive records')}</span>
             </label>
           ) : null}
         </div>
@@ -191,18 +211,6 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                 fontSize: '12px',
               }}
             />
-            <label
-              className="inline-flex items-center gap-1 whitespace-nowrap"
-              style={{ color: '#717182', fontSize: '12px', fontWeight: 500 }}
-              title={translation('Set as default')}
-            >
-              <input
-                type="checkbox"
-                checked={isDefault}
-                onChange={(e) => setIsDefault(e.target.checked)}
-              />
-              <span>{translation('Default')}</span>
-            </label>
             <select
               value={selectedFilter}
               onChange={(e) => {
@@ -229,7 +237,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             <select
               value={linkedSort}
               onChange={(e) => setLinkedSort(e.target.value)}
-              className="rounded-lg border border-gray-300 px-2 py-1"
+              className="filter-input rounded-lg border border-gray-300 px-2 py-1"
               style={{
                 height: '31px',
                 borderRadius: '6px',
@@ -240,6 +248,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               title={translation('Linked sort')}
             >
               <option value="">{translation('No linked sort')}</option>
+              {linkedSort && !findSavedRecord(savedSorts, linkedSort) ? (
+                <option value={linkedSort}>{linkedSort}</option>
+              ) : null}
               {savedSorts.map((record) => (
                 <option key={record.name} value={record.name}>
                   {record.name}
@@ -305,14 +316,17 @@ export const FilterDialog: FC<FilterDialogProps> = ({
           <button
             type="button"
             className="rounded-md border px-3 py-2 text-sm text-white flex text-center items-center justify-center"
-            onClick={onClose}
+            onClick={() => {
+              queryBuilderRef.current?.commitToGrid();
+              onClose();
+            }}
             style={{
               background: '#2B5797',
               height: '31px',
               fontSize: '12px',
             }}
           >
-            {translation('Close')}
+            {translation('Apply')}
           </button>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { FC } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { ViewsManager } from '../state/views';
+import type { SavedFilter } from '../state/types';
 import type { Translation } from '../state/sorts';
 
 interface ViewDialogColumn {
@@ -32,6 +33,9 @@ interface ViewDialogProps {
   handleColumnToggle: (field: string) => void;
   handlePinChange: (field: string, value: string) => void;
   columnLabelByStableField: Map<string, string>;
+  savedFilters: SavedFilter[];
+  viewLinkedFilterId: string;
+  setViewLinkedFilterId: (value: string) => void;
 }
 
 export const ViewDialog: FC<ViewDialogProps> = ({
@@ -56,28 +60,43 @@ export const ViewDialog: FC<ViewDialogProps> = ({
   handleColumnToggle,
   handlePinChange,
   columnLabelByStableField,
+  savedFilters,
+  viewLinkedFilterId,
+  setViewLinkedFilterId,
 }) => {
   if (!open) return null;
 
+  const filterIdsWithOptions = new Set(
+    savedFilters.filter((f) => f.id != null).map((f) => String(f.id)),
+  );
+  const showGhostLinkedOption =
+    viewLinkedFilterId !== '' && !filterIdsWithOptions.has(viewLinkedFilterId);
+
   const handleSaveOrUpdateView = () => {
     const trimmed = viewName.trim();
+    const linkedOpts = {
+      isDefault: isViewDefault,
+      linkedFilter:
+        viewLinkedFilterId.trim() === '' ? null : (viewLinkedFilterId.trim() as string | number),
+    };
     if (trimmed) {
       const existing = viewsManager.savedViews.find(
         (v) => v.name === trimmed || v.title === trimmed,
       );
       if (existing) {
         viewsManager.updateView(existing.name, {
-          isDefault: isViewDefault,
+          ...linkedOpts,
         });
       } else {
         viewsManager.saveView(trimmed, {
           isDefault: isViewDefault,
+          ...(viewLinkedFilterId.trim() !== ''
+            ? { linkedFilter: viewLinkedFilterId.trim() as string | number }
+            : {}),
         });
       }
     } else if (selectedView) {
-      viewsManager.updateView(selectedView, {
-        isDefault: isViewDefault,
-      });
+      viewsManager.updateView(selectedView, linkedOpts);
     }
     setViewName('');
     if (!selectedView) setIsViewDefault(false);
@@ -336,6 +355,33 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                         {savedView.name}
                       </option>
                     ))}
+                  </select>
+                  <select
+                    className="view-input rounded-lg border border-gray-300 px-2 py-1"
+                    value={viewLinkedFilterId}
+                    onChange={(e) => setViewLinkedFilterId(e.target.value)}
+                    style={{
+                      height: '31px',
+                      borderRadius: '6px',
+                      borderColor: '#0000001A',
+                      color: '#44444C',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                    }}
+                  >
+                    <option value="">{translation('No linked filter')}</option>
+                    {showGhostLinkedOption && (
+                      <option value={viewLinkedFilterId}>
+                        {translation('Filter')} ({viewLinkedFilterId})
+                      </option>
+                    )}
+                    {savedFilters
+                      .filter((f) => f.id != null)
+                      .map((f) => (
+                        <option key={String(f.id)} value={String(f.id)}>
+                          {f.name}
+                        </option>
+                      ))}
                   </select>
                   <button
                     className="header-button-trash inline-flex items-center justify-center rounded-lg border"

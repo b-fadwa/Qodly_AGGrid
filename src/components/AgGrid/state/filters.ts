@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgGridReact } from 'ag-grid-react';
 import type { GridApi } from 'ag-grid-community';
+import { stripAdvancedRulesFromFilterModel } from '../AgGrid.filtering';
 import {
   applyGridFilterModel,
   findSavedRecord,
@@ -8,6 +9,11 @@ import {
   savedRecordsFromDatasourceValue,
 } from './gridState';
 import type { FilterStateValue, SavedFilter } from './types';
+
+/** For web-event payloads only — removes internal `__qodlyAdvancedRules` from AG Grid filter models. */
+function filterModelForEmit(model: any): Record<string, any> {
+  return normalizeAgGridFilterModel(stripAdvancedRulesFromFilterModel(model ?? {})) ?? {};
+}
 
 interface UseFiltersManagerArgs {
   filterDs: any | null;
@@ -17,13 +23,16 @@ interface UseFiltersManagerArgs {
   applyingExternalRef: React.MutableRefObject<boolean>;
   /** Mutable ref holding the fiscal-year toggle so it persists alongside the filter model. */
   dateFinancialEnabledRef: React.MutableRefObject<boolean>;
+  /** Mutable ref for “filter inactive records” toggle (persisted with filter model). */
+  filterInactiveRecordsEnabledRef: React.MutableRefObject<boolean>;
   /** Optional hook to apply a linked sort when a filter gets loaded. */
   onFilterLoaded?: (record: SavedFilter, selectedKey: string) => void;
 }
 
 export interface SaveFilterOptions {
-  isDefault?: boolean;
   linkedSort?: string;
+  /** When set (e.g. from the advanced filter modal draft), used instead of `gridApi.getFilterModel()`. */
+  filterModel?: any;
 }
 
 export interface FiltersManager {
@@ -36,12 +45,6 @@ export interface FiltersManager {
   loadFilter: (key: string) => void;
   updateFilter: (key: string, options?: SaveFilterOptions) => void;
   deleteFilter: (key: string) => void;
-  /**
-   * Apply the record flagged `isDefault`, if any. Returns the applied
-   * record's name (for syncing dropdown state) or `null` when nothing
-   * was applied.
-   */
-  tryApplyDefault: () => string | null;
 }
 
 export function useFiltersManager({
@@ -51,6 +54,7 @@ export function useFiltersManager({
   emit,
   applyingExternalRef,
   dateFinancialEnabledRef,
+  filterInactiveRecordsEnabledRef,
   onFilterLoaded,
 }: UseFiltersManagerArgs): FiltersManager {
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
@@ -97,10 +101,11 @@ export function useFiltersManager({
       const next: FilterStateValue = {
         filterModel: normalizeAgGridFilterModel(filterModel) ?? {},
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+        filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
       };
       filterDs.setValue(null, next);
     },
-    [filterDs, dateFinancialEnabledRef, applyingExternalRef],
+    [filterDs, dateFinancialEnabledRef, filterInactiveRecordsEnabledRef, applyingExternalRef],
   );
 
   const applyPersistedValue = useCallback(
@@ -109,6 +114,9 @@ export function useFiltersManager({
       const v = value as FilterStateValue;
       if ('dateFinancialFilterEnabled' in v) {
         dateFinancialEnabledRef.current = Boolean(v.dateFinancialFilterEnabled);
+      }
+      if ('filterInactiveRecords' in v) {
+        filterInactiveRecordsEnabledRef.current = Boolean(v.filterInactiveRecords);
       }
       let appliedFilter = false;
       // Some hosts clear the datasource by setting `{}` instead of
@@ -124,7 +132,7 @@ export function useFiltersManager({
       }
       return appliedFilter;
     },
-    [dateFinancialEnabledRef],
+    [dateFinancialEnabledRef, filterInactiveRecordsEnabledRef],
   );
 
   const captureCurrentFilterModel = useCallback(() => {
@@ -133,35 +141,47 @@ export function useFiltersManager({
     return api.getFilterModel() ?? {};
   }, [gridRef]);
 
+  const resolveFilterModelForSave = useCallback(
+    (options?: SaveFilterOptions) => {
+      if (options?.filterModel !== undefined) {
+        return normalizeAgGridFilterModel(options.filterModel) ?? {};
+      }
+      return normalizeAgGridFilterModel(captureCurrentFilterModel()) ?? {};
+    },
+    [captureCurrentFilterModel],
+  );
+
   const saveFilter = useCallback(
     (rawName: string, options?: SaveFilterOptions) => {
       const name = rawName.trim();
       if (!name) return;
-      const filterModel = captureCurrentFilterModel();
-      const isDefault = Boolean(options?.isDefault);
+      const filterModel = resolveFilterModelForSave(options);
       const record: SavedFilter = {
         name,
         filterModel,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-        isDefault,
+        filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
         linkedSort: options?.linkedSort?.trim() || undefined,
       };
-      const withoutOtherDefaults = isDefault
-        ? savedFiltersRef.current.map((r) => ({ ...r, isDefault: false }))
-        : savedFiltersRef.current;
-      const updated = [...withoutOtherDefaults, record];
+      const updated = [...savedFiltersRef.current, record];
       setSavedFilters(updated);
       if (filtersDs) filtersDs.setValue(null, updated);
       emit('onsavefilter', {
         name,
-        filterModel,
-        isDefault,
+        filterModel: filterModelForEmit(filterModel),
         linkedSort: record.linkedSort,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
+        filterInactiveRecords: record.filterInactiveRecords,
         filter: record,
       });
     },
-    [captureCurrentFilterModel, emit, filtersDs, dateFinancialEnabledRef],
+    [
+      resolveFilterModelForSave,
+      emit,
+      filtersDs,
+      dateFinancialEnabledRef,
+      filterInactiveRecordsEnabledRef,
+    ],
   );
 
   const loadFilter = useCallback(
@@ -180,26 +200,28 @@ export function useFiltersManager({
         if ('dateFinancialFilterEnabled' in record) {
           dateFinancialEnabledRef.current = Boolean(record.dateFinancialFilterEnabled);
         }
+        if ('filterInactiveRecords' in record) {
+          filterInactiveRecordsEnabledRef.current = Boolean(record.filterInactiveRecords);
+        }
       }
       emit('onloadfilter', {
         selectedFilter: selectedKey,
         filterModel: record.filterModel,
         linkedSort: record.linkedSort,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
+        filterInactiveRecords: record.filterInactiveRecords,
         filter: record,
       });
       onFilterLoaded?.(record, selectedKey);
     },
-    [emit, gridRef, dateFinancialEnabledRef, onFilterLoaded],
+    [emit, gridRef, dateFinancialEnabledRef, filterInactiveRecordsEnabledRef, onFilterLoaded],
   );
 
   const updateFilter = useCallback(
     (key: string, options?: SaveFilterOptions) => {
       const selectedKey = key.trim();
       if (!selectedKey) return;
-      const filterModel = captureCurrentFilterModel();
-      const hasDefaultOpt = options !== undefined && 'isDefault' in options;
-      const isDefault = Boolean(options?.isDefault);
+      const filterModel = resolveFilterModelForSave(options);
       const updated = savedFiltersRef.current.map((record) => {
         const matches =
           record.name === selectedKey ||
@@ -211,15 +233,12 @@ export function useFiltersManager({
             name: record.name || record.title || String(record.id ?? selectedKey),
             filterModel,
             dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+            filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
             linkedSort:
               options?.linkedSort !== undefined
                 ? options.linkedSort?.trim() || undefined
                 : record.linkedSort,
-            ...(hasDefaultOpt ? { isDefault } : {}),
           };
-        }
-        if (hasDefaultOpt && isDefault && record.isDefault) {
-          return { ...record, isDefault: false };
         }
         return record;
       });
@@ -228,14 +247,20 @@ export function useFiltersManager({
       const row = findSavedRecord(updated, selectedKey);
       emit('onupdatefilter', {
         selectedFilter: selectedKey,
-        filterModel,
+        filterModel: filterModelForEmit(filterModel),
         linkedSort: row?.linkedSort,
-        isDefault: hasDefaultOpt ? isDefault : row?.isDefault,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
+        filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
         filter: row,
       });
     },
-    [captureCurrentFilterModel, emit, filtersDs, dateFinancialEnabledRef],
+    [
+      resolveFilterModelForSave,
+      emit,
+      filtersDs,
+      dateFinancialEnabledRef,
+      filterInactiveRecordsEnabledRef,
+    ],
   );
 
   const deleteFilter = useCallback(
@@ -248,13 +273,6 @@ export function useFiltersManager({
     [emit],
   );
 
-  const tryApplyDefault = useCallback((): string | null => {
-    const defaultFilter = savedFiltersRef.current.find((r) => r.isDefault);
-    if (!defaultFilter) return null;
-    loadFilter(defaultFilter.name);
-    return defaultFilter.name;
-  }, [loadFilter]);
-
   return {
     savedFilters,
     refreshSavedFilters,
@@ -264,6 +282,5 @@ export function useFiltersManager({
     loadFilter,
     updateFilter,
     deleteFilter,
-    tryApplyDefault,
   };
 }

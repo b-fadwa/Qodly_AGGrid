@@ -11,22 +11,26 @@ export interface SavedRecordBase {
   title?: string;
   id?: string | number;
   /**
-   * When true, this record is the one auto-applied on grid bootstrap if the
-   * live DS (`view` / `filter` / `sort`) does not already carry a value.
-   * Only one record per list should have `isDefault: true` — the managers
-   * enforce this on save/update.
+   * When true, this record is auto-applied on grid bootstrap for views or sorts
+   * if the live DS does not already carry a value. Only one record per list
+   * should have `isDefault: true` — the managers enforce this on save/update.
+   * Saved filters no longer use defaults; legacy JSON may still carry the flag.
    */
   isDefault?: boolean;
 }
 
 export interface SavedView extends SavedRecordBase {
   columnState: any[];
+  /** Id of a saved filter record (`SavedFilter.id`) associated with this view. */
+  linkedFilter?: string | number;
 }
 
 export interface SavedFilter extends SavedRecordBase {
   filterModel: any;
-  /** Toggle for the Date_Financial companion filter (see AgGrid.render.tsx). */
+  /** Fiscal-year companion toggle (see AgGrid.render.tsx). */
   dateFinancialFilterEnabled?: boolean;
+  /** Hide inactive records toggle persisted with saved filters. */
+  filterInactiveRecords?: boolean;
   /** Optional saved sort name applied automatically when this filter loads. */
   linkedSort?: string;
 }
@@ -42,10 +46,11 @@ export interface ViewStateValue {
   columnState?: any[];
 }
 
-/** Scalar object datasource bound to the live filter model (+ fiscal year toggle). */
+/** Scalar object datasource bound to the live filter model (+ companion toggles). */
 export interface FilterStateValue {
   filterModel?: any;
   dateFinancialFilterEnabled?: boolean;
+  filterInactiveRecords?: boolean;
 }
 
 /** Scalar object datasource bound to the live sort model. */
