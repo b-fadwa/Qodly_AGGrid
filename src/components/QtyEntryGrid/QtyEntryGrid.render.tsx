@@ -9,11 +9,50 @@ import {
   GridReadyEvent,
   IGetRowsParams,
   RowDoubleClickedEvent,
+  ValueParserParams,
   themeQuartz,
 } from 'ag-grid-community';
 import get from 'lodash/get';
+import { parseDuration } from '@ws-ui/formatter';
 import CustomCell from '../AgGrid/CustomCell';
 import { IQtyEntryGridProps, IQtyEntryColumn } from './QtyEntryGrid.config';
+
+// Matches "H:mm", "HH:mm" or "HH:mm:ss" (optionally negative).
+
+const DURATION_INPUT_RE = /^-?\d{1,3}:[0-5]?\d(?::[0-5]?\d)?$/;
+
+const parseDurationInput = (
+  input: unknown,
+  fallback: unknown
+): unknown => {
+  if (input == null || input === '') return null;
+
+  if (typeof input === 'number') {
+    return Number.isFinite(input) ? input : fallback;
+  }
+
+  if (input instanceof Date) {
+    return input.getTime();
+  }
+
+  if (typeof input !== 'string') {
+    return fallback;
+  }
+
+  const value = input.trim();
+
+  if (!value) return null;
+
+  if (DURATION_INPUT_RE.test(value)) {
+    return parseDuration(value);
+  }
+
+  const milliseconds = Number(value);
+
+  return Number.isFinite(milliseconds)
+    ? milliseconds
+    : fallback;
+};
 
 const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   datasource,
@@ -144,19 +183,28 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
 
   const colDefs: ColDef[] = useMemo(
     () =>
-      columns.map((col) => ({
-        field: col.title,
-        source: col.source,
-        hide: !!col.hidden,
-        editable: !disabled && col.editable === true,
-        sortable: !!col.sorting,
-        width: col.width,
-        flex: col.flex,
-        cellRendererParams: {
-          format: col.format ?? '',
-          dataType: col.dataType ?? 'string',
-        },
-      })),
+      columns.map((col) => {
+        const def: ColDef = {
+          field: col.title,
+          source: col.source,
+          hide: !!col.hidden,
+          editable: !disabled && col.editable === true,
+          sortable: !!col.sorting,
+          width: col.width,
+          flex: col.flex,
+          cellRendererParams: {
+            format: col.format ?? '',
+            dataType: col.dataType ?? 'string',
+          },
+        } as ColDef;
+
+        if (col.dataType === 'duration') {
+          def.valueParser = (params: ValueParserParams) =>
+            parseDurationInput(params.newValue, params.oldValue);
+        }
+
+        return def;
+      }),
     [columns, disabled],
   );
 
