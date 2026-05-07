@@ -59,7 +59,6 @@ export default {
         { name: 'filters', require: false, isDatasource: false },
         { name: 'sort', require: false, isDatasource: false },
         { name: 'sorts', require: false, isDatasource: false },
-        { name: 'dateFinancial', require: false, isDatasource: true },
         { name: 'calculStatistiqueResult', require: false, isDatasource: false },
       ],
     },
@@ -92,6 +91,9 @@ export default {
       { label: 'On Update Sort', value: 'onupdatesort' },
       { label: 'On Delete Sort', value: 'ondeletesort' },
 
+      { label: 'On Filter', value: 'onfilter' },
+      { label: 'On Sort', value: 'onsort' },
+
       { label: 'On Calculs statistique', value: 'oncalculstatistique' },
     ],
     datasources: {
@@ -106,7 +108,6 @@ export default {
           filters = '',
           sort = '',
           sorts = '',
-          dateFinancial = '',
           calculStatistiqueResult = '',
         } = props as IExostiveElementProps & {
           view?: string;
@@ -115,7 +116,6 @@ export default {
           filters?: string;
           sort?: string;
           sorts?: string;
-          dateFinancial?: string;
           calculStatistiqueResult?: string;
         };
         const declarations: T4DComponentDatasourceDeclaration[] = [
@@ -130,9 +130,6 @@ export default {
         if (filters) declarations.push({ path: filters, iterable: true });
         if (sort) declarations.push({ path: sort });
         if (sorts) declarations.push({ path: sorts, iterable: true });
-        if (dateFinancial?.trim()) {
-          declarations.push({ path: dateFinancial.trim() });
-        }
         if (calculStatistiqueResult?.trim()) {
           declarations.push({ path: calculStatistiqueResult.trim() });
         }
@@ -242,7 +239,8 @@ export default {
     filters: '',
     sort: '',
     sorts: '',
-    dateFinancial: '',
+    dateFinancial: false,
+    filterInactiveRecords: false,
     calculStatistiqueResult: '',
     currentSelection: '',
     multiSelection: false,
@@ -289,7 +287,7 @@ export interface IAgGridProps extends webforms.ComponentProps {
   view?: string;
   /** Scalar array: saved list of named views (columnState). */
   views?: string;
-  /** Scalar object: live `filterModel` (+ fiscal-year toggle). */
+  /** Scalar object: live `filterModel` (+ companion toggles persisted with it). */
   filter?: string;
   /** Scalar array: saved list of named filters. */
   filters?: string;
@@ -297,8 +295,10 @@ export interface IAgGridProps extends webforms.ComponentProps {
   sort?: string;
   /** Scalar array: saved list of named sorts. */
   sorts?: string;
-  /** Scalar datasource (4D Date): used to add `Date_Document >= Date_Financial` to server queries when valid. */
-  dateFinancial?: string;
+  /** When true, show the fiscal-year checkbox in advanced / header filters (runtime value is emitted on `onfilter`, not injected into the query here). */
+  dateFinancial?: boolean;
+  /** When true, show “filter inactive records” in advanced / header filters; runtime checkbox state is emitted on `onfilter`. */
+  filterInactiveRecords?: boolean;
   /**
    * Scalar datasource that receives the **On Calculs statistique** method result (same binding as the event’s return in Studio).
    * `emit()` does not return the server value; the grid reads it from this source after the event runs.
@@ -343,7 +343,7 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarSaveView?: boolean;
   /** Toolbar: Load / overwrite / delete saved views */
   showToolbarSavedViews?: boolean;
-  /** Show total row count below the toolbar (matches active filter / clone when filtering). */
+  /** Show total row count below the toolbar (matches the bound datasource selection length after fetch). */
   showRecordCount?: boolean;
   /** Pinned left row index column (not part of Columns / saved colDef). */
   showRowNumbers?: boolean;

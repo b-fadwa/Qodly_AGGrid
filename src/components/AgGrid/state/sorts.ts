@@ -33,9 +33,18 @@ export interface SortsManager {
   persistCurrent: (sortModel: SortModelItem[]) => void;
   /** Returns true if the value carried a non-empty sort model. */
   applyPersistedValue: (api: GridApi, value: any) => boolean;
-  saveSort: (name: string, options?: SaveSortOptions) => void;
+  saveSort: (
+    name: string,
+    options?: SaveSortOptions,
+    /** When set (e.g. advanced sort modal draft), use instead of the grid’s current sort. */
+    sortModelOverride?: SortModelItem[],
+  ) => void;
   loadSort: (key: string) => void;
-  updateSort: (key: string, options?: SaveSortOptions) => void;
+  updateSort: (
+    key: string,
+    options?: SaveSortOptions,
+    sortModelOverride?: SortModelItem[],
+  ) => void;
   deleteSort: (key: string) => void;
   /** Apply a given sort model to the grid and persist it (shared with the advanced-sorting dialog). */
   applySortModelToGrid: (sortModel: SortModelItem[]) => void;
@@ -116,7 +125,12 @@ export function useSortsManager({
       // would `applyColumnState` + `refreshInfiniteCache` again, which in
       // turn fires another `stateUpdated` and (if AG Grid emits it after our
       // setTimeout(0) flag-reset) starts an infinite request loop.
-      const currentSortModel = buildSortModelFromColumnState(api.getColumnState());
+      const rawGridSort = buildSortModelFromColumnState(api.getColumnState());
+      const currentSortModel = normalizeSortModel(
+        rawGridSort,
+        columnsRef.current,
+        sortableColIdsRef.current,
+      );
       if (isEqual(currentSortModel, sortModel)) return sortModel.length > 0;
       applySortModelToGridApi(api, sortModel);
       return sortModel.length > 0;
@@ -150,10 +164,13 @@ export function useSortsManager({
   }, [gridRef, columnsRef, sortableColIdsRef]);
 
   const saveSort = useCallback(
-    (rawName: string, options?: SaveSortOptions) => {
+    (rawName: string, options?: SaveSortOptions, sortModelOverride?: SortModelItem[]) => {
       const name = rawName.trim();
       if (!name) return;
-      const sortModel = captureCurrentSortModel();
+      const sortModel =
+        sortModelOverride != null
+          ? normalizeSortModel(sortModelOverride, columnsRef.current, sortableColIdsRef.current)
+          : captureCurrentSortModel();
       const isDefault = Boolean(options?.isDefault);
       const record: SavedSort = { name, sortModel, isDefault };
       const withoutOtherDefaults = isDefault
@@ -164,7 +181,7 @@ export function useSortsManager({
       if (sortsDs) sortsDs.setValue(null, updated);
       emit('onsavesort', { name, sortModel, isDefault, sort: record });
     },
-    [captureCurrentSortModel, emit, sortsDs],
+    [captureCurrentSortModel, emit, sortsDs, columnsRef, sortableColIdsRef],
   );
 
   const loadSort = useCallback(
@@ -184,10 +201,13 @@ export function useSortsManager({
   );
 
   const updateSort = useCallback(
-    (key: string, options?: SaveSortOptions) => {
+    (key: string, options?: SaveSortOptions, sortModelOverride?: SortModelItem[]) => {
       const selectedKey = key.trim();
       if (!selectedKey) return;
-      const sortModel = captureCurrentSortModel();
+      const sortModel =
+        sortModelOverride != null
+          ? normalizeSortModel(sortModelOverride, columnsRef.current, sortableColIdsRef.current)
+          : captureCurrentSortModel();
       const hasDefaultOpt = options !== undefined && 'isDefault' in options;
       const isDefault = Boolean(options?.isDefault);
       const updated = savedSortsRef.current.map((record) => {
@@ -218,7 +238,7 @@ export function useSortsManager({
         sort: row,
       });
     },
-    [captureCurrentSortModel, emit, sortsDs],
+    [captureCurrentSortModel, emit, sortsDs, columnsRef, sortableColIdsRef],
   );
 
   const deleteSort = useCallback(

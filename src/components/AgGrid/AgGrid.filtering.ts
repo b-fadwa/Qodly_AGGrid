@@ -16,7 +16,7 @@ const normalizeDataType = (dataType: string | undefined): string =>
 
 const isNumericDataType = (dataType: string | undefined): boolean =>
   NUMERIC_DATA_TYPES.has(normalizeDataType(dataType));
-const isTextDataType = (dataType: string | undefined): boolean =>
+export const isTextDataType = (dataType: string | undefined): boolean =>
   TEXT_DATA_TYPES.has(normalizeDataType(dataType));
 const isNonFilterableDataType = (dataType: string | undefined): boolean =>
   NON_FILTERABLE_DATA_TYPES.has(normalizeDataType(dataType));

@@ -1,8 +1,10 @@
-import { FC, useEffect, useState } from 'react';
+import { FC, useEffect, useRef, useState } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { SortModelItem } from 'ag-grid-community';
+import type { IColumn } from '../AgGrid.config';
 import type { SavedSort } from '../state/types';
+import { normalizeSortModel } from '../state/gridState';
 import type { SortableColumnDescriptor, Translation } from '../state/sorts';
 import { buildInitialSortDialogModel } from '../state/sorts';
 
@@ -10,6 +12,7 @@ interface SortingDialogProps {
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  columns: IColumn[];
   sortableColumns: SortableColumnDescriptor[];
   /** Current grid sort model when the dialog opened. */
   initialSortModel: SortModelItem[];
@@ -18,9 +21,16 @@ interface SortingDialogProps {
   /** Reset current grid sorting. */
   onClear: () => void;
   savedSorts: SavedSort[];
-  saveSort: (name: string, options?: { isDefault?: boolean }) => void;
-  loadSort: (key: string) => void;
-  updateSort: (key: string, options?: { isDefault?: boolean }) => void;
+  saveSort: (
+    name: string,
+    options?: { isDefault?: boolean },
+    sortModelOverride?: SortModelItem[],
+  ) => void;
+  updateSort: (
+    key: string,
+    options?: { isDefault?: boolean },
+    sortModelOverride?: SortModelItem[],
+  ) => void;
   deleteSort: (key: string) => void;
   /**
    * Currently selected saved sort — owned by the parent so an auto-applied
@@ -35,13 +45,13 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   open,
   onClose,
   translation,
+  columns,
   sortableColumns,
   initialSortModel,
   onApply,
   onClear,
   savedSorts,
   saveSort,
-  loadSort,
   updateSort,
   deleteSort,
   selectedSort,
@@ -50,10 +60,14 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
   const [sortName, setSortName] = useState('');
   const [isDefault, setIsDefault] = useState(false);
+  const wasOpenRef = useRef(false);
 
+  /** Reset draft only when the modal opens — avoids wiping edits when the parent re-renders while open. */
   useEffect(() => {
-    if (!open) return;
-    setSortDialogModel(buildInitialSortDialogModel(initialSortModel, sortableColumns));
+    if (open && !wasOpenRef.current) {
+      setSortDialogModel(buildInitialSortDialogModel(initialSortModel, sortableColumns));
+    }
+    wasOpenRef.current = open;
   }, [open, initialSortModel, sortableColumns]);
 
   useEffect(() => {
@@ -241,7 +255,24 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                 setIsDefault={setIsDefault}
                 saveSort={saveSort}
                 updateSort={updateSort}
-                onLoad={(key) => loadSort(key)}
+                draftSortModel={sortDialogModel}
+                onPickSavedSort={(record) => {
+                  const sortableColIds = sortableColumns.map((c) => c.colId);
+                  if (!record) {
+                    setSortDialogModel(buildInitialSortDialogModel([], sortableColumns));
+                    return;
+                  }
+                  const normalized = normalizeSortModel(
+                    record.sortModel ?? [],
+                    columns,
+                    sortableColIds,
+                  );
+                  setSortDialogModel(
+                    normalized.length > 0
+                      ? normalized
+                      : buildInitialSortDialogModel([], sortableColumns),
+                  );
+                }}
                 onDelete={() => {
                   if (!selectedSort) return;
                   deleteSort(selectedSort);
@@ -296,9 +327,20 @@ interface SavedSortsSectionProps {
   setSelectedSort: (value: string) => void;
   isDefault: boolean;
   setIsDefault: (value: boolean) => void;
-  saveSort: (name: string, options?: { isDefault?: boolean }) => void;
-  updateSort: (key: string, options?: { isDefault?: boolean }) => void;
-  onLoad: (key: string) => void;
+  saveSort: (
+    name: string,
+    options?: { isDefault?: boolean },
+    draft?: SortModelItem[],
+  ) => void;
+  updateSort: (
+    key: string,
+    options?: { isDefault?: boolean },
+    draft?: SortModelItem[],
+  ) => void;
+  /** Modal draft — Save/Update persist this, not the grid (levels may not be applied yet). */
+  draftSortModel: SortModelItem[];
+  /** Load a saved definition into the modal only (does not apply to the grid). Pass undefined to reset levels. */
+  onPickSavedSort: (record: SavedSort | undefined) => void;
   onDelete: () => void;
 }
 
@@ -313,7 +355,8 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
   setIsDefault,
   saveSort,
   updateSort,
-  onLoad,
+  draftSortModel,
+  onPickSavedSort,
   onDelete,
 }) => {
   /**
@@ -333,12 +376,12 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
     if (saveButtonDisabled) return;
     if (trimmedName) {
       if (matchingExisting) {
-        updateSort(matchingExisting.name, { isDefault });
+        updateSort(matchingExisting.name, { isDefault }, draftSortModel);
       } else {
-        saveSort(trimmedName, { isDefault });
+        saveSort(trimmedName, { isDefault }, draftSortModel);
       }
     } else if (selectedSort) {
-      updateSort(selectedSort, { isDefault });
+      updateSort(selectedSort, { isDefault }, draftSortModel);
     }
     setSortName('');
     if (!selectedSort) setIsDefault(false);
@@ -393,7 +436,15 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
           onChange={(e) => {
             const next = e.target.value;
             setSelectedSort(next);
-            if (next) onLoad(next);
+            if (!next) {
+              onPickSavedSort(undefined);
+              return;
+            }
+            const record = savedSorts.find(
+              (r) =>
+                r.name === next || r.title === next || (r.id != null && String(r.id) === next),
+            );
+            onPickSavedSort(record);
           }}
           className="rounded-lg border border-gray-300 px-2 py-1"
           style={buttonStyle}

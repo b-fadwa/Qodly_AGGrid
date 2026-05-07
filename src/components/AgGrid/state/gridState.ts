@@ -104,15 +104,26 @@ export function buildSortModelFromColumnState(
 ): SortModelItem[] {
   if (!Array.isArray(columnState)) return [];
   return columnState
-    .filter((column) => column?.sort === 'asc' || column?.sort === 'desc')
-    .sort((a, b) => {
-      const aIdx =
-        typeof a?.sortIndex === 'number' ? a.sortIndex : Number.MAX_SAFE_INTEGER;
-      const bIdx =
-        typeof b?.sortIndex === 'number' ? b.sortIndex : Number.MAX_SAFE_INTEGER;
-      return aIdx - bIdx;
+    .map((column) => {
+      const raw = column?.sort;
+      const d = typeof raw === 'string' ? raw.toLowerCase().trim() : '';
+      if ((d !== 'asc' && d !== 'desc') || column?.colId == null) return null;
+      const sortIndex =
+        typeof column.sortIndex === 'number'
+          ? column.sortIndex
+          : Number.MAX_SAFE_INTEGER;
+      return {
+        colId: column.colId as string,
+        sort: d as 'asc' | 'desc',
+        sortIndex,
+      };
     })
-    .map((column) => ({ colId: column.colId, sort: column.sort as 'asc' | 'desc' }));
+    .filter(
+      (x): x is { colId: string; sort: 'asc' | 'desc'; sortIndex: number } =>
+        x != null,
+    )
+    .sort((a, b) => a.sortIndex - b.sortIndex)
+    .map(({ colId, sort }) => ({ colId, sort }));
 }
 
 export function normalizeSortModel(
@@ -133,9 +144,15 @@ export function normalizeSortModel(
   const allowed = new Set(sortableColIds);
   const seen = new Set<string>();
   return sortModel
-    .map((rule) =>
-      rule?.colId ? { colId: resolveSortColId(rule.colId), sort: rule.sort } : rule,
-    )
+    .map((rule) => {
+      if (!rule?.colId) return rule;
+      const dir =
+        typeof rule.sort === 'string' ? rule.sort.toLowerCase().trim() : '';
+      return {
+        colId: resolveSortColId(rule.colId),
+        sort: dir as SortModelItem['sort'],
+      };
+    })
     .filter(
       (rule): rule is SortModelItem =>
         !!rule?.colId &&

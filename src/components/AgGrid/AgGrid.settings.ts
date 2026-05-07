@@ -140,8 +140,15 @@ const dataAccessSettings: TSetting[] = [
   },
   {
     key: 'dateFinancial',
-    label: 'Date_Financial (4D Date)',
-    type: ESetting.DS_AUTO_SUGGEST,
+    label: 'Show fiscal year filter option',
+    type: ESetting.CHECKBOX,
+    defaultValue: false,
+  },
+  {
+    key: 'filterInactiveRecords',
+    label: 'Show filter inactive records option',
+    type: ESetting.CHECKBOX,
+    defaultValue: false,
   },
   {
     label: 'Show row numbers',
