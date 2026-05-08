@@ -15,9 +15,7 @@ export function agGridColumnField(col: Pick<IColumn, 'title' | 'source'>): strin
   return s || col.title;
 }
 
-export function withoutSyntheticRowColumnState(
-  columnState: any[] | undefined | null,
-): any[] {
+export function withoutSyntheticRowColumnState(columnState: any[] | undefined | null): any[] {
   if (!Array.isArray(columnState)) return [];
   return columnState.filter((s) => s && s.colId !== ROW_NUMBER_COL_ID);
 }
@@ -69,9 +67,7 @@ export function enrichColumnStateWithSource(
 }
 
 /** Strip custom keys before applyColumnState (AG Grid only uses its own column state shape). */
-export function columnStateForAgGridApply(
-  columnState: any[] | undefined | null,
-): any[] {
+export function columnStateForAgGridApply(columnState: any[] | undefined | null): any[] {
   if (!Array.isArray(columnState)) return [];
   return columnState.map((s: any) => {
     if (s && typeof s === 'object' && ('source' in s || 'i18n' in s)) {
@@ -109,19 +105,14 @@ export function buildSortModelFromColumnState(
       const d = typeof raw === 'string' ? raw.toLowerCase().trim() : '';
       if ((d !== 'asc' && d !== 'desc') || column?.colId == null) return null;
       const sortIndex =
-        typeof column.sortIndex === 'number'
-          ? column.sortIndex
-          : Number.MAX_SAFE_INTEGER;
+        typeof column.sortIndex === 'number' ? column.sortIndex : Number.MAX_SAFE_INTEGER;
       return {
         colId: column.colId as string,
         sort: d as 'asc' | 'desc',
         sortIndex,
       };
     })
-    .filter(
-      (x): x is { colId: string; sort: 'asc' | 'desc'; sortIndex: number } =>
-        x != null,
-    )
+    .filter((x): x is { colId: string; sort: 'asc' | 'desc'; sortIndex: number } => x != null)
     .sort((a, b) => a.sortIndex - b.sortIndex)
     .map(({ colId, sort }) => ({ colId, sort }));
 }
@@ -146,8 +137,7 @@ export function normalizeSortModel(
   return sortModel
     .map((rule) => {
       if (!rule?.colId) return rule;
-      const dir =
-        typeof rule.sort === 'string' ? rule.sort.toLowerCase().trim() : '';
+      const dir = typeof rule.sort === 'string' ? rule.sort.toLowerCase().trim() : '';
       return {
         colId: resolveSortColId(rule.colId),
         sort: dir as SortModelItem['sort'],
@@ -155,9 +145,7 @@ export function normalizeSortModel(
     })
     .filter(
       (rule): rule is SortModelItem =>
-        !!rule?.colId &&
-        (rule.sort === 'asc' || rule.sort === 'desc') &&
-        allowed.has(rule.colId),
+        !!rule?.colId && (rule.sort === 'asc' || rule.sort === 'desc') && allowed.has(rule.colId),
     )
     .filter((rule) => {
       if (seen.has(rule.colId)) return false;
@@ -180,10 +168,7 @@ export function normalizeSortModel(
  * guard to skip re-applying when the sort model already matches (prevents
  * listener echoes from the `sortDs` `changed` event).
  */
-export function applySortModelToGridApi(
-  api: GridApi,
-  sortModel: SortModelItem[],
-): void {
+export function applySortModelToGridApi(api: GridApi, sortModel: SortModelItem[]): void {
   const sortIndexByColId = new Map(
     sortModel.map((rule, index) => [rule.colId, { sort: rule.sort, sortIndex: index }]),
   );
@@ -210,27 +195,45 @@ export function withoutSortFromColumnState(columnState: any[] | undefined | null
   });
 }
 
+function isObjectRecord(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Stable UI/link key for a saved record. Backend ids win; names remain the fallback. */
+export function savedRecordKey(item: SavedRecordBase | null | undefined): string {
+  if (!item) return '';
+  if (item.id != null && item.id !== '') return String(item.id);
+  if (typeof item.name === 'string' && item.name.trim()) return item.name.trim();
+  if (typeof item.title === 'string' && item.title.trim()) return item.title.trim();
+  return '';
+}
+
 /**
  * Normalize rows from a saved-list datasource:
  *   accepts { name } | { title } | { id } and mirrors each onto `name`.
+ *   accepts both flattened records and the previous `{ ..., state: {...} }` shape.
  */
-export function normalizeSavedRecord<T extends SavedRecordBase>(
-  raw: any,
-): T | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const nameFromName = typeof raw.name === 'string' ? raw.name.trim() : '';
-  const nameFromTitle = typeof raw.title === 'string' ? raw.title.trim() : '';
-  const nameFromId = raw.id != null && raw.id !== '' ? String(raw.id) : '';
+export function normalizeSavedRecord<T extends SavedRecordBase>(raw: any): T | null {
+  if (!isObjectRecord(raw)) return null;
+  const state = isObjectRecord(raw.state) ? raw.state : {};
+  const merged = { ...raw, ...state };
+  if ('isDefault' in raw) merged.isDefault = raw.isDefault;
+  const nameFromName = typeof merged.name === 'string' ? merged.name.trim() : '';
+  const nameFromTitle = typeof merged.title === 'string' ? merged.title.trim() : '';
+  const nameFromId = merged.id != null && merged.id !== '' ? String(merged.id) : '';
   const name = nameFromName || nameFromTitle || nameFromId;
   if (!name) return null;
-  return { ...raw, name } as T;
+  const { state: _state, ...normalized } = merged;
+  return { ...normalized, name } as T;
 }
 
-export function savedRecordsFromDatasourceValue<T extends SavedRecordBase>(
-  value: unknown,
-): T[] {
-  if (!Array.isArray(value)) return [];
-  return value
+export function savedRecordsFromDatasourceValue<T extends SavedRecordBase>(value: unknown): T[] {
+  const records = Array.isArray(value)
+    ? value
+    : isObjectRecord(value) && Array.isArray(value.result)
+      ? value.result
+      : [];
+  return records
     .map((item) => normalizeSavedRecord<T>(item))
     .filter((item): item is T => item != null);
 }
@@ -238,12 +241,15 @@ export function savedRecordsFromDatasourceValue<T extends SavedRecordBase>(
 /** Lookup helper used by every "load by name" flow. */
 export function findSavedRecord<T extends SavedRecord>(
   list: T[],
-  key: string,
+  key: string | number,
 ): T | undefined {
+  const selectedKey = String(key ?? '').trim();
+  if (!selectedKey) return undefined;
   return list.find(
     (item) =>
-      item.name === key ||
-      item.title === key ||
-      (item.id != null && String(item.id) === key),
+      item.name === selectedKey ||
+      item.title === selectedKey ||
+      savedRecordKey(item) === selectedKey ||
+      (item.id != null && String(item.id) === selectedKey),
   );
 }

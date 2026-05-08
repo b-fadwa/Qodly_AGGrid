@@ -8,6 +8,7 @@ import {
   buildSortModelFromColumnState,
   findSavedRecord,
   normalizeSortModel,
+  savedRecordKey,
   savedRecordsFromDatasourceValue,
 } from './gridState';
 import type { SavedSort, SortStateValue } from './types';
@@ -40,11 +41,7 @@ export interface SortsManager {
     sortModelOverride?: SortModelItem[],
   ) => void;
   loadSort: (key: string) => void;
-  updateSort: (
-    key: string,
-    options?: SaveSortOptions,
-    sortModelOverride?: SortModelItem[],
-  ) => void;
+  updateSort: (key: string, options?: SaveSortOptions, sortModelOverride?: SortModelItem[]) => void;
   deleteSort: (key: string) => void;
   /** Apply a given sort model to the grid and persist it (shared with the advanced-sorting dialog). */
   applySortModelToGrid: (sortModel: SortModelItem[]) => void;
@@ -156,11 +153,7 @@ export function useSortsManager({
     const api = gridRef.current?.api;
     if (!api) return [];
     const fromColumnState = buildSortModelFromColumnState(api.getColumnState());
-    return normalizeSortModel(
-      fromColumnState,
-      columnsRef.current,
-      sortableColIdsRef.current,
-    );
+    return normalizeSortModel(fromColumnState, columnsRef.current, sortableColIdsRef.current);
   }, [gridRef, columnsRef, sortableColIdsRef]);
 
   const saveSort = useCallback(
@@ -254,8 +247,10 @@ export function useSortsManager({
   const tryApplyDefault = useCallback((): string | null => {
     const defaultSort = savedSortsRef.current.find((r) => r.isDefault);
     if (!defaultSort) return null;
-    loadSort(defaultSort.name);
-    return defaultSort.name;
+    const key = savedRecordKey(defaultSort);
+    if (!key) return null;
+    loadSort(key);
+    return key;
   }, [loadSort]);
 
   return {

@@ -4,7 +4,7 @@ import { GoTrash } from 'react-icons/go';
 import type { SortModelItem } from 'ag-grid-community';
 import type { IColumn } from '../AgGrid.config';
 import type { SavedSort } from '../state/types';
-import { normalizeSortModel } from '../state/gridState';
+import { findSavedRecord, normalizeSortModel, savedRecordKey } from '../state/gridState';
 import type { SortableColumnDescriptor, Translation } from '../state/sorts';
 import { buildInitialSortDialogModel } from '../state/sorts';
 
@@ -75,12 +75,7 @@ export const SortingDialog: FC<SortingDialogProps> = ({
       setIsDefault(false);
       return;
     }
-    const record = savedSorts.find(
-      (r) =>
-        r.name === selectedSort ||
-        r.title === selectedSort ||
-        (r.id != null && String(r.id) === selectedSort),
-    );
+    const record = findSavedRecord(savedSorts, selectedSort);
     setIsDefault(Boolean(record?.isDefault));
   }, [selectedSort, savedSorts]);
 
@@ -327,16 +322,8 @@ interface SavedSortsSectionProps {
   setSelectedSort: (value: string) => void;
   isDefault: boolean;
   setIsDefault: (value: boolean) => void;
-  saveSort: (
-    name: string,
-    options?: { isDefault?: boolean },
-    draft?: SortModelItem[],
-  ) => void;
-  updateSort: (
-    key: string,
-    options?: { isDefault?: boolean },
-    draft?: SortModelItem[],
-  ) => void;
+  saveSort: (name: string, options?: { isDefault?: boolean }, draft?: SortModelItem[]) => void;
+  updateSort: (key: string, options?: { isDefault?: boolean }, draft?: SortModelItem[]) => void;
   /** Modal draft — Save/Update persist this, not the grid (levels may not be applied yet). */
   draftSortModel: SortModelItem[];
   /** Load a saved definition into the modal only (does not apply to the grid). Pass undefined to reset levels. */
@@ -440,10 +427,7 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
               onPickSavedSort(undefined);
               return;
             }
-            const record = savedSorts.find(
-              (r) =>
-                r.name === next || r.title === next || (r.id != null && String(r.id) === next),
-            );
+            const record = findSavedRecord(savedSorts, next);
             onPickSavedSort(record);
           }}
           className="rounded-lg border border-gray-300 px-2 py-1"
@@ -451,7 +435,7 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
         >
           <option value="">{translation('Select sort')}</option>
           {savedSorts.map((record) => (
-            <option key={record.name} value={record.name}>
+            <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
               {record.name}
             </option>
           ))}

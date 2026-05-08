@@ -23,6 +23,8 @@ export interface SavedView extends SavedRecordBase {
   columnState: any[];
   /** Id of a saved filter record (`SavedFilter.id`) associated with this view. */
   linkedFilter?: string | number;
+  /** Preferred backend field for view -> filter links. */
+  linkedFilterId?: string | number;
 }
 
 export interface SavedFilter extends SavedRecordBase {
@@ -31,8 +33,10 @@ export interface SavedFilter extends SavedRecordBase {
   dateFinancialFilterEnabled?: boolean;
   /** Hide inactive records toggle persisted with saved filters. */
   filterInactiveRecords?: boolean;
-  /** Optional saved sort name applied automatically when this filter loads. */
-  linkedSort?: string;
+  /** Optional saved sort key applied automatically when this filter loads. */
+  linkedSort?: string | number;
+  /** Preferred backend field for filter -> sort links. */
+  linkedSortId?: string | number;
 }
 
 export interface SavedSort extends SavedRecordBase {

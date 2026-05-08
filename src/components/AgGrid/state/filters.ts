@@ -15,6 +15,25 @@ function filterModelForEmit(model: any): Record<string, any> {
   return normalizeAgGridFilterModel(stripAdvancedRulesFromFilterModel(model ?? {})) ?? {};
 }
 
+function normalizeLinkedRecordKey(
+  raw: string | number | null | undefined,
+): string | number | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  const text = String(raw).trim();
+  if (!text) return undefined;
+  const n = Number(text);
+  if (String(n) === text && Number.isFinite(n)) return n;
+  return text;
+}
+
+function linkedSortFromSaveOptions(options?: SaveFilterOptions): string | number | undefined {
+  if (!options) return undefined;
+  if ('linkedSortId' in options) return normalizeLinkedRecordKey(options.linkedSortId);
+  if ('linkedSort' in options) return normalizeLinkedRecordKey(options.linkedSort);
+  return undefined;
+}
+
 interface UseFiltersManagerArgs {
   filterDs: any | null;
   filtersDs: any | null;
@@ -30,7 +49,8 @@ interface UseFiltersManagerArgs {
 }
 
 export interface SaveFilterOptions {
-  linkedSort?: string;
+  linkedSort?: string | number | null;
+  linkedSortId?: string | number | null;
   /** When set (e.g. from the advanced filter modal draft), used instead of `gridApi.getFilterModel()`. */
   filterModel?: any;
 }
@@ -127,8 +147,7 @@ export function useFiltersManager({
       } else if ('filterModel' in v) {
         applyGridFilterModel(api, v.filterModel);
         const fm = v.filterModel;
-        appliedFilter =
-          !!fm && typeof fm === 'object' && Object.keys(fm as any).length > 0;
+        appliedFilter = !!fm && typeof fm === 'object' && Object.keys(fm as any).length > 0;
       }
       return appliedFilter;
     },
@@ -161,7 +180,7 @@ export function useFiltersManager({
         filterModel,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
         filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
-        linkedSort: options?.linkedSort?.trim() || undefined,
+        linkedSort: linkedSortFromSaveOptions(options),
       };
       const updated = [...savedFiltersRef.current, record];
       setSavedFilters(updated);
@@ -170,6 +189,7 @@ export function useFiltersManager({
         name,
         filterModel: filterModelForEmit(filterModel),
         linkedSort: record.linkedSort,
+        linkedSortId: record.linkedSortId,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
         filterInactiveRecords: record.filterInactiveRecords,
         filter: record,
@@ -207,7 +227,8 @@ export function useFiltersManager({
       emit('onloadfilter', {
         selectedFilter: selectedKey,
         filterModel: record.filterModel,
-        linkedSort: record.linkedSort,
+        linkedSort: record.linkedSortId ?? record.linkedSort,
+        linkedSortId: record.linkedSortId,
         dateFinancialFilterEnabled: record.dateFinancialFilterEnabled,
         filterInactiveRecords: record.filterInactiveRecords,
         filter: record,
@@ -235,9 +256,9 @@ export function useFiltersManager({
             dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
             filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
             linkedSort:
-              options?.linkedSort !== undefined
-                ? options.linkedSort?.trim() || undefined
-                : record.linkedSort,
+              options && ('linkedSort' in options || 'linkedSortId' in options)
+                ? linkedSortFromSaveOptions(options)
+                : (record.linkedSortId ?? record.linkedSort),
           };
         }
         return record;
@@ -248,7 +269,8 @@ export function useFiltersManager({
       emit('onupdatefilter', {
         selectedFilter: selectedKey,
         filterModel: filterModelForEmit(filterModel),
-        linkedSort: row?.linkedSort,
+        linkedSort: row?.linkedSortId ?? row?.linkedSort,
+        linkedSortId: row?.linkedSortId,
         dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
         filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
         filter: row,

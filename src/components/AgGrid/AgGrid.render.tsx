@@ -90,9 +90,12 @@ import {
   ROW_NUMBER_COL_ID,
   agGridColumnField,
   buildSortModelFromColumnState,
+  findSavedRecord,
   isHiddenIdColumn,
   normalizeAgGridFilterModel,
   normalizeSortModel,
+  savedRecordKey,
+  savedRecordsFromDatasourceValue,
   withoutSyntheticRowColumnState,
 } from './state/gridState';
 import { useViewsManager } from './state/views';
@@ -109,9 +112,55 @@ import {
 
 type SavedCalculatedSearch = {
   name: string;
+  title?: string;
+  id?: string | number;
   calculatedSearch: CalculatedSearchEmitPayload | null;
   [key: string]: unknown;
 };
+
+function calculatedSearchPayloadFromRecord(record: any): CalculatedSearchEmitPayload | null {
+  if (!record || typeof record !== 'object') return null;
+  if (record.calculatedSearch && typeof record.calculatedSearch === 'object') {
+    return record.calculatedSearch as CalculatedSearchEmitPayload;
+  }
+  if ('scope' in record || 'searchType' in record || 'expression' in record || 'sort' in record) {
+    const linkedSort = record.linkedSortId ?? record.linkedSort;
+    return {
+      scope: record.scope ?? { option: 'global' },
+      searchType: record.searchType ?? { option: 'replace' },
+      sort: Array.isArray(record.sort) ? record.sort : [],
+      ...(linkedSort !== undefined && linkedSort !== null && String(linkedSort).trim() !== ''
+        ? { linkedSortId: linkedSort, linkedSort }
+        : {}),
+      filterOnFiscalYears: Boolean(record.filterOnFiscalYears),
+      ...(record.expression !== undefined ? { expression: record.expression } : {}),
+    } as CalculatedSearchEmitPayload;
+  }
+  return null;
+}
+
+function savedCalculatedSearchKey(
+  record: Pick<SavedCalculatedSearch, 'id' | 'name' | 'title'>,
+): string {
+  return String(record.id ?? record.name ?? record.title ?? '');
+}
+
+function calculatedSearchRecordMatches(record: any, key: string | number): boolean {
+  const selectedKey = String(key ?? '').trim();
+  if (!selectedKey || !record || typeof record !== 'object') return false;
+  return (
+    record.name === selectedKey ||
+    record.title === selectedKey ||
+    (record.id != null && String(record.id) === selectedKey)
+  );
+}
+
+function findSavedCalculatedSearchRecord(
+  list: SavedCalculatedSearch[],
+  key: string | number,
+): SavedCalculatedSearch | null {
+  return list.find((record) => calculatedSearchRecordMatches(record, key)) ?? null;
+}
 
 import AgGridFilterHeader from './AgGridFilterHeader';
 import { HeaderFilterPopup } from './dialogs/HeaderFilterPopup';
@@ -706,23 +755,12 @@ const AgGrid: FC<IAgGridProps> = ({
     const listener = async () => {
       try {
         const value = await calculatedSearchesDs.getValue();
-        if (!Array.isArray(value)) {
-          setSavedCalculatedSearches([]);
-          return;
-        }
-        const next = value
-          .filter((v) => v && typeof v === 'object')
-          .map((v: any) => {
-            const name = String(v.name ?? v.title ?? v.id ?? '').trim();
-            if (!name) return null;
-            // Preserve the original record (id/title/...) while ensuring we always have `name`.
-            return {
-              ...v,
-              name,
-              calculatedSearch: (v.calculatedSearch ?? null) as any,
-            } as SavedCalculatedSearch;
-          })
-          .filter((r): r is SavedCalculatedSearch => Boolean(r && r.name));
+        const next = savedRecordsFromDatasourceValue<SavedCalculatedSearch>(value).map(
+          (record) => ({
+            ...record,
+            calculatedSearch: calculatedSearchPayloadFromRecord(record),
+          }),
+        );
         setSavedCalculatedSearches(next);
       } catch {
         setSavedCalculatedSearches([]);
@@ -1170,13 +1208,55 @@ const AgGrid: FC<IAgGridProps> = ({
     dateFinancialEnabledRef,
     filterInactiveRecordsEnabledRef,
     onFilterLoaded: (record) => {
-      const linkedSort = record?.linkedSort?.trim();
-      if (!linkedSort) return;
-      sortsManager.loadSort(linkedSort);
-      setSelectedSortName(linkedSort);
+      const linkedSort = record?.linkedSortId ?? record?.linkedSort;
+      if (linkedSort === null || linkedSort === undefined || String(linkedSort).trim() === '')
+        return;
+      const sortRecord = findSavedRecord(sortsManager.savedSorts, linkedSort);
+      const sortKey = sortRecord ? savedRecordKey(sortRecord) : String(linkedSort).trim();
+      if (!sortKey) return;
+      sortsManager.loadSort(sortKey);
+      setSelectedSortName(sortKey);
       linkedSortAppliedFromFilterRef.current = true;
     },
   });
+
+  const loadViewWithLinkedFilter = useCallback(
+    (key: string | number): boolean => {
+      const viewKey = String(key ?? '').trim();
+      if (!viewKey) return false;
+      const viewRecord = findSavedRecord(viewsManager.savedViews, viewKey);
+      viewsManager.loadView(viewKey);
+      const linkedFilter = viewRecord?.linkedFilterId ?? viewRecord?.linkedFilter;
+      if (
+        linkedFilter === null ||
+        linkedFilter === undefined ||
+        String(linkedFilter).trim() === ''
+      ) {
+        return Boolean(viewRecord);
+      }
+      const filterRecord = findSavedRecord(filtersManager.savedFilters, linkedFilter);
+      const filterKey = filterRecord ? savedRecordKey(filterRecord) : String(linkedFilter).trim();
+      if (!filterKey) return Boolean(viewRecord);
+      filtersManager.loadFilter(filterKey);
+      setSelectedFilterName(filterKey);
+      setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
+      setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
+      return Boolean(viewRecord);
+    },
+    [viewsManager, filtersManager, sortsManager.savedSorts],
+  );
+
+  const tryApplyDefaultViewWithLinkedFilter = useCallback((): string | null => {
+    const defaultView = viewsManager.savedViews.find((v) => v.isDefault);
+    if (!defaultView) return null;
+    const key = savedRecordKey(defaultView);
+    if (!key) return null;
+    loadViewWithLinkedFilter(key);
+    if (Array.isArray(defaultView.columnState)) {
+      viewsManager.persistCurrent(defaultView.columnState, { force: true });
+    }
+    return key;
+  }, [viewsManager, loadViewWithLinkedFilter]);
 
   const applyDateFinancialFilterToggle = useCallback(
     (enabled: boolean) => {
@@ -1725,7 +1805,7 @@ const AgGrid: FC<IAgGridProps> = ({
       // saved list arrives). When a default is applied, also reflect its
       // name in the corresponding dropdown selection.
       if (!viewLiveApplied) {
-        const appliedName = viewsManager.tryApplyDefault();
+        const appliedName = tryApplyDefaultViewWithLinkedFilter();
         if (appliedName) {
           applied = true;
           viewLiveApplied = true;
@@ -1763,7 +1843,16 @@ const AgGrid: FC<IAgGridProps> = ({
 
       setGridReady(true);
     },
-    [viewDs, filterDs, sortDs, viewsManager, filtersManager, sortsManager, persistGridState],
+    [
+      viewDs,
+      filterDs,
+      sortDs,
+      viewsManager,
+      filtersManager,
+      sortsManager,
+      persistGridState,
+      tryApplyDefaultViewWithLinkedFilter,
+    ],
   );
 
   // Deferred bootstrap for defaults: if the saved list DS finishes loading
@@ -1774,10 +1863,10 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!gridReady) return;
     if (viewDefaultTriedRef.current) return;
     if (viewsManager.savedViews.length === 0) return;
-    const appliedName = viewsManager.tryApplyDefault();
+    const appliedName = tryApplyDefaultViewWithLinkedFilter();
     if (appliedName) setSelectedView(appliedName);
     viewDefaultTriedRef.current = true;
-  }, [gridReady, viewsManager.savedViews, viewsManager]);
+  }, [gridReady, viewsManager.savedViews, tryApplyDefaultViewWithLinkedFilter]);
 
   // Keep the "default" checkbox in sync with the record selected in the
   // `Saved views` dropdown so the user sees its current flag value.
@@ -1794,8 +1883,44 @@ const AgGrid: FC<IAgGridProps> = ({
         (v.id != null && String(v.id) === selectedView),
     );
     setIsViewDefault(Boolean(record?.isDefault));
-    setViewLinkedFilterId(record?.linkedFilter != null ? String(record.linkedFilter) : '');
-  }, [selectedView, viewsManager.savedViews]);
+    const linkedFilter = record?.linkedFilterId ?? record?.linkedFilter;
+    const filterRecord =
+      linkedFilter !== null && linkedFilter !== undefined
+        ? findSavedRecord(filtersManager.savedFilters, linkedFilter)
+        : undefined;
+    setViewLinkedFilterId(
+      filterRecord
+        ? savedRecordKey(filterRecord)
+        : linkedFilter != null
+          ? String(linkedFilter)
+          : '',
+    );
+  }, [selectedView, viewsManager.savedViews, filtersManager.savedFilters]);
+
+  useEffect(() => {
+    if (!gridReady) return;
+    if (!selectedView || selectedFilterName) return;
+    const viewRecord = findSavedRecord(viewsManager.savedViews, selectedView);
+    const linkedFilter = viewRecord?.linkedFilterId ?? viewRecord?.linkedFilter;
+    if (linkedFilter === null || linkedFilter === undefined || String(linkedFilter).trim() === '') {
+      return;
+    }
+    const filterRecord = findSavedRecord(filtersManager.savedFilters, linkedFilter);
+    if (!filterRecord) return;
+    const filterKey = savedRecordKey(filterRecord);
+    if (!filterKey) return;
+    filtersManager.loadFilter(filterKey);
+    setSelectedFilterName(filterKey);
+    setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
+    setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
+  }, [
+    gridReady,
+    selectedView,
+    selectedFilterName,
+    viewsManager.savedViews,
+    filtersManager.savedFilters,
+    filtersManager,
+  ]);
 
   useEffect(() => {
     if (!gridReady) return;
@@ -2178,7 +2303,7 @@ const AgGrid: FC<IAgGridProps> = ({
     (next: string) => {
       setSelectedView(next);
       if (!next) return;
-      viewsManager.loadView(next);
+      loadViewWithLinkedFilter(next);
       const api = gridRef.current?.api;
       if (!api) return;
       const currentState = withoutSyntheticRowColumnState(api.getColumnState());
@@ -2196,7 +2321,7 @@ const AgGrid: FC<IAgGridProps> = ({
         }),
       );
     },
-    [viewsManager],
+    [loadViewWithLinkedFilter],
   );
 
   const openAdvancedSortingDialog = () => {
@@ -2505,8 +2630,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                   emptyLabel: translation('No saved views'),
                                   items: (showToolbarView ? viewsManager.savedViews : []).map(
                                     (view) => {
-                                      const key = String(view.name ?? view.title ?? view.id ?? '');
-                                      return { id: key, label: key };
+                                      const key = savedRecordKey(view);
+                                      return { id: key, label: view.name };
                                     },
                                   ),
                                   onSelect: (itemId) => handleLoadViewSelection(itemId),
@@ -2519,13 +2644,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                     ? filtersManager.savedFilters
                                     : []
                                   ).map((filterRecord) => {
-                                    const key = String(
-                                      filterRecord.name ??
-                                        filterRecord.title ??
-                                        filterRecord.id ??
-                                        '',
-                                    );
-                                    return { id: key, label: key };
+                                    const key = savedRecordKey(filterRecord);
+                                    return { id: key, label: filterRecord.name };
                                   }),
                                   onSelect: (itemId) => {
                                     setSelectedFilterName(itemId);
@@ -2544,8 +2664,8 @@ const AgGrid: FC<IAgGridProps> = ({
                                   emptyLabel: translation('No saved sorts'),
                                   items: (showToolbarSorting ? sortsManager.savedSorts : []).map(
                                     (sort) => {
-                                      const key = String(sort.name ?? sort.title ?? sort.id ?? '');
-                                      return { id: key, label: key };
+                                      const key = savedRecordKey(sort);
+                                      return { id: key, label: sort.name };
                                     },
                                   ),
                                   onSelect: (itemId) => {
@@ -2648,32 +2768,47 @@ const AgGrid: FC<IAgGridProps> = ({
                         emit('onsavecalculatedsearch', { name, calculatedSearch });
                       }}
                       onLoad={(key) => {
-                        const record = savedCalculatedSearches.find((r) => r.name === key) ?? null;
+                        const record = findSavedCalculatedSearchRecord(
+                          savedCalculatedSearches,
+                          key,
+                        );
                         if (record?.calculatedSearch && calculatedSearchDs) {
                           calculatedSearchDs.setValue(null, record.calculatedSearch);
                         }
-                        emit('onloadcalculatedsearch', { key });
+                        emit('onloadcalculatedsearch', {
+                          key,
+                          calculatedSearch: record?.calculatedSearch,
+                        });
                       }}
                       onUpdate={(key, calculatedSearch) => {
                         setSavedCalculatedSearches((prev) => {
-                          const idx = prev.findIndex((r) => r.name === key);
-                          if (idx === -1) return [...prev, { name: key, calculatedSearch }];
-                          return prev.map((r) => (r.name === key ? { ...r, calculatedSearch } : r));
+                          const idx = prev.findIndex((r) => calculatedSearchRecordMatches(r, key));
+                          if (idx === -1) return [...prev, { name: String(key), calculatedSearch }];
+                          return prev.map((r) =>
+                            calculatedSearchRecordMatches(r, key) ? { ...r, calculatedSearch } : r,
+                          );
                         });
-                        setSelectedCalculatedSearch({ name: key, calculatedSearch });
+                        const existing = findSavedCalculatedSearchRecord(
+                          savedCalculatedSearches,
+                          key,
+                        );
+                        setSelectedCalculatedSearch({
+                          ...(existing ?? { name: String(key) }),
+                          calculatedSearch,
+                        });
                         if (calculatedSearchesDs) {
                           void (async () => {
                             try {
                               const prev = await calculatedSearchesDs.getValue();
                               const arr = Array.isArray(prev) ? prev : [];
-                              const idx = arr.findIndex(
-                                (r: any) => r && typeof r === 'object' && r.name === key,
+                              const idx = arr.findIndex((r: any) =>
+                                calculatedSearchRecordMatches(r, key),
                               );
                               const next =
                                 idx === -1
                                   ? [...arr, { name: key, calculatedSearch }]
                                   : arr.map((r: any) =>
-                                      r && typeof r === 'object' && r.name === key
+                                      calculatedSearchRecordMatches(r, key)
                                         ? { ...r, calculatedSearch }
                                         : r,
                                     );
@@ -2691,11 +2826,15 @@ const AgGrid: FC<IAgGridProps> = ({
                         emit('onupdatecalculatedsearch', { key, calculatedSearch });
                       }}
                       onDelete={(record) => {
-                        const key = String(record?.name ?? '').trim();
+                        const key = savedCalculatedSearchKey(record);
                         if (!key) return;
 
-                        setSavedCalculatedSearches((prev) => prev.filter((r) => r.name !== key));
-                        setSelectedCalculatedSearch((prev) => (prev?.name === key ? null : prev));
+                        setSavedCalculatedSearches((prev) =>
+                          prev.filter((r) => !calculatedSearchRecordMatches(r, key)),
+                        );
+                        setSelectedCalculatedSearch((prev) =>
+                          prev && calculatedSearchRecordMatches(prev, key) ? null : prev,
+                        );
 
                         if (calculatedSearchesDs) {
                           void (async () => {
@@ -2704,8 +2843,7 @@ const AgGrid: FC<IAgGridProps> = ({
                               const arr = Array.isArray(prev) ? prev : [];
                               const next = arr.filter((r: any) => {
                                 if (!r || typeof r !== 'object') return false;
-                                const rKey = String(r.name ?? r.title ?? r.id ?? '').trim();
-                                return rKey !== key;
+                                return !calculatedSearchRecordMatches(r, key);
                               });
                               calculatedSearchesDs.setValue(null, next);
                             } catch {

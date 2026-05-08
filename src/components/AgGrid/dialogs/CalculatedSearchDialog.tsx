@@ -21,13 +21,28 @@ type Translation = (key: string) => string;
 export const CALCULATED_SEARCH_SORT_NONE = 'none' as const;
 
 function savedSortOptionKey(sort: SavedSort): string {
-  return String(sort.name ?? sort.title ?? sort.id ?? '');
+  return String(sort.id ?? sort.name ?? sort.title ?? '');
+}
+
+function findSavedSortByAnyKey(
+  savedSorts: SavedSort[],
+  key: string | number,
+): SavedSort | undefined {
+  const selectedKey = String(key ?? '').trim();
+  if (!selectedKey) return undefined;
+  return savedSorts.find(
+    (sort) =>
+      savedSortOptionKey(sort) === selectedKey ||
+      sort.name === selectedKey ||
+      sort.title === selectedKey ||
+      (sort.id != null && String(sort.id) === selectedKey),
+  );
 }
 
 /** Full AG Grid sort model for the dropdown choice (empty when “No sort”). */
 function sortModelForSelectValue(savedSorts: SavedSort[], selectValue: string): SortModelItem[] {
   if (selectValue === CALCULATED_SEARCH_SORT_NONE) return [];
-  const record = savedSorts.find((s) => savedSortOptionKey(s) === selectValue);
+  const record = findSavedSortByAnyKey(savedSorts, selectValue);
   const model = record?.sortModel;
   if (!Array.isArray(model)) return [];
   return model.map((item) => ({ ...item }));
@@ -49,6 +64,10 @@ export type CalculatedSearchEmitPayload = {
   };
   /** AG Grid sort model levels (`colId` + `sort`); empty when “No sort” is chosen. */
   sort: SortModelItem[];
+  /** Preferred saved-sort link. `sort` remains populated for backward compatibility. */
+  linkedSortId?: string | number;
+  /** Backward-compatible saved-sort link key. */
+  linkedSort?: string | number;
   filterOnFiscalYears: boolean;
   /**
    * Search expression conditions in order.
@@ -59,6 +78,8 @@ export type CalculatedSearchEmitPayload = {
 
 type SavedCalculatedSearch = {
   name: string;
+  title?: string;
+  id?: string | number;
   calculatedSearch: CalculatedSearchEmitPayload | null;
   [key: string]: unknown;
 };
@@ -93,8 +114,38 @@ function findSavedCalculatedSearch(
   list: SavedCalculatedSearch[],
   key: string,
 ): SavedCalculatedSearch | null {
-  const hit = list.find((r) => r.name === key);
+  const selectedKey = String(key ?? '').trim();
+  const hit = list.find(
+    (r) =>
+      r.name === selectedKey ||
+      r.title === selectedKey ||
+      (r.id != null && String(r.id) === selectedKey),
+  );
   return hit ?? null;
+}
+
+function savedCalculatedSearchKey(record: SavedCalculatedSearch): string {
+  return String(record.id ?? record.name ?? record.title ?? '');
+}
+
+function sortSelectValueForPayload(
+  savedSorts: SavedSort[],
+  payload: CalculatedSearchEmitPayload | null | undefined,
+): string {
+  const linked = payload?.linkedSortId ?? payload?.linkedSort;
+  if (linked !== null && linked !== undefined && String(linked).trim() !== '') {
+    const hit = findSavedSortByAnyKey(savedSorts, linked);
+    return hit ? savedSortOptionKey(hit) : String(linked);
+  }
+  const payloadSort = payload?.sort;
+  if (Array.isArray(payloadSort) && payloadSort.length > 0) {
+    const hit = savedSorts.find((sort) => {
+      const model = Array.isArray(sort.sortModel) ? sort.sortModel : [];
+      return JSON.stringify(model) === JSON.stringify(payloadSort);
+    });
+    if (hit) return savedSortOptionKey(hit);
+  }
+  return CALCULATED_SEARCH_SORT_NONE;
 }
 
 const ACCENT = '#2B5797';
@@ -376,7 +427,7 @@ export const CalculatedSearchDialog: FC<{
   translation,
   relationTree,
   savedSorts,
-  selectedSortKey: _selectedSortKey,
+  selectedSortKey,
   filterOnFiscalYearsInitial,
   savedCalculatedSearches,
   selectedCalculatedSearch,
@@ -413,8 +464,10 @@ export const CalculatedSearchDialog: FC<{
     if (open && !wasOpenRef.current) {
       setScopeOption('global');
       setSearchTypeOption('replace');
-      // Always start with “No sort” when opening this modal (even if the grid/toolbar has a default sort).
-      setSortSelectValue(CALCULATED_SEARCH_SORT_NONE);
+      const selectedSort = findSavedSortByAnyKey(savedSorts, selectedSortKey);
+      setSortSelectValue(
+        selectedSort ? savedSortOptionKey(selectedSort) : CALCULATED_SEARCH_SORT_NONE,
+      );
       setFilterOnFiscalYears(filterOnFiscalYearsInitial);
       setFormatName('');
       setExpandedRelationKeys(new Set());
@@ -431,7 +484,7 @@ export const CalculatedSearchDialog: FC<{
       setSelectedConditionIndex(null);
     }
     wasOpenRef.current = open;
-  }, [open, filterOnFiscalYearsInitial]);
+  }, [open, filterOnFiscalYearsInitial, savedSorts, selectedSortKey]);
 
   const selectedIsAttribute = selectedRelationNode?.type === 'attribute';
   const selectedDataType = selectedIsAttribute
@@ -571,10 +624,13 @@ export const CalculatedSearchDialog: FC<{
   }, []);
 
   const buildDraftPayload = useCallback((): CalculatedSearchEmitPayload => {
+    const linkedSort =
+      sortSelectValue === CALCULATED_SEARCH_SORT_NONE ? undefined : sortSelectValue;
     return {
       scope: { option: scopeOption },
       searchType: { option: searchTypeOption },
       sort: sortModelForSelectValue(savedSorts, sortSelectValue),
+      ...(linkedSort !== undefined ? { linkedSortId: linkedSort, linkedSort } : {}),
       filterOnFiscalYears,
       expression,
     };
@@ -823,8 +879,8 @@ export const CalculatedSearchDialog: FC<{
       } else {
         onSave(trimmedFormatName, draft);
       }
-    } else if (selectedCalculatedSearch?.name) {
-      onUpdate(selectedCalculatedSearch.name, draft);
+    } else if (selectedCalculatedSearch) {
+      onUpdate(savedCalculatedSearchKey(selectedCalculatedSearch), draft);
     }
     setFormatName('');
   }, [
@@ -1469,7 +1525,11 @@ export const CalculatedSearchDialog: FC<{
                   }}
                 />
                 <select
-                  value={selectedCalculatedSearch?.name ?? ''}
+                  value={
+                    selectedCalculatedSearch
+                      ? savedCalculatedSearchKey(selectedCalculatedSearch)
+                      : ''
+                  }
                   onChange={(e) => {
                     const nextKey = e.target.value;
                     const record = nextKey
@@ -1483,7 +1543,7 @@ export const CalculatedSearchDialog: FC<{
                       setScopeOption(v.scope?.option ?? 'global');
                       setSearchTypeOption(v.searchType?.option ?? 'replace');
                       setFilterOnFiscalYears(Boolean(v.filterOnFiscalYears));
-                      // Sort dropdown is keyed by saved sort selection; keep it as-is.
+                      setSortSelectValue(sortSelectValueForPayload(savedSorts, v));
                     }
 
                     if (nextKey) onLoad(nextKey);
@@ -1498,7 +1558,10 @@ export const CalculatedSearchDialog: FC<{
                 >
                   <option value="">Select calculated search</option>
                   {savedCalculatedSearches.map((record) => (
-                    <option key={record.name} value={record.name}>
+                    <option
+                      key={savedCalculatedSearchKey(record)}
+                      value={savedCalculatedSearchKey(record)}
+                    >
                       {record.name}
                     </option>
                   ))}

@@ -4,7 +4,7 @@ import { GoTrash } from 'react-icons/go';
 import type { IColumn } from '../AgGrid.config';
 import type { SavedFilter, SavedSort } from '../state/types';
 import type { Translation } from '../state/sorts';
-import { isHiddenIdColumn, findSavedRecord } from '../state/gridState';
+import { isHiddenIdColumn, findSavedRecord, savedRecordKey } from '../state/gridState';
 import { QueryBuilder, type QueryBuilderHandle } from './QueryBuilder';
 
 interface FilterDialogProps {
@@ -26,9 +26,12 @@ interface FilterDialogProps {
   setFilterModel: (next: any) => void;
   savedFilters: SavedFilter[];
   savedSorts: SavedSort[];
-  saveFilter: (name: string, options?: { linkedSort?: string; filterModel?: any }) => void;
+  saveFilter: (name: string, options?: { linkedSort?: string | number; filterModel?: any }) => void;
   loadFilter: (key: string) => void;
-  updateFilter: (key: string, options?: { linkedSort?: string; filterModel?: any }) => void;
+  updateFilter: (
+    key: string,
+    options?: { linkedSort?: string | number; filterModel?: any },
+  ) => void;
   deleteFilter: (key: string) => void;
   /** Currently selected saved filter — owned by the parent for toolbar + dialog dropdowns. */
   selectedFilter: string;
@@ -69,13 +72,13 @@ export const FilterDialog: FC<FilterDialogProps> = ({
       return;
     }
     const record = findSavedRecord(savedFilters, selectedFilter);
-    const raw = record?.linkedSort?.trim();
+    const raw = record?.linkedSortId ?? record?.linkedSort;
     if (!raw) {
       setLinkedSort('');
       return;
     }
     const sortHit = findSavedRecord(savedSorts, raw);
-    setLinkedSort(sortHit?.name ?? raw);
+    setLinkedSort(sortHit ? savedRecordKey(sortHit) : String(raw));
   }, [selectedFilter, savedFilters, savedSorts]);
 
   /**
@@ -231,7 +234,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             >
               <option value="">{translation('Select filter')}</option>
               {savedFilters.map((record) => (
-                <option key={record.name} value={record.name}>
+                <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
                   {record.name}
                 </option>
               ))}
@@ -254,7 +257,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                 <option value={linkedSort}>{linkedSort}</option>
               ) : null}
               {savedSorts.map((record) => (
-                <option key={record.name} value={record.name}>
+                <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
                   {record.name}
                 </option>
               ))}
