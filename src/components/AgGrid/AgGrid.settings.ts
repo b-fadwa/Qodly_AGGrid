@@ -263,6 +263,24 @@ const sortSettings: TSetting[] = [
   },
 ];
 
+const calculatedSearchSettings: TSetting[] = [
+  {
+    key: 'calculatedSearch',
+    label: 'Current calculated search (object)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'calculatedSearches',
+    label: 'Saved calculated searches list',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'relationTree',
+    label: 'Relation tree (available fields)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+];
+
 const basicSettings: TSetting[] = [
   {
     key: 'disabled',
@@ -619,6 +637,12 @@ const Settings: TSetting[] = [
     components: sortSettings,
   },
   {
+    key: 'calculatedSearch',
+    label: 'Calculated search',
+    type: ESetting.GROUP,
+    components: calculatedSearchSettings,
+  },
+  {
     key: 'general',
     label: 'General',
     type: ESetting.GROUP,
@@ -655,6 +679,7 @@ export const BasicSettings: TSetting[] = [
   ...viewSettings,
   ...filterSettings,
   ...sortSettings,
+  ...calculatedSearchSettings,
   ...commonSettings,
   ...basicSettings,
 ];

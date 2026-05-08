@@ -83,8 +83,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
 import set from 'lodash/set';
-import { FaTableColumns, FaCopy, FaMagnifyingGlass } from 'react-icons/fa6';
-import { FaClockRotateLeft } from 'react-icons/fa6';
+import { FaTableColumns, FaCopy, FaClockRotateLeft, FaSearchengin } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { FaSortAmountDown, FaFilter } from 'react-icons/fa';
 import {
@@ -105,7 +104,14 @@ import { ViewDialog } from './dialogs/ViewDialog';
 import {
   CalculatedSearchDialog,
   type CalculatedSearchEmitPayload,
+  type RelationTreeNode,
 } from './dialogs/CalculatedSearchDialog';
+
+type SavedCalculatedSearch = {
+  name: string;
+  calculatedSearch: CalculatedSearchEmitPayload;
+};
+
 import AgGridFilterHeader from './AgGridFilterHeader';
 import { HeaderFilterPopup } from './dialogs/HeaderFilterPopup';
 
@@ -389,6 +395,9 @@ const AgGrid: FC<IAgGridProps> = ({
   filters = '',
   sort = '',
   sorts = '',
+  calculatedSearch = '',
+  calculatedSearches = '',
+  relationTree = '',
   dateFinancial = false,
   filterInactiveRecords = false,
   calculStatistiqueResult = '',
@@ -459,6 +468,10 @@ const AgGrid: FC<IAgGridProps> = ({
       'ondeletesort',
       'oncalculstatistique',
       'oncalculatedsearch',
+      'onsavecalculatedsearch',
+      'onloadcalculatedsearch',
+      'onupdatecalculatedsearch',
+      'ondeletecalculatedsearch',
     ],
   });
   const { resolver } = useEnhancedEditor(selectResolver);
@@ -576,6 +589,19 @@ const AgGrid: FC<IAgGridProps> = ({
     () => (sorts ? window.DataSource.getSource(sorts, path) : null),
     [sorts, path],
   );
+  const calculatedSearchDs = useMemo(
+    () => (calculatedSearch ? window.DataSource.getSource(calculatedSearch, path) : null),
+    [calculatedSearch, path],
+  );
+  const calculatedSearchesDs = useMemo(
+    () =>
+      calculatedSearches ? window.DataSource.getSource(calculatedSearches, path) : null,
+    [calculatedSearches, path],
+  );
+  const relationTreeDs = useMemo(
+    () => (relationTree ? window.DataSource.getSource(relationTree, path) : null),
+    [relationTree, path],
+  );
   const calculStatistiqueResultDS = useMemo(() => {
     const id = calculStatistiqueResult?.trim();
     if (!id) return null;
@@ -656,12 +682,71 @@ const AgGrid: FC<IAgGridProps> = ({
   // Currently selected saved filter / sort (toolbar + dialogs).
   const [selectedFilterName, setSelectedFilterName] = useState<string>('');
   const [selectedSortName, setSelectedSortName] = useState<string>('');
+  // calculated-search formats (bound to datasources, like filters/sorts)
+  const [savedCalculatedSearches, setSavedCalculatedSearches] = useState<SavedCalculatedSearch[]>(
+    [],
+  );
+  const [selectedCalculatedSearch, setSelectedCalculatedSearch] = useState<string>('');
+  const [relationTreeValue, setRelationTreeValue] = useState<RelationTreeNode[]>([]);
 
   const commitLiveFilterModel = useCallback((nextModel: any) => {
     const normalized = nextModel ?? {};
     liveFilterModelRef.current = normalized;
     setLiveFilterModel(normalized);
   }, []);
+
+  // calculated-search formats: list datasource -> local dropdown list
+  useEffect(() => {
+    if (!calculatedSearchesDs) {
+      setSavedCalculatedSearches([]);
+      return;
+    }
+    const listener = async () => {
+      try {
+        const value = await calculatedSearchesDs.getValue();
+        if (!Array.isArray(value)) {
+          setSavedCalculatedSearches([]);
+          return;
+        }
+        const next = value
+          .filter((v) => v && typeof v === 'object')
+          .map((v: any) => ({
+            name: String(v.name ?? ''),
+            calculatedSearch: v.calculatedSearch as CalculatedSearchEmitPayload,
+          }))
+          .filter((r) => r.name.length > 0);
+        setSavedCalculatedSearches(next);
+      } catch {
+        setSavedCalculatedSearches([]);
+      }
+    };
+    void listener();
+    calculatedSearchesDs.addListener('changed', listener);
+    return () => {
+      calculatedSearchesDs.removeListener('changed', listener);
+    };
+  }, [calculatedSearchesDs]);
+
+  // relation tree datasource -> available fields tree
+  useEffect(() => {
+    if (!relationTreeDs) {
+      setRelationTreeValue([]);
+      return;
+    }
+    const listener = async () => {
+      try {
+        const value = await relationTreeDs.getValue();
+        setRelationTreeValue(Array.isArray(value) ? (value as RelationTreeNode[]) : []);
+      } catch {
+        setRelationTreeValue([]);
+      }
+    };
+    void listener();
+    relationTreeDs.addListener('changed', listener);
+    return () => {
+      relationTreeDs.removeListener('changed', listener);
+    };
+  }, [relationTreeDs]);
 
   const persistFilterDsNow = useCallback(
     (filterModel: any) => {
@@ -2299,7 +2384,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 }}
                                 aria-label={translation('Calculated search')}
                               >
-                                <FaMagnifyingGlass size={12} />
+                                <FaSearchengin size={14} />
                               </button>
                             </IconPopover>
                           </div>
@@ -2508,9 +2593,104 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showCalculatedSearchDialog}
                       onClose={() => setShowCalculatedSearchDialog(false)}
                       translation={translation}
+                      relationTree={relationTreeValue}
                       savedSorts={sortsManager.savedSorts}
                       selectedSortKey={selectedSortName}
                       filterOnFiscalYearsInitial={dateFinancialFilterEnabled}
+                      savedCalculatedSearches={savedCalculatedSearches}
+                      selectedCalculatedSearch={selectedCalculatedSearch}
+                      setSelectedCalculatedSearch={setSelectedCalculatedSearch}
+                      onSave={(name, calculatedSearch) => {
+                        setSavedCalculatedSearches((prev) => {
+                          if (prev.some((r) => r.name === name)) return prev;
+                          return [...prev, { name, calculatedSearch }];
+                        });
+                        setSelectedCalculatedSearch(name);
+                        if (calculatedSearchesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await calculatedSearchesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              const exists = arr.some(
+                                (r: any) => r && typeof r === 'object' && r.name === name,
+                              );
+                              if (!exists) {
+                                calculatedSearchesDs.setValue(null, [
+                                  ...arr,
+                                  { name, calculatedSearch },
+                                ]);
+                              }
+                            } catch {
+                              calculatedSearchesDs.setValue(null, [{ name, calculatedSearch }]);
+                            }
+                          })();
+                        }
+                        if (calculatedSearchDs) {
+                          calculatedSearchDs.setValue(null, calculatedSearch);
+                        }
+                        emit('onsavecalculatedsearch', { name, calculatedSearch });
+                      }}
+                      onLoad={(key) => {
+                        const record = savedCalculatedSearches.find((r) => r.name === key) ?? null;
+                        if (record?.calculatedSearch && calculatedSearchDs) {
+                          calculatedSearchDs.setValue(null, record.calculatedSearch);
+                        }
+                        emit('onloadcalculatedsearch', { key });
+                      }}
+                      onUpdate={(key, calculatedSearch) => {
+                        setSavedCalculatedSearches((prev) => {
+                          const idx = prev.findIndex((r) => r.name === key);
+                          if (idx === -1) return [...prev, { name: key, calculatedSearch }];
+                          return prev.map((r) => (r.name === key ? { ...r, calculatedSearch } : r));
+                        });
+                        setSelectedCalculatedSearch(key);
+                        if (calculatedSearchesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await calculatedSearchesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              const idx = arr.findIndex(
+                                (r: any) => r && typeof r === 'object' && r.name === key,
+                              );
+                              const next =
+                                idx === -1
+                                  ? [...arr, { name: key, calculatedSearch }]
+                                  : arr.map((r: any) =>
+                                      r && typeof r === 'object' && r.name === key
+                                        ? { ...r, calculatedSearch }
+                                        : r,
+                                    );
+                              calculatedSearchesDs.setValue(null, next);
+                            } catch {
+                              calculatedSearchesDs.setValue(null, [{ name: key, calculatedSearch }]);
+                            }
+                          })();
+                        }
+                        if (calculatedSearchDs) {
+                          calculatedSearchDs.setValue(null, calculatedSearch);
+                        }
+                        emit('onupdatecalculatedsearch', { key, calculatedSearch });
+                      }}
+                      onDelete={(key) => {
+                        setSavedCalculatedSearches((prev) => prev.filter((r) => r.name !== key));
+                        setSelectedCalculatedSearch((prev) => (prev === key ? '' : prev));
+                        if (calculatedSearchesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await calculatedSearchesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              const next = arr.filter(
+                                (r: any) =>
+                                  !(r && typeof r === 'object' && String(r.name) === key),
+                              );
+                              calculatedSearchesDs.setValue(null, next);
+                            } catch {
+                              calculatedSearchesDs.setValue(null, []);
+                            }
+                          })();
+                        }
+                        emit('ondeletecalculatedsearch', { key });
+                      }}
                       onApply={async (payload: CalculatedSearchEmitPayload) => {
                         await emit('oncalculatedsearch', payload);
                         setShowCalculatedSearchDialog(false);

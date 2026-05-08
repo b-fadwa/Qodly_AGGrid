@@ -14,8 +14,7 @@ import { ColDef, themeQuartz } from 'ag-grid-community';
 import { BsFillInfoCircleFill } from 'react-icons/bs';
 import { Element } from '@ws-ui/craftjs-core';
 import { useState } from 'react';
-import { FaTableColumns, FaMagnifyingGlass } from 'react-icons/fa6';
-import { FaClockRotateLeft } from 'react-icons/fa6';
+import { FaTableColumns, FaSearchengin, FaClockRotateLeft } from 'react-icons/fa6';
 import { GoTrash } from 'react-icons/go';
 import { IoMdClose } from 'react-icons/io';
 import { FaCalculator, FaSortAmountDown, FaFilter } from 'react-icons/fa';
@@ -124,10 +123,16 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarSavedViews = true,
   showRecordCount = true,
   showRowNumbers = false,
+  calculatedSearch = '',
+  calculatedSearches = '',
+  relationTree = '',
   style,
   className,
   classNames = [],
 }) => {
+  void calculatedSearch;
+  void calculatedSearches;
+  void relationTree;
   const {
     connectors: { connect },
   } = useEnhancedNode();
@@ -198,6 +203,10 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showSortingDialog, setShowSortingDialog] = useState(false);
   const [showStatisticsDialog, setShowStatisticsDialog] = useState(false);
   const [showCalculatedSearchDialog, setShowCalculatedSearchDialog] = useState(false);
+  const [savedCalculatedSearches, setSavedCalculatedSearches] = useState<
+    { name: string; calculatedSearch: CalculatedSearchEmitPayload }[]
+  >([]);
+  const [selectedCalculatedSearch, setSelectedCalculatedSearch] = useState<string>('');
   const [sortRules, setSortRules] = useState<{ field: string; sort: 'asc' | 'desc' }[]>([]);
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
@@ -312,7 +321,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                   }}
                                   aria-label={translation('Calculated search')}
                                 >
-                                  <FaMagnifyingGlass size={12} />
+                                  <FaSearchengin size={14} />
                                 </button>
                               </IconPopover>
                             </div>
@@ -694,9 +703,37 @@ const AgGrid: FC<IAgGridProps> = ({
                     open={showCalculatedSearchDialog}
                     onClose={() => setShowCalculatedSearchDialog(false)}
                     translation={translation}
+                    relationTree={[]}
                     savedSorts={[]}
                     selectedSortKey=""
                     filterOnFiscalYearsInitial={false}
+                    savedCalculatedSearches={savedCalculatedSearches}
+                    selectedCalculatedSearch={selectedCalculatedSearch}
+                    setSelectedCalculatedSearch={setSelectedCalculatedSearch}
+                    onSave={(name, calculatedSearch) => {
+                      setSavedCalculatedSearches((prev) => {
+                        if (prev.some((r) => r.name === name)) return prev;
+                        return [...prev, { name, calculatedSearch }];
+                      });
+                      setSelectedCalculatedSearch(name);
+                    }}
+                    onLoad={(key) => {
+                      void key;
+                    }}
+                    onUpdate={(key, calculatedSearch) => {
+                      setSavedCalculatedSearches((prev) => {
+                        const idx = prev.findIndex((r) => r.name === key);
+                        if (idx === -1) return [...prev, { name: key, calculatedSearch }];
+                        return prev.map((r) =>
+                          r.name === key ? { ...r, calculatedSearch } : r,
+                        );
+                      });
+                      setSelectedCalculatedSearch(key);
+                    }}
+                    onDelete={(key) => {
+                      setSavedCalculatedSearches((prev) => prev.filter((r) => r.name !== key));
+                      setSelectedCalculatedSearch((prev) => (prev === key ? '' : prev));
+                    }}
                     onApply={async (payload: CalculatedSearchEmitPayload) => {
                       void payload;
                       setShowCalculatedSearchDialog(false);

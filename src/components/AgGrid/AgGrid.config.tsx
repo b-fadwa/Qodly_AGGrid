@@ -59,6 +59,9 @@ export default {
         { name: 'filters', require: false, isDatasource: false },
         { name: 'sort', require: false, isDatasource: false },
         { name: 'sorts', require: false, isDatasource: false },
+        { name: 'calculatedSearch', require: false, isDatasource: false },
+        { name: 'calculatedSearches', require: false, isDatasource: false },
+        { name: 'relationTree', require: false, isDatasource: false },
         { name: 'calculStatistiqueResult', require: false, isDatasource: false },
       ],
     },
@@ -97,6 +100,10 @@ export default {
       { label: 'On Calculs statistique', value: 'oncalculstatistique' },
 
       { label: 'On Calculated search', value: 'oncalculatedsearch' },
+      { label: 'On Save Calculated search', value: 'onsavecalculatedsearch' },
+      { label: 'On Load Calculated search', value: 'onloadcalculatedsearch' },
+      { label: 'On Update Calculated search', value: 'onupdatecalculatedsearch' },
+      { label: 'On Delete Calculated search', value: 'ondeletecalculatedsearch' },
     ],
     datasources: {
       declarations: (props) => {
@@ -110,6 +117,9 @@ export default {
           filters = '',
           sort = '',
           sorts = '',
+          calculatedSearch = '',
+          calculatedSearches = '',
+          relationTree = '',
           calculStatistiqueResult = '',
         } = props as IExostiveElementProps & {
           view?: string;
@@ -118,6 +128,9 @@ export default {
           filters?: string;
           sort?: string;
           sorts?: string;
+          calculatedSearch?: string;
+          calculatedSearches?: string;
+          relationTree?: string;
           calculStatistiqueResult?: string;
         };
         const declarations: T4DComponentDatasourceDeclaration[] = [
@@ -132,6 +145,10 @@ export default {
         if (filters) declarations.push({ path: filters, iterable: true });
         if (sort) declarations.push({ path: sort });
         if (sorts) declarations.push({ path: sorts, iterable: true });
+        if (calculatedSearch) declarations.push({ path: calculatedSearch });
+        if (calculatedSearches)
+          declarations.push({ path: calculatedSearches, iterable: true });
+        if (relationTree) declarations.push({ path: relationTree, iterable: true });
         if (calculStatistiqueResult?.trim()) {
           declarations.push({ path: calculStatistiqueResult.trim() });
         }
@@ -298,6 +315,12 @@ export interface IAgGridProps extends webforms.ComponentProps {
   sort?: string;
   /** Scalar array: saved list of named sorts. */
   sorts?: string;
+  /** Scalar object: live calculated-search draft / state. */
+  calculatedSearch?: string;
+  /** Scalar array: saved list of named calculated-search formats. */
+  calculatedSearches?: string;
+  /** Scalar array: relation tree for “Available fields” in calculated search. */
+  relationTree?: string;
   /** When true, show the fiscal-year checkbox in advanced / header filters (runtime value is emitted on `onfilter`, not injected into the query here). */
   dateFinancial?: boolean;
   /** When true, show “filter inactive records” in advanced / header filters; runtime checkbox state is emitted on `onfilter`. */
