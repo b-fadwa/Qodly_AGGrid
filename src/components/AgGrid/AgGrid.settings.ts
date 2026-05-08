@@ -181,6 +181,12 @@ const dataAccessSettings: TSetting[] = [
     key: 'showToolbarStatistics',
   },
   {
+    label: 'Toolbar: Calculated search',
+    defaultValue: false,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarCalculatedSearch',
+  },
+  {
     label: 'Toolbar: Save view',
     defaultValue: true,
     type: ESetting.CHECKBOX,
@@ -253,6 +259,24 @@ const sortSettings: TSetting[] = [
   {
     key: 'sorts',
     label: 'Saved sorts list',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+];
+
+const calculatedSearchSettings: TSetting[] = [
+  {
+    key: 'calculatedSearch',
+    label: 'Current calculated search (object)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'calculatedSearches',
+    label: 'Saved calculated searches list',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'relationTree',
+    label: 'Relation tree (available fields)',
     type: ESetting.DS_AUTO_SUGGEST,
   },
 ];
@@ -613,6 +637,12 @@ const Settings: TSetting[] = [
     components: sortSettings,
   },
   {
+    key: 'calculatedSearch',
+    label: 'Calculated search',
+    type: ESetting.GROUP,
+    components: calculatedSearchSettings,
+  },
+  {
     key: 'general',
     label: 'General',
     type: ESetting.GROUP,
@@ -649,6 +679,7 @@ export const BasicSettings: TSetting[] = [
   ...viewSettings,
   ...filterSettings,
   ...sortSettings,
+  ...calculatedSearchSettings,
   ...commonSettings,
   ...basicSettings,
 ];

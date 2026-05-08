@@ -73,8 +73,12 @@ export interface ViewsManager {
   savedViews: SavedView[];
   /** Read the list from the `views` datasource and update state. */
   refreshSavedViews: () => Promise<void>;
-  /** Write the current grid column state to the `view` datasource (no event). */
-  persistCurrent: (columnState: any[]) => void;
+  /**
+   * Write the current grid column state to the `view` datasource (no event).
+   * Pass `{ force: true }` to bypass the echo guard for deterministic
+   * bootstrap writes (initial state, default-view application).
+   */
+  persistCurrent: (columnState: any[], options?: { force?: boolean }) => void;
   /** Apply the `view` datasource snapshot to the grid (used on initial load). */
   applyPersistedValue: (api: GridApi, value: any) => boolean;
   /** Save the current grid state as a named view — emits `onsaveview`. */
@@ -138,22 +142,36 @@ export function useViewsManager({
     };
   }, [viewsDs]);
 
-  const persistCurrent = useCallback(
-    (columnState: any[]) => {
-      if (!viewDs) return;
-      if (applyingExternalRef.current) return;
-      // Views own column visibility / order / width / pinning ONLY — sort is
-      // owned by the sorts manager. Stripping `sort`/`sortIndex` keeps the
-      // two concerns from clobbering each other and prevents `loadView` from
-      // triggering a `sortChanged` (which would issue an extra getRows).
-      const enriched = enrichColumnStateWithSource(
+  /**
+   * Build the `ViewStateValue` payload written to the live `view` datasource.
+   * Views own column visibility / order / width / pinning ONLY — sort is
+   * owned by the sorts manager. Stripping `sort`/`sortIndex` keeps the two
+   * concerns from clobbering each other and prevents `loadView` from
+   * triggering a `sortChanged` (which would issue an extra getRows).
+   */
+  const buildViewPayload = useCallback(
+    (columnState: any[]): ViewStateValue => ({
+      columnState: enrichColumnStateWithSource(
         withoutSortFromColumnState(withoutSyntheticRowColumnState(columnState)),
         columnsRef.current,
-      );
-      const next: ViewStateValue = { columnState: enriched };
-      viewDs.setValue(null, next);
+      ),
+    }),
+    [columnsRef],
+  );
+
+  const persistCurrent = useCallback(
+    (columnState: any[], options?: { force?: boolean }) => {
+      if (!viewDs) return;
+      // The `applyingExternalRef` guard breaks the DS-listener echo loop
+      // (`setValue` → `changed` → `applyPersistedValue` → grid update →
+      // `stateUpdated` → `persistCurrent`). At bootstrap, however, the
+      // listener can race with `getState` and leave the flag momentarily
+      // true, silently swallowing the very first write. Pass `force: true`
+      // for those deterministic, non-echoing bootstrap writes.
+      if (!options?.force && applyingExternalRef.current) return;
+      viewDs.setValue(null, buildViewPayload(columnState));
     },
-    [viewDs, columnsRef, applyingExternalRef],
+    [viewDs, applyingExternalRef, buildViewPayload],
   );
 
   const applyPersistedValue = useCallback(
@@ -316,8 +334,17 @@ export function useViewsManager({
     const defaultView = savedViewsRef.current.find((v) => v.isDefault);
     if (!defaultView) return null;
     loadView(defaultView.name);
+    // Initialize the live `view` datasource with the default view's
+    // `columnState`. Use `force: true` so the bootstrap write cannot be
+    // swallowed by the `applyingExternalRef` echo guard — at startup, the
+    // `viewDs` listener can race with `getState` and leave the flag set.
+    // Likewise, AG Grid's `stateUpdated` during init carries the
+    // `gridInitializing` source and is skipped by `onStateUpdated`.
+    if (Array.isArray(defaultView.columnState)) {
+      persistCurrent(defaultView.columnState, { force: true });
+    }
     return defaultView.name;
-  }, [loadView]);
+  }, [loadView, persistCurrent]);
 
   return {
     savedViews,

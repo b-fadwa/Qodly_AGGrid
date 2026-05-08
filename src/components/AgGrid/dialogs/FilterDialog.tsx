@@ -164,32 +164,34 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             filterModel={filterModel}
             onChange={setFilterModel}
           />
-          {showDateFinancialToggle ? (
-            <label
-              className="mt-3 inline-flex items-center gap-2"
-              style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
-            >
-              <input
-                type="checkbox"
-                checked={dateFinancialFilterEnabled}
-                onChange={(e) => onDateFinancialFilterEnabledChange(e.target.checked)}
-              />
-              <span>{translation('filter by fiscal year')}</span>
-            </label>
-          ) : null}
-          {showFilterInactiveRecordsToggle ? (
-            <label
-              className="mt-2 inline-flex items-center gap-2"
-              style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
-            >
-              <input
-                type="checkbox"
-                checked={filterInactiveRecordsEnabled}
-                onChange={(e) => onFilterInactiveRecordsEnabledChange(e.target.checked)}
-              />
-              <span>{translation('filter inactive records')}</span>
-            </label>
-          ) : null}
+          <div className="flex flex-col">
+            {showDateFinancialToggle ? (
+              <label
+                className="mt-1 inline-flex items-center gap-2"
+                style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
+              >
+                <input
+                  type="checkbox"
+                  checked={dateFinancialFilterEnabled}
+                  onChange={(e) => onDateFinancialFilterEnabledChange(e.target.checked)}
+                />
+                <span>{translation('filter by fiscal year')}</span>
+              </label>
+            ) : null}
+            {showFilterInactiveRecordsToggle ? (
+              <label
+                className="mt-1 inline-flex items-center gap-2"
+                style={{ color: '#44444C', fontSize: '12px', fontWeight: 500 }}
+              >
+                <input
+                  type="checkbox"
+                  checked={filterInactiveRecordsEnabled}
+                  onChange={(e) => onFilterInactiveRecordsEnabledChange(e.target.checked)}
+                />
+                <span>{translation('filter inactive records')}</span>
+              </label>
+            ) : null}
+          </div>
         </div>
 
         <div className="px-5 py-3 flex flex-col gap-3" style={{ borderTop: '1px solid #E5E7EB' }}>

@@ -449,7 +449,10 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                           </button>
                         </div>
                       </div>
-                      <div className="max-h-[min(50vh,360px)] overflow-y-auto rounded-md border border-slate-200 bg-slate-50/80 p-3">
+                      <div
+                        className="overflow-y-auto rounded-md border border-slate-200 bg-slate-50/80 p-3"
+                        style={{ maxHeight: 300 }}
+                      >
                         <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
                           {statisticsColumns.map((column) => (
                             <label
@@ -539,7 +542,10 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                             <div className="space-y-2">
                               {pivotFieldRows.length > 0 ? (
                                 <div className="flex items-start gap-2">
-                                  <div className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white">
+                                  <div
+                                    className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white"
+                                    style={{ maxHeight: 300 }}
+                                  >
                                     <table className="w-full border-collapse text-left text-sm">
                                       <thead className="bg-slate-100/90">
                                         <tr>
