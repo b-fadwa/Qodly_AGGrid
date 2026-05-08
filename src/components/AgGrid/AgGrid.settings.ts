@@ -182,7 +182,7 @@ const dataAccessSettings: TSetting[] = [
   },
   {
     label: 'Toolbar: Calculated search',
-    defaultValue: true,
+    defaultValue: false,
     type: ESetting.CHECKBOX,
     key: 'showToolbarCalculatedSearch',
   },

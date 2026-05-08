@@ -1745,7 +1745,12 @@ const AgGrid: FC<IAgGridProps> = ({
         const columnState = withoutSyntheticRowColumnState(api.getColumnState());
         const filterModel = api.getFilterModel() ?? {};
         const sortModel = buildSortModelFromColumnState(columnState);
-        persistGridState(columnState, filterModel, sortModel);
+        // Force the view write so the live `view` datasource is initialized
+        // even if the `viewDs` listener is mid-cycle (the `applyingExternal`
+        // guard would otherwise swallow this first write at bootstrap).
+        viewsManager.persistCurrent(columnState, { force: true });
+        filtersManager.persistCurrent(filterModel);
+        sortsManager.persistCurrent(sortModel);
       }
 
       setGridReady(true);

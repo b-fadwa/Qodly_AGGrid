@@ -146,8 +146,7 @@ export default {
         if (sort) declarations.push({ path: sort });
         if (sorts) declarations.push({ path: sorts, iterable: true });
         if (calculatedSearch) declarations.push({ path: calculatedSearch });
-        if (calculatedSearches)
-          declarations.push({ path: calculatedSearches, iterable: true });
+        if (calculatedSearches) declarations.push({ path: calculatedSearches, iterable: true });
         if (relationTree) declarations.push({ path: relationTree, iterable: true });
         if (calculStatistiqueResult?.trim()) {
           declarations.push({ path: calculStatistiqueResult.trim() });
@@ -293,7 +292,7 @@ export default {
     showToolbarSorting: true,
     showToolbarFiltering: true,
     showToolbarStatistics: false,
-    showToolbarCalculatedSearch: true,
+    showToolbarCalculatedSearch: false,
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
     showRecordCount: true,
