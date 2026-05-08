@@ -708,6 +708,59 @@ export const CalculatedSearchDialog: FC<{
     [],
   );
 
+  const hydrateDraftFromPayload = useCallback(
+    (payload: CalculatedSearchEmitPayload | null | undefined) => {
+      if (!payload) {
+        setScopeOption('global');
+        setSearchTypeOption('replace');
+        setSortSelectValue(CALCULATED_SEARCH_SORT_NONE);
+        setFilterOnFiscalYears(filterOnFiscalYearsInitial);
+        setExpression({ conditions: [] });
+        setExpandedRelationKeys(new Set());
+        setSelectedConditionIndex(null);
+        setSelectedRelationNode(null);
+        setConstraintType('count');
+        setConstraintFrom(0);
+        setConstraintTo(0);
+        setTargetOperator('');
+        setTargetValue('');
+        setTargetValue2('');
+        setEntryMode('free');
+        setLogicForNewCondition('and');
+        return;
+      }
+
+      const nextExpression =
+        payload.expression && Array.isArray(payload.expression.conditions)
+          ? normalizeExpressionAfterEdit(payload.expression)
+          : { conditions: [] };
+      const expandedKeys = new Set<string>();
+      nextExpression.conditions.forEach((condition) => {
+        const path = findTreePathByKey(relationTree, condition.relationKey);
+        if (!path) return;
+        path.slice(0, -1).forEach((node) => expandedKeys.add(node.key));
+      });
+
+      setScopeOption(payload.scope?.option ?? 'global');
+      setSearchTypeOption(payload.searchType?.option ?? 'replace');
+      setFilterOnFiscalYears(Boolean(payload.filterOnFiscalYears));
+      setSortSelectValue(sortSelectValueForPayload(savedSorts, payload));
+      setExpression(nextExpression);
+      setExpandedRelationKeys(expandedKeys);
+      setSelectedConditionIndex(null);
+      setSelectedRelationNode(null);
+      setConstraintType('count');
+      setConstraintFrom(0);
+      setConstraintTo(0);
+      setTargetOperator('');
+      setTargetValue('');
+      setTargetValue2('');
+      setEntryMode('free');
+      setLogicForNewCondition('and');
+    },
+    [filterOnFiscalYearsInitial, normalizeExpressionAfterEdit, relationTree, savedSorts],
+  );
+
   const handleAddCondition = useCallback(() => {
     if (!canCreateCondition) return;
     const cond = buildConditionFromInputs();
@@ -1538,13 +1591,7 @@ export const CalculatedSearchDialog: FC<{
 
                     setSelectedCalculatedSearch(record ?? null);
 
-                    if (record?.calculatedSearch) {
-                      const v = record.calculatedSearch;
-                      setScopeOption(v.scope?.option ?? 'global');
-                      setSearchTypeOption(v.searchType?.option ?? 'replace');
-                      setFilterOnFiscalYears(Boolean(v.filterOnFiscalYears));
-                      setSortSelectValue(sortSelectValueForPayload(savedSorts, v));
-                    }
+                    hydrateDraftFromPayload(record?.calculatedSearch);
 
                     if (nextKey) onLoad(nextKey);
                   }}
