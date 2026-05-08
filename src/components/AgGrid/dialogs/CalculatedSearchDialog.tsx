@@ -24,12 +24,6 @@ function savedSortOptionKey(sort: SavedSort): string {
   return String(sort.name ?? sort.title ?? sort.id ?? '');
 }
 
-function resolveInitialSortSelect(savedSorts: SavedSort[], toolbarSelectedSortKey: string): string {
-  if (!toolbarSelectedSortKey) return CALCULATED_SEARCH_SORT_NONE;
-  const valid = new Set(savedSorts.map(savedSortOptionKey).filter((k) => k.length > 0));
-  return valid.has(toolbarSelectedSortKey) ? toolbarSelectedSortKey : CALCULATED_SEARCH_SORT_NONE;
-}
-
 /** Full AG Grid sort model for the dropdown choice (empty when “No sort”). */
 function sortModelForSelectValue(savedSorts: SavedSort[], selectValue: string): SortModelItem[] {
   if (selectValue === CALCULATED_SEARCH_SORT_NONE) return [];
@@ -381,7 +375,7 @@ export const CalculatedSearchDialog: FC<{
   translation,
   relationTree,
   savedSorts,
-  selectedSortKey,
+  selectedSortKey: _selectedSortKey,
   filterOnFiscalYearsInitial,
   savedCalculatedSearches,
   selectedCalculatedSearch,
@@ -418,7 +412,8 @@ export const CalculatedSearchDialog: FC<{
     if (open && !wasOpenRef.current) {
       setScopeOption('global');
       setSearchTypeOption('replace');
-      setSortSelectValue(resolveInitialSortSelect(savedSorts, selectedSortKey));
+      // Always start with “No sort” when opening this modal (even if the grid/toolbar has a default sort).
+      setSortSelectValue(CALCULATED_SEARCH_SORT_NONE);
       setFilterOnFiscalYears(filterOnFiscalYearsInitial);
       setFormatName('');
       setExpandedRelationKeys(new Set());
@@ -435,7 +430,7 @@ export const CalculatedSearchDialog: FC<{
       setSelectedConditionIndex(null);
     }
     wasOpenRef.current = open;
-  }, [open, savedSorts, selectedSortKey, filterOnFiscalYearsInitial]);
+  }, [open, filterOnFiscalYearsInitial]);
 
   const selectedIsAttribute = selectedRelationNode?.type === 'attribute';
   const selectedDataType = selectedIsAttribute
@@ -916,6 +911,9 @@ export const CalculatedSearchDialog: FC<{
                           selectedKey={selectedRelationNode?.key ?? null}
                           onSelect={(picked) => {
                             setSelectedRelationNode(picked);
+                            // Reset constraint range inputs whenever the user picks a different tree item.
+                            setConstraintFrom(0);
+                            setConstraintTo(0);
                             if (picked.type !== 'attribute') {
                               // Table selection does not support target-value filtering.
                               setTargetOperator('');
@@ -1028,7 +1026,7 @@ export const CalculatedSearchDialog: FC<{
                       <div className="flex flex-col gap-2">
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                           <select
-                            className="h-8 w-full rounded border px-3 text-sm outline-none sm:w-56"
+                            className="h-7 w-full rounded border px-3 text-xs outline-none sm:w-56"
                             value={targetOperator}
                             onChange={(e) => setTargetOperator(e.target.value)}
                             disabled={!targetOperators.length}
@@ -1463,7 +1461,6 @@ export const CalculatedSearchDialog: FC<{
                   onChange={(e) => setFormatName(e.target.value)}
                   className="rounded-lg border border-gray-300 px-2 py-1"
                   style={{
-                    height: '31px',
                     borderRadius: '6px',
                     borderColor: '#0000001A',
                     color: '#44444C',
@@ -1489,14 +1486,13 @@ export const CalculatedSearchDialog: FC<{
                   }}
                   className="rounded-lg border border-gray-300 px-2 py-1"
                   style={{
-                    height: '31px',
                     borderRadius: '6px',
                     borderColor: '#0000001A',
                     color: '#44444C',
                     fontSize: '12px',
                   }}
                 >
-                  <option value="">{translation('Select filter')}</option>
+                  <option value="">Select calculated search</option>
                   {savedCalculatedSearches.map((record) => (
                     <option key={record.name} value={record.name}>
                       {record.name}
@@ -1507,8 +1503,8 @@ export const CalculatedSearchDialog: FC<{
                   type="button"
                   className="inline-flex items-center justify-center rounded-lg border"
                   style={{
-                    width: '31px',
-                    height: '31px',
+                    width: '26px',
+                    height: '26px',
                     borderRadius: '8px',
                     color: '#EC7B80',
                     borderColor: '#EC7B80',
@@ -1526,7 +1522,6 @@ export const CalculatedSearchDialog: FC<{
                   type="button"
                   className="rounded-lg border border-gray-300 bg-white px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
-                    height: '31px',
                     borderRadius: '6px',
                     borderColor: '#0000001A',
                     color: '#44444C',

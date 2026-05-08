@@ -594,14 +594,14 @@ const AgGrid: FC<IAgGridProps> = ({
     [calculatedSearch, path],
   );
   const calculatedSearchesDs = useMemo(
-    () =>
-      calculatedSearches ? window.DataSource.getSource(calculatedSearches, path) : null,
+    () => (calculatedSearches ? window.DataSource.getSource(calculatedSearches, path) : null),
     [calculatedSearches, path],
   );
   const relationTreeDs = useMemo(
     () => (relationTree ? window.DataSource.getSource(relationTree, path) : null),
     [relationTree, path],
   );
+
   const calculStatistiqueResultDS = useMemo(() => {
     const id = calculStatistiqueResult?.trim();
     if (!id) return null;
@@ -710,11 +710,15 @@ const AgGrid: FC<IAgGridProps> = ({
         }
         const next = value
           .filter((v) => v && typeof v === 'object')
-          .map((v: any) => ({
-            name: String(v.name ?? ''),
-            calculatedSearch: v.calculatedSearch as CalculatedSearchEmitPayload,
-          }))
-          .filter((r) => r.name.length > 0);
+          .map((v: any) => {
+            const name = String(v.name ?? v.title ?? v.id ?? '').trim();
+            if (!name) return null;
+            return {
+              name,
+              calculatedSearch: (v.calculatedSearch ?? null) as any,
+            } as SavedCalculatedSearch;
+          })
+          .filter((r): r is SavedCalculatedSearch => Boolean(r && r.name));
         setSavedCalculatedSearches(next);
       } catch {
         setSavedCalculatedSearches([]);
@@ -1989,7 +1993,9 @@ const AgGrid: FC<IAgGridProps> = ({
         filterModel: normalizeAgGridFilterModel(effectiveFilterModel) ?? {},
         advancedRules: getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
         dateFinancial: Boolean(dateFinancial && dateFinancialEnabledRef.current),
-        filterInactiveRecords: Boolean(filterInactiveRecords && filterInactiveRecordsEnabledRef.current),
+        filterInactiveRecords: Boolean(
+          filterInactiveRecords && filterInactiveRecordsEnabledRef.current,
+        ),
         filterQuery,
       };
 
@@ -2087,7 +2093,9 @@ const AgGrid: FC<IAgGridProps> = ({
         try {
           if (allowServerFilterSortEmitRef.current) {
             if (!isEqual(filterFingerprint, lastEmittedOnFilterPayloadRef.current)) {
-              const strippedFm = stripAdvancedRulesFromFilterModel(filterFingerprint.filterModel ?? {});
+              const strippedFm = stripAdvancedRulesFromFilterModel(
+                filterFingerprint.filterModel ?? {},
+              );
               const normalizedCols = normalizeAgGridFilterModel(strippedFm) ?? {};
               const hasColumnFilters =
                 normalizedCols != null &&
@@ -2667,7 +2675,9 @@ const AgGrid: FC<IAgGridProps> = ({
                                     );
                               calculatedSearchesDs.setValue(null, next);
                             } catch {
-                              calculatedSearchesDs.setValue(null, [{ name: key, calculatedSearch }]);
+                              calculatedSearchesDs.setValue(null, [
+                                { name: key, calculatedSearch },
+                              ]);
                             }
                           })();
                         }
@@ -2685,8 +2695,7 @@ const AgGrid: FC<IAgGridProps> = ({
                               const prev = await calculatedSearchesDs.getValue();
                               const arr = Array.isArray(prev) ? prev : [];
                               const next = arr.filter(
-                                (r: any) =>
-                                  !(r && typeof r === 'object' && String(r.name) === key),
+                                (r: any) => !(r && typeof r === 'object' && String(r.name) === key),
                               );
                               calculatedSearchesDs.setValue(null, next);
                             } catch {
