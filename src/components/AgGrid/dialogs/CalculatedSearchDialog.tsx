@@ -59,7 +59,8 @@ export type CalculatedSearchEmitPayload = {
 
 type SavedCalculatedSearch = {
   name: string;
-  calculatedSearch: CalculatedSearchEmitPayload;
+  calculatedSearch: CalculatedSearchEmitPayload | null;
+  [key: string]: unknown;
 };
 
 export type RelationTreeNode =
@@ -361,12 +362,12 @@ export const CalculatedSearchDialog: FC<{
   /** Saved calculated-search formats (names) shown in the bottom section. */
   savedCalculatedSearches: SavedCalculatedSearch[];
   /** Currently selected saved format — owned by the parent (toolbar + dialog parity). */
-  selectedCalculatedSearch: string;
-  setSelectedCalculatedSearch: (next: string) => void;
+  selectedCalculatedSearch: SavedCalculatedSearch | null;
+  setSelectedCalculatedSearch: (next: SavedCalculatedSearch | null) => void;
   onSave: (name: string, calculatedSearch: CalculatedSearchEmitPayload) => void;
   onLoad: (key: string) => void;
   onUpdate: (key: string, calculatedSearch: CalculatedSearchEmitPayload) => void;
-  onDelete: (key: string) => void;
+  onDelete: (record: SavedCalculatedSearch) => void;
   /** Invoked when the user confirms; parent should `emit('oncalculatedsearch', payload)`. */
   onApply: (payload: CalculatedSearchEmitPayload) => void | Promise<void>;
 }> = ({
@@ -822,8 +823,8 @@ export const CalculatedSearchDialog: FC<{
       } else {
         onSave(trimmedFormatName, draft);
       }
-    } else if (selectedCalculatedSearch) {
-      onUpdate(selectedCalculatedSearch, draft);
+    } else if (selectedCalculatedSearch?.name) {
+      onUpdate(selectedCalculatedSearch.name, draft);
     }
     setFormatName('');
   }, [
@@ -1468,21 +1469,24 @@ export const CalculatedSearchDialog: FC<{
                   }}
                 />
                 <select
-                  value={selectedCalculatedSearch}
+                  value={selectedCalculatedSearch?.name ?? ''}
                   onChange={(e) => {
-                    const next = e.target.value;
-                    setSelectedCalculatedSearch(next);
-                    if (next) {
-                      const record = findSavedCalculatedSearch(savedCalculatedSearches, next);
-                      if (record?.calculatedSearch) {
-                        const v = record.calculatedSearch;
-                        setScopeOption(v.scope?.option ?? 'global');
-                        setSearchTypeOption(v.searchType?.option ?? 'replace');
-                        setFilterOnFiscalYears(Boolean(v.filterOnFiscalYears));
-                        // Sort dropdown is keyed by saved sort selection; keep it as-is.
-                      }
-                      onLoad(next);
+                    const nextKey = e.target.value;
+                    const record = nextKey
+                      ? findSavedCalculatedSearch(savedCalculatedSearches, nextKey)
+                      : null;
+
+                    setSelectedCalculatedSearch(record ?? null);
+
+                    if (record?.calculatedSearch) {
+                      const v = record.calculatedSearch;
+                      setScopeOption(v.scope?.option ?? 'global');
+                      setSearchTypeOption(v.searchType?.option ?? 'replace');
+                      setFilterOnFiscalYears(Boolean(v.filterOnFiscalYears));
+                      // Sort dropdown is keyed by saved sort selection; keep it as-is.
                     }
+
+                    if (nextKey) onLoad(nextKey);
                   }}
                   className="rounded-lg border border-gray-300 px-2 py-1"
                   style={{

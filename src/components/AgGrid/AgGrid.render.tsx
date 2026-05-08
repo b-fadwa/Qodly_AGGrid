@@ -109,7 +109,8 @@ import {
 
 type SavedCalculatedSearch = {
   name: string;
-  calculatedSearch: CalculatedSearchEmitPayload;
+  calculatedSearch: CalculatedSearchEmitPayload | null;
+  [key: string]: unknown;
 };
 
 import AgGridFilterHeader from './AgGridFilterHeader';
@@ -686,7 +687,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const [savedCalculatedSearches, setSavedCalculatedSearches] = useState<SavedCalculatedSearch[]>(
     [],
   );
-  const [selectedCalculatedSearch, setSelectedCalculatedSearch] = useState<string>('');
+  const [selectedCalculatedSearch, setSelectedCalculatedSearch] =
+    useState<SavedCalculatedSearch | null>(null);
   const [relationTreeValue, setRelationTreeValue] = useState<RelationTreeNode[]>([]);
 
   const commitLiveFilterModel = useCallback((nextModel: any) => {
@@ -713,7 +715,9 @@ const AgGrid: FC<IAgGridProps> = ({
           .map((v: any) => {
             const name = String(v.name ?? v.title ?? v.id ?? '').trim();
             if (!name) return null;
+            // Preserve the original record (id/title/...) while ensuring we always have `name`.
             return {
+              ...v,
               name,
               calculatedSearch: (v.calculatedSearch ?? null) as any,
             } as SavedCalculatedSearch;
@@ -2618,7 +2622,7 @@ const AgGrid: FC<IAgGridProps> = ({
                           if (prev.some((r) => r.name === name)) return prev;
                           return [...prev, { name, calculatedSearch }];
                         });
-                        setSelectedCalculatedSearch(name);
+                        setSelectedCalculatedSearch({ name, calculatedSearch });
                         if (calculatedSearchesDs) {
                           void (async () => {
                             try {
@@ -2656,7 +2660,7 @@ const AgGrid: FC<IAgGridProps> = ({
                           if (idx === -1) return [...prev, { name: key, calculatedSearch }];
                           return prev.map((r) => (r.name === key ? { ...r, calculatedSearch } : r));
                         });
-                        setSelectedCalculatedSearch(key);
+                        setSelectedCalculatedSearch({ name: key, calculatedSearch });
                         if (calculatedSearchesDs) {
                           void (async () => {
                             try {
@@ -2686,24 +2690,30 @@ const AgGrid: FC<IAgGridProps> = ({
                         }
                         emit('onupdatecalculatedsearch', { key, calculatedSearch });
                       }}
-                      onDelete={(key) => {
+                      onDelete={(record) => {
+                        const key = String(record?.name ?? '').trim();
+                        if (!key) return;
+
                         setSavedCalculatedSearches((prev) => prev.filter((r) => r.name !== key));
-                        setSelectedCalculatedSearch((prev) => (prev === key ? '' : prev));
+                        setSelectedCalculatedSearch((prev) => (prev?.name === key ? null : prev));
+
                         if (calculatedSearchesDs) {
                           void (async () => {
                             try {
                               const prev = await calculatedSearchesDs.getValue();
                               const arr = Array.isArray(prev) ? prev : [];
-                              const next = arr.filter(
-                                (r: any) => !(r && typeof r === 'object' && String(r.name) === key),
-                              );
+                              const next = arr.filter((r: any) => {
+                                if (!r || typeof r !== 'object') return false;
+                                const rKey = String(r.name ?? r.title ?? r.id ?? '').trim();
+                                return rKey !== key;
+                              });
                               calculatedSearchesDs.setValue(null, next);
                             } catch {
                               calculatedSearchesDs.setValue(null, []);
                             }
                           })();
                         }
-                        emit('ondeletecalculatedsearch', { key });
+                        emit('ondeletecalculatedsearch', record);
                       }}
                       onApply={async (payload: CalculatedSearchEmitPayload) => {
                         await emit('oncalculatedsearch', payload);
