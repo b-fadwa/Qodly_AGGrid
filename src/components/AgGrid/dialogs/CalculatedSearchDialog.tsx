@@ -137,14 +137,6 @@ function sortSelectValueForPayload(
     const hit = findSavedSortByAnyKey(savedSorts, linked);
     return hit ? savedSortOptionKey(hit) : String(linked);
   }
-  const payloadSort = payload?.sort;
-  if (Array.isArray(payloadSort) && payloadSort.length > 0) {
-    const hit = savedSorts.find((sort) => {
-      const model = Array.isArray(sort.sortModel) ? sort.sortModel : [];
-      return JSON.stringify(model) === JSON.stringify(payloadSort);
-    });
-    if (hit) return savedSortOptionKey(hit);
-  }
   return CALCULATED_SEARCH_SORT_NONE;
 }
 
@@ -427,7 +419,7 @@ export const CalculatedSearchDialog: FC<{
   translation,
   relationTree,
   savedSorts,
-  selectedSortKey,
+  selectedSortKey: _selectedSortKey,
   filterOnFiscalYearsInitial,
   savedCalculatedSearches,
   selectedCalculatedSearch,
@@ -464,12 +456,10 @@ export const CalculatedSearchDialog: FC<{
     if (open && !wasOpenRef.current) {
       setScopeOption('global');
       setSearchTypeOption('replace');
-      const selectedSort = findSavedSortByAnyKey(savedSorts, selectedSortKey);
-      setSortSelectValue(
-        selectedSort ? savedSortOptionKey(selectedSort) : CALCULATED_SEARCH_SORT_NONE,
-      );
+      setSortSelectValue(CALCULATED_SEARCH_SORT_NONE);
       setFilterOnFiscalYears(filterOnFiscalYearsInitial);
       setFormatName('');
+      setSelectedCalculatedSearch(null);
       setExpandedRelationKeys(new Set());
       setSelectedRelationNode(null);
       setConstraintType('count');
@@ -484,7 +474,7 @@ export const CalculatedSearchDialog: FC<{
       setSelectedConditionIndex(null);
     }
     wasOpenRef.current = open;
-  }, [open, filterOnFiscalYearsInitial, savedSorts, selectedSortKey]);
+  }, [open, filterOnFiscalYearsInitial, setSelectedCalculatedSearch]);
 
   const selectedIsAttribute = selectedRelationNode?.type === 'attribute';
   const selectedDataType = selectedIsAttribute

@@ -145,8 +145,10 @@ export function useSortsManager({
         sortableColIdsRef.current,
       );
       applySortModelToGridApi(api, normalized);
+      persistCurrent(normalized);
+      api.refreshInfiniteCache();
     },
-    [gridRef, columnsRef, sortableColIdsRef],
+    [gridRef, columnsRef, sortableColIdsRef, persistCurrent],
   );
 
   const captureCurrentSortModel = useCallback((): SortModelItem[] => {

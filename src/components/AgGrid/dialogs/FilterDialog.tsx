@@ -26,13 +26,26 @@ interface FilterDialogProps {
   setFilterModel: (next: any) => void;
   savedFilters: SavedFilter[];
   savedSorts: SavedSort[];
-  saveFilter: (name: string, options?: { linkedSort?: string | number; filterModel?: any }) => void;
-  loadFilter: (key: string) => void;
+  saveFilter: (
+    name: string,
+    options?: {
+      linkedSort?: string | number;
+      filterModel?: any;
+      dateFinancialFilterEnabled?: boolean;
+      filterInactiveRecords?: boolean;
+    },
+  ) => void;
   updateFilter: (
     key: string,
-    options?: { linkedSort?: string | number; filterModel?: any },
+    options?: {
+      linkedSort?: string | number;
+      filterModel?: any;
+      dateFinancialFilterEnabled?: boolean;
+      filterInactiveRecords?: boolean;
+    },
   ) => void;
   deleteFilter: (key: string) => void;
+  applyLinkedSortForFilter?: (record: SavedFilter) => void;
   /** Currently selected saved filter — owned by the parent for toolbar + dialog dropdowns. */
   selectedFilter: string;
   setSelectedFilter: (next: string) => void;
@@ -56,15 +69,29 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   savedFilters,
   savedSorts,
   saveFilter,
-  loadFilter,
   updateFilter,
   deleteFilter,
+  applyLinkedSortForFilter,
   selectedFilter,
   setSelectedFilter,
 }) => {
   const [filterName, setFilterName] = useState('');
   const [linkedSort, setLinkedSort] = useState('');
+  const [draftFilterModel, setDraftFilterModel] = useState<any>(filterModel);
+  const [draftDateFinancialFilterEnabled, setDraftDateFinancialFilterEnabled] = useState(
+    dateFinancialFilterEnabled,
+  );
+  const [draftFilterInactiveRecordsEnabled, setDraftFilterInactiveRecordsEnabled] = useState(
+    filterInactiveRecordsEnabled,
+  );
   const queryBuilderRef = useRef<QueryBuilderHandle>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setDraftFilterModel(filterModel);
+    setDraftDateFinancialFilterEnabled(dateFinancialFilterEnabled);
+    setDraftFilterInactiveRecordsEnabled(filterInactiveRecordsEnabled);
+  }, [open, filterModel, dateFinancialFilterEnabled, filterInactiveRecordsEnabled]);
 
   useEffect(() => {
     if (!selectedFilter) {
@@ -72,6 +99,11 @@ export const FilterDialog: FC<FilterDialogProps> = ({
       return;
     }
     const record = findSavedRecord(savedFilters, selectedFilter);
+    if (record) {
+      setDraftFilterModel(record.filterModel ?? {});
+      setDraftDateFinancialFilterEnabled(Boolean(record.dateFinancialFilterEnabled));
+      setDraftFilterInactiveRecordsEnabled(Boolean(record.filterInactiveRecords));
+    }
     const raw = record?.linkedSortId ?? record?.linkedSort;
     if (!raw) {
       setLinkedSort('');
@@ -106,8 +138,17 @@ export const FilterDialog: FC<FilterDialogProps> = ({
     const filterModelDraft = queryBuilderRef.current?.getCompiledFilterModel();
     const persistOpts =
       filterModelDraft !== undefined
-        ? { linkedSort, filterModel: filterModelDraft }
-        : { linkedSort };
+        ? {
+            linkedSort,
+            filterModel: filterModelDraft,
+            dateFinancialFilterEnabled: draftDateFinancialFilterEnabled,
+            filterInactiveRecords: draftFilterInactiveRecordsEnabled,
+          }
+        : {
+            linkedSort,
+            dateFinancialFilterEnabled: draftDateFinancialFilterEnabled,
+            filterInactiveRecords: draftFilterInactiveRecordsEnabled,
+          };
     if (trimmedName) {
       if (matchingExisting) {
         updateFilter(matchingExisting.name, persistOpts);
@@ -164,8 +205,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             columns={visibleColumns}
             i18n={i18n}
             lang={lang}
-            filterModel={filterModel}
-            onChange={setFilterModel}
+            filterModel={draftFilterModel}
+            onChange={setDraftFilterModel}
           />
           <div className="flex flex-col">
             {showDateFinancialToggle ? (
@@ -175,8 +216,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               >
                 <input
                   type="checkbox"
-                  checked={dateFinancialFilterEnabled}
-                  onChange={(e) => onDateFinancialFilterEnabledChange(e.target.checked)}
+                  checked={draftDateFinancialFilterEnabled}
+                  onChange={(e) => setDraftDateFinancialFilterEnabled(e.target.checked)}
                 />
                 <span>{translation('filter by fiscal year')}</span>
               </label>
@@ -188,8 +229,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               >
                 <input
                   type="checkbox"
-                  checked={filterInactiveRecordsEnabled}
-                  onChange={(e) => onFilterInactiveRecordsEnabledChange(e.target.checked)}
+                  checked={draftFilterInactiveRecordsEnabled}
+                  onChange={(e) => setDraftFilterInactiveRecordsEnabled(e.target.checked)}
                 />
                 <span>{translation('filter inactive records')}</span>
               </label>
@@ -221,7 +262,6 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               onChange={(e) => {
                 const next = e.target.value;
                 setSelectedFilter(next);
-                if (next) loadFilter(next);
               }}
               className="rounded-lg border border-gray-300 px-2 py-1"
               style={{
@@ -314,7 +354,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               color: '#44444C',
               fontSize: '12px',
             }}
-            onClick={() => setFilterModel(null)}
+            onClick={() => setDraftFilterModel(null)}
           >
             {translation('Clear')}
           </button>
@@ -322,7 +362,18 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             type="button"
             className="rounded-md border px-3 py-2 text-sm text-white flex text-center items-center justify-center"
             onClick={() => {
-              queryBuilderRef.current?.commitToGrid();
+              const nextModel = queryBuilderRef.current?.getCompiledFilterModel();
+              if (showDateFinancialToggle) {
+                onDateFinancialFilterEnabledChange(draftDateFinancialFilterEnabled);
+              }
+              if (showFilterInactiveRecordsToggle) {
+                onFilterInactiveRecordsEnabledChange(draftFilterInactiveRecordsEnabled);
+              }
+              setFilterModel(nextModel ?? {});
+              const selectedRecord = selectedFilter
+                ? findSavedRecord(savedFilters, selectedFilter)
+                : undefined;
+              if (selectedRecord) applyLinkedSortForFilter?.(selectedRecord);
               onClose();
             }}
             style={{

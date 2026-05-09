@@ -815,6 +815,7 @@ const AgGrid: FC<IAgGridProps> = ({
   /** Last named default sort we applied (record name); cleared when list has no default. */
   const sortDefaultAppliedKeyRef = useRef<string>('');
   const linkedSortAppliedFromFilterRef = useRef(false);
+  const pendingLinkedFilterForDefaultViewRef = useRef<string>('');
 
   // columns dialog
   const [propertySearch, setPropertySearch] = useState('');
@@ -1220,6 +1221,18 @@ const AgGrid: FC<IAgGridProps> = ({
     },
   });
 
+  const getLinkedSortKeyForFilter = useCallback(
+    (filterRecord: any): string => {
+      const linkedSort = filterRecord?.linkedSortId ?? filterRecord?.linkedSort;
+      if (linkedSort === null || linkedSort === undefined || String(linkedSort).trim() === '') {
+        return '';
+      }
+      const sortRecord = findSavedRecord(sortsManager.savedSorts, linkedSort);
+      return sortRecord ? savedRecordKey(sortRecord) : String(linkedSort).trim();
+    },
+    [sortsManager.savedSorts],
+  );
+
   const loadViewWithLinkedFilter = useCallback(
     (key: string | number): boolean => {
       const viewKey = String(key ?? '').trim();
@@ -1232,10 +1245,16 @@ const AgGrid: FC<IAgGridProps> = ({
         linkedFilter === undefined ||
         String(linkedFilter).trim() === ''
       ) {
+        pendingLinkedFilterForDefaultViewRef.current = '';
         return Boolean(viewRecord);
       }
       const filterRecord = findSavedRecord(filtersManager.savedFilters, linkedFilter);
       const filterKey = filterRecord ? savedRecordKey(filterRecord) : String(linkedFilter).trim();
+      if (!filterRecord) {
+        pendingLinkedFilterForDefaultViewRef.current = filterKey;
+        return Boolean(viewRecord);
+      }
+      pendingLinkedFilterForDefaultViewRef.current = '';
       if (!filterKey) return Boolean(viewRecord);
       filtersManager.loadFilter(filterKey);
       setSelectedFilterName(filterKey);
@@ -1243,7 +1262,7 @@ const AgGrid: FC<IAgGridProps> = ({
       setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
       return Boolean(viewRecord);
     },
-    [viewsManager, filtersManager, sortsManager.savedSorts],
+    [viewsManager, filtersManager],
   );
 
   const tryApplyDefaultViewWithLinkedFilter = useCallback((): string | null => {
@@ -1813,7 +1832,10 @@ const AgGrid: FC<IAgGridProps> = ({
         }
       }
       if (!sortLiveApplied) {
-        if (linkedSortAppliedFromFilterRef.current) {
+        if (
+          linkedSortAppliedFromFilterRef.current ||
+          pendingLinkedFilterForDefaultViewRef.current
+        ) {
           sortLiveApplied = true;
         }
       }
@@ -1909,17 +1931,30 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!filterRecord) return;
     const filterKey = savedRecordKey(filterRecord);
     if (!filterKey) return;
+    const linkedSortKey = getLinkedSortKeyForFilter(filterRecord);
+    pendingLinkedFilterForDefaultViewRef.current = '';
     filtersManager.loadFilter(filterKey);
     setSelectedFilterName(filterKey);
     setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
     setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
+    if (!linkedSortKey && !selectedSortName) {
+      const appliedName = sortsManager.tryApplyDefault();
+      if (appliedName) {
+        setSelectedSortName(appliedName);
+        sortDefaultAppliedKeyRef.current = appliedName;
+        skipAutoSortDefaultRef.current = true;
+      }
+    }
   }, [
     gridReady,
     selectedView,
     selectedFilterName,
+    selectedSortName,
     viewsManager.savedViews,
     filtersManager.savedFilters,
     filtersManager,
+    sortsManager,
+    getLinkedSortKeyForFilter,
   ]);
 
   useEffect(() => {
@@ -1930,9 +1965,10 @@ const AgGrid: FC<IAgGridProps> = ({
       sortDefaultAppliedKeyRef.current = '';
       return;
     }
-    const key = defaultRecord.name;
+    const key = savedRecordKey(defaultRecord);
     if (sortDefaultAppliedKeyRef.current === key) return;
     if (skipAutoSortDefaultRef.current) return;
+    if (pendingLinkedFilterForDefaultViewRef.current) return;
 
     const appliedName = sortsManager.tryApplyDefault();
     if (appliedName) {
@@ -2854,6 +2890,22 @@ const AgGrid: FC<IAgGridProps> = ({
                         emit('ondeletecalculatedsearch', record);
                       }}
                       onApply={async (payload: CalculatedSearchEmitPayload) => {
+                        const linkedSort = payload.linkedSortId ?? payload.linkedSort;
+                        if (
+                          linkedSort !== null &&
+                          linkedSort !== undefined &&
+                          String(linkedSort).trim() !== ''
+                        ) {
+                          const sortRecord = findSavedRecord(sortsManager.savedSorts, linkedSort);
+                          const sortKey = sortRecord
+                            ? savedRecordKey(sortRecord)
+                            : String(linkedSort).trim();
+                          if (sortKey) {
+                            sortsManager.loadSort(sortKey);
+                            setSelectedSortName(sortKey);
+                            skipAutoSortDefaultRef.current = true;
+                          }
+                        }
                         await emit('oncalculatedsearch', payload);
                         setShowCalculatedSearchDialog(false);
                       }}
@@ -2921,15 +2973,16 @@ const AgGrid: FC<IAgGridProps> = ({
                       savedFilters={filtersManager.savedFilters}
                       savedSorts={sortsManager.savedSorts}
                       saveFilter={filtersManager.saveFilter}
-                      loadFilter={(key) => {
-                        filtersManager.loadFilter(key);
-                        setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
-                        setFilterInactiveRecordsEnabled(
-                          Boolean(filterInactiveRecordsEnabledRef.current),
-                        );
-                      }}
                       updateFilter={filtersManager.updateFilter}
                       deleteFilter={filtersManager.deleteFilter}
+                      applyLinkedSortForFilter={(record) => {
+                        const sortKey = getLinkedSortKeyForFilter(record);
+                        if (!sortKey) return;
+                        sortsManager.loadSort(sortKey);
+                        setSelectedSortName(sortKey);
+                        linkedSortAppliedFromFilterRef.current = true;
+                        skipAutoSortDefaultRef.current = true;
+                      }}
                       selectedFilter={selectedFilterName}
                       setSelectedFilter={setSelectedFilterName}
                     />

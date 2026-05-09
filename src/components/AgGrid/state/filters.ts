@@ -51,6 +51,8 @@ interface UseFiltersManagerArgs {
 export interface SaveFilterOptions {
   linkedSort?: string | number | null;
   linkedSortId?: string | number | null;
+  dateFinancialFilterEnabled?: boolean;
+  filterInactiveRecords?: boolean;
   /** When set (e.g. from the advanced filter modal draft), used instead of `gridApi.getFilterModel()`. */
   filterModel?: any;
 }
@@ -178,8 +180,10 @@ export function useFiltersManager({
       const record: SavedFilter = {
         name,
         filterModel,
-        dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-        filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
+        dateFinancialFilterEnabled:
+          options?.dateFinancialFilterEnabled ?? dateFinancialEnabledRef.current,
+        filterInactiveRecords:
+          options?.filterInactiveRecords ?? filterInactiveRecordsEnabledRef.current,
         linkedSort: linkedSortFromSaveOptions(options),
       };
       const updated = [...savedFiltersRef.current, record];
@@ -253,8 +257,10 @@ export function useFiltersManager({
             ...record,
             name: record.name || record.title || String(record.id ?? selectedKey),
             filterModel,
-            dateFinancialFilterEnabled: dateFinancialEnabledRef.current,
-            filterInactiveRecords: filterInactiveRecordsEnabledRef.current,
+            dateFinancialFilterEnabled:
+              options?.dateFinancialFilterEnabled ?? dateFinancialEnabledRef.current,
+            filterInactiveRecords:
+              options?.filterInactiveRecords ?? filterInactiveRecordsEnabledRef.current,
             linkedSort:
               options && ('linkedSort' in options || 'linkedSortId' in options)
                 ? linkedSortFromSaveOptions(options)
