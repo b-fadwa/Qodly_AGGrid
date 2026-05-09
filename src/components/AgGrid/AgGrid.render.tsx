@@ -83,7 +83,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
 import set from 'lodash/set';
-import { FaTableColumns, FaCopy, FaClockRotateLeft, FaSearchengin } from 'react-icons/fa6';
+import { FaTableColumns, FaCopy, FaClockRotateLeft, FaSearchengin, FaListCheck } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { FaSortAmountDown, FaFilter } from 'react-icons/fa';
 import {
@@ -109,6 +109,9 @@ import {
   type CalculatedSearchEmitPayload,
   type RelationTreeNode,
 } from './dialogs/CalculatedSearchDialog';
+import { SequenceProgrammingDialog } from './dialogs/SequenceProgrammingDialog';
+import type { SequenceTranspositionsValue } from './dialogs/SequenceProgrammingDialog';
+import type { SavedSequence, SequenceProgrammingPayload } from './state/types';
 
 type SavedCalculatedSearch = {
   name: string;
@@ -117,6 +120,79 @@ type SavedCalculatedSearch = {
   calculatedSearch: CalculatedSearchEmitPayload | null;
   [key: string]: unknown;
 };
+
+const sequenceIdValue = (value: unknown): string | number | undefined =>
+  typeof value === 'string' || typeof value === 'number' ? value : undefined;
+
+function sequencePayloadFromRecord(record: unknown): SequenceProgrammingPayload | null {
+  if (!record || typeof record !== 'object') return null;
+  const source = record as Record<string, unknown>;
+  if (source.sequence && typeof source.sequence === 'object') {
+    return source.sequence as SequenceProgrammingPayload;
+  }
+  if ('viewId' in source || 'filters' in source || 'sortId' in source || 'output' in source) {
+    const output = source.output && typeof source.output === 'object'
+      ? (source.output as Record<string, unknown>)
+      : {};
+    const transposition = source.transposition && typeof source.transposition === 'object'
+      ? (source.transposition as Record<string, unknown>)
+      : {};
+    return {
+      viewId: sequenceIdValue(source.viewId) ?? sequenceIdValue(source.linkedViewId) ?? '',
+      filters: Array.isArray(source.filters) ? source.filters as SequenceProgrammingPayload['filters'] : [],
+      sortId: sequenceIdValue(source.sortId) ?? sequenceIdValue(source.linkedSortId) ?? '',
+      output: {
+        mode: output.mode as SequenceProgrammingPayload['output']['mode'],
+        referenceDocumentId:
+          sequenceIdValue(output.referenceDocumentId) ??
+          sequenceIdValue(source.referenceDocumentId) ??
+          '',
+      },
+      transposition: {
+        mode: (transposition.mode ?? source.transpositionMode ?? 'none') as SequenceProgrammingPayload['transposition']['mode'],
+        chainedSequenceId:
+          sequenceIdValue(transposition.chainedSequenceId) ??
+          sequenceIdValue(source.chainedSequenceId) ??
+          '',
+        runSearchesOnResultSelection: Boolean(
+          transposition.runSearchesOnResultSelection ?? source.runSearchesOnResultSelection,
+        ),
+        predefinedDocumentId:
+          sequenceIdValue(transposition.predefinedDocumentId) ??
+          sequenceIdValue(source.predefinedDocumentId) ??
+          '',
+        selectionId:
+          sequenceIdValue(transposition.selectionId) ?? sequenceIdValue(source.selectionId) ?? '',
+        selectionKey:
+          sequenceIdValue(transposition.selectionKey) ?? sequenceIdValue(source.selectionKey) ?? '',
+        selectionLabel:
+          typeof transposition.selectionLabel === 'string'
+            ? transposition.selectionLabel
+            : typeof source.selectionLabel === 'string'
+              ? source.selectionLabel
+              : '',
+        selectionLink:
+          typeof transposition.selectionLink === 'string'
+            ? transposition.selectionLink
+            : typeof source.selectionLink === 'string'
+              ? source.selectionLink
+              : '',
+      },
+    };
+  }
+  return null;
+}
+
+function sequenceRecordMatches(record: unknown, key: string | number): boolean {
+  const selectedKey = String(key ?? '').trim();
+  if (!selectedKey || !record || typeof record !== 'object') return false;
+  const source = record as Record<string, unknown>;
+  return (
+    source.name === selectedKey ||
+    source.title === selectedKey ||
+    (source.id != null && String(source.id) === selectedKey)
+  );
+}
 
 function calculatedSearchPayloadFromRecord(record: any): CalculatedSearchEmitPayload | null {
   if (!record || typeof record !== 'object') return null;
@@ -447,6 +523,9 @@ const AgGrid: FC<IAgGridProps> = ({
   sorts = '',
   calculatedSearch = '',
   calculatedSearches = '',
+  sequence = '',
+  sequences = '',
+  sequenceTranspositions = '',
   relationTree = '',
   dateFinancial = false,
   filterInactiveRecords = false,
@@ -484,6 +563,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarFiltering = true,
   showToolbarStatistics = true,
   showToolbarCalculatedSearch = true,
+  showToolbarSequence = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
   className,
@@ -522,6 +602,11 @@ const AgGrid: FC<IAgGridProps> = ({
       'onloadcalculatedsearch',
       'onupdatecalculatedsearch',
       'ondeletecalculatedsearch',
+      'onsequence',
+      'onsavesequence',
+      'onloadsequence',
+      'onupdatesequence',
+      'ondeletesequence',
     ],
   });
   const { resolver } = useEnhancedEditor(selectResolver);
@@ -647,6 +732,19 @@ const AgGrid: FC<IAgGridProps> = ({
     () => (calculatedSearches ? window.DataSource.getSource(calculatedSearches, path) : null),
     [calculatedSearches, path],
   );
+  const sequenceDs = useMemo(
+    () => (sequence ? window.DataSource.getSource(sequence, path) : null),
+    [sequence, path],
+  );
+  const sequencesDs = useMemo(
+    () => (sequences ? window.DataSource.getSource(sequences, path) : null),
+    [sequences, path],
+  );
+  const sequenceTranspositionsDs = useMemo(
+    () =>
+      sequenceTranspositions ? window.DataSource.getSource(sequenceTranspositions, path) : null,
+    [sequenceTranspositions, path],
+  );
   const relationTreeDs = useMemo(
     () => (relationTree ? window.DataSource.getSource(relationTree, path) : null),
     [relationTree, path],
@@ -714,6 +812,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
   const [showCalculatedSearchDialog, setShowCalculatedSearchDialog] = useState(false);
+  const [showSequenceDialog, setShowSequenceDialog] = useState(false);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [liveFilterModel, setLiveFilterModel] = useState<any>({});
   const liveFilterModelRef = useRef<any>({});
@@ -738,6 +837,10 @@ const AgGrid: FC<IAgGridProps> = ({
   );
   const [selectedCalculatedSearch, setSelectedCalculatedSearch] =
     useState<SavedCalculatedSearch | null>(null);
+  const [savedSequences, setSavedSequences] = useState<SavedSequence[]>([]);
+  const [selectedSequence, setSelectedSequence] = useState<SavedSequence | null>(null);
+  const [sequenceTranspositionsValue, setSequenceTranspositionsValue] =
+    useState<SequenceTranspositionsValue | null>(null);
   const [relationTreeValue, setRelationTreeValue] = useState<RelationTreeNode[]>([]);
 
   const commitLiveFilterModel = useCallback((nextModel: any) => {
@@ -772,6 +875,56 @@ const AgGrid: FC<IAgGridProps> = ({
       calculatedSearchesDs.removeListener('changed', listener);
     };
   }, [calculatedSearchesDs]);
+
+  // sequence-programming records: list datasource -> local dropdown list
+  useEffect(() => {
+    if (!sequencesDs) {
+      setSavedSequences([]);
+      return;
+    }
+    const listener = async () => {
+      try {
+        const value = await sequencesDs.getValue();
+        const next = savedRecordsFromDatasourceValue<SavedSequence>(value)
+          .map((record) => ({
+            ...record,
+            sequence: sequencePayloadFromRecord(record),
+          }))
+          .filter((record): record is SavedSequence => Boolean(record.sequence));
+        setSavedSequences(next);
+      } catch {
+        setSavedSequences([]);
+      }
+    };
+    void listener();
+    sequencesDs.addListener('changed', listener);
+    return () => {
+      sequencesDs.removeListener('changed', listener);
+    };
+  }, [sequencesDs]);
+
+  // sequence transpositions datasource -> oneToN / nToOne choices
+  useEffect(() => {
+    if (!sequenceTranspositionsDs) {
+      setSequenceTranspositionsValue(null);
+      return;
+    }
+    const listener = async () => {
+      try {
+        const value = await sequenceTranspositionsDs.getValue();
+        setSequenceTranspositionsValue(
+          value && typeof value === 'object' ? (value as SequenceTranspositionsValue) : null,
+        );
+      } catch {
+        setSequenceTranspositionsValue(null);
+      }
+    };
+    void listener();
+    sequenceTranspositionsDs.addListener('changed', listener);
+    return () => {
+      sequenceTranspositionsDs.removeListener('changed', listener);
+    };
+  }, [sequenceTranspositionsDs]);
 
   // relation tree datasource -> available fields tree
   useEffect(() => {
@@ -2447,6 +2600,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarSorting ||
     showToolbarStatistics ||
     showToolbarCalculatedSearch ||
+    showToolbarSequence ||
     showToolbarSaveView ||
     showToolbarSavedViews;
 
@@ -2563,6 +2717,27 @@ const AgGrid: FC<IAgGridProps> = ({
                                 aria-label={translation('Calculated search')}
                               >
                                 <FaSearchengin size={14} />
+                              </button>
+                            </IconPopover>
+                          </div>
+                        )}
+                        {showToolbarSequence && (
+                          <div className="sequence-section">
+                            <IconPopover label={translation('Programmation séquence')}>
+                              <button
+                                type="button"
+                                onClick={() => setShowSequenceDialog(true)}
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                aria-label={translation('Programmation séquence')}
+                              >
+                                <FaListCheck size={14} />
                               </button>
                             </IconPopover>
                           </div>
@@ -2908,6 +3083,131 @@ const AgGrid: FC<IAgGridProps> = ({
                         }
                         await emit('oncalculatedsearch', payload);
                         setShowCalculatedSearchDialog(false);
+                      }}
+                    />
+                  )}
+                  {showToolbarSequence && (
+                    <SequenceProgrammingDialog
+                      open={showSequenceDialog}
+                      onClose={() => setShowSequenceDialog(false)}
+                      translation={translation}
+                      savedViews={viewsManager.savedViews}
+                      savedFilters={filtersManager.savedFilters}
+                      savedSorts={sortsManager.savedSorts}
+                      savedSequences={savedSequences}
+                      transpositions={sequenceTranspositionsValue}
+                      selectedSequence={selectedSequence}
+                      setSelectedSequence={setSelectedSequence}
+                      onSave={(name, sequencePayload) => {
+                        const nextRecord: SavedSequence = { name, sequence: sequencePayload };
+                        setSavedSequences((prev) => {
+                          if (prev.some((record) => sequenceRecordMatches(record, name))) {
+                            return prev;
+                          }
+                          return [...prev, nextRecord];
+                        });
+                        setSelectedSequence(nextRecord);
+                        if (sequencesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await sequencesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              const exists = arr.some((record: any) =>
+                                sequenceRecordMatches(record, name),
+                              );
+                              if (!exists) {
+                                sequencesDs.setValue(null, [...arr, nextRecord]);
+                              }
+                            } catch {
+                              sequencesDs.setValue(null, [nextRecord]);
+                            }
+                          })();
+                        }
+                        if (sequenceDs) {
+                          sequenceDs.setValue(null, sequencePayload);
+                        }
+                        emit('onsavesequence', { name, sequence: sequencePayload });
+                      }}
+                      onLoad={(key) => {
+                        const record = findSavedRecord(savedSequences, key) as SavedSequence | null;
+                        if (record?.sequence && sequenceDs) {
+                          sequenceDs.setValue(null, record.sequence);
+                        }
+                        emit('onloadsequence', { key, sequence: record?.sequence });
+                      }}
+                      onUpdate={(key, sequencePayload) => {
+                        const existing = findSavedRecord(savedSequences, key) as SavedSequence | null;
+                        const nextRecord: SavedSequence = {
+                          ...(existing ?? { name: String(key) }),
+                          sequence: sequencePayload,
+                        };
+                        setSavedSequences((prev) => {
+                          const exists = prev.some((record) => sequenceRecordMatches(record, key));
+                          if (!exists) return [...prev, nextRecord];
+                          return prev.map((record) =>
+                            sequenceRecordMatches(record, key)
+                              ? { ...record, sequence: sequencePayload }
+                              : record,
+                          );
+                        });
+                        setSelectedSequence(nextRecord);
+                        if (sequencesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await sequencesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              const exists = arr.some((record: any) =>
+                                sequenceRecordMatches(record, key),
+                              );
+                              const next = exists
+                                ? arr.map((record: any) =>
+                                    sequenceRecordMatches(record, key)
+                                      ? { ...record, sequence: sequencePayload }
+                                      : record,
+                                  )
+                                : [...arr, nextRecord];
+                              sequencesDs.setValue(null, next);
+                            } catch {
+                              sequencesDs.setValue(null, [nextRecord]);
+                            }
+                          })();
+                        }
+                        if (sequenceDs) {
+                          sequenceDs.setValue(null, sequencePayload);
+                        }
+                        emit('onupdatesequence', { key, sequence: sequencePayload });
+                      }}
+                      onDelete={(record) => {
+                        const key = savedRecordKey(record);
+                        if (!key) return;
+                        setSavedSequences((prev) =>
+                          prev.filter((item) => !sequenceRecordMatches(item, key)),
+                        );
+                        setSelectedSequence((prev) =>
+                          prev && sequenceRecordMatches(prev, key) ? null : prev,
+                        );
+                        if (sequencesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await sequencesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              sequencesDs.setValue(
+                                null,
+                                arr.filter((item: any) => !sequenceRecordMatches(item, key)),
+                              );
+                            } catch {
+                              sequencesDs.setValue(null, []);
+                            }
+                          })();
+                        }
+                        emit('ondeletesequence', record);
+                      }}
+                      onApply={(sequencePayload) => {
+                        if (sequenceDs) {
+                          sequenceDs.setValue(null, sequencePayload);
+                        }
+                        emit('onsequence', sequencePayload);
+                        setShowSequenceDialog(false);
                       }}
                     />
                   )}

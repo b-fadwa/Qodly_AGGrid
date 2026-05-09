@@ -61,6 +61,9 @@ export default {
         { name: 'sorts', require: false, isDatasource: false },
         { name: 'calculatedSearch', require: false, isDatasource: false },
         { name: 'calculatedSearches', require: false, isDatasource: false },
+        { name: 'sequence', require: false, isDatasource: false },
+        { name: 'sequences', require: false, isDatasource: false },
+        { name: 'sequenceTranspositions', require: false, isDatasource: false },
         { name: 'relationTree', require: false, isDatasource: false },
         { name: 'calculStatistiqueResult', require: false, isDatasource: false },
       ],
@@ -104,6 +107,12 @@ export default {
       { label: 'On Load Calculated search', value: 'onloadcalculatedsearch' },
       { label: 'On Update Calculated search', value: 'onupdatecalculatedsearch' },
       { label: 'On Delete Calculated search', value: 'ondeletecalculatedsearch' },
+
+      { label: 'On Sequence', value: 'onsequence' },
+      { label: 'On Save Sequence', value: 'onsavesequence' },
+      { label: 'On Load Sequence', value: 'onloadsequence' },
+      { label: 'On Update Sequence', value: 'onupdatesequence' },
+      { label: 'On Delete Sequence', value: 'ondeletesequence' },
     ],
     datasources: {
       declarations: (props) => {
@@ -119,6 +128,9 @@ export default {
           sorts = '',
           calculatedSearch = '',
           calculatedSearches = '',
+          sequence = '',
+          sequences = '',
+          sequenceTranspositions = '',
           relationTree = '',
           calculStatistiqueResult = '',
         } = props as IExostiveElementProps & {
@@ -130,6 +142,9 @@ export default {
           sorts?: string;
           calculatedSearch?: string;
           calculatedSearches?: string;
+          sequence?: string;
+          sequences?: string;
+          sequenceTranspositions?: string;
           relationTree?: string;
           calculStatistiqueResult?: string;
         };
@@ -147,6 +162,9 @@ export default {
         if (sorts) declarations.push({ path: sorts, iterable: true });
         if (calculatedSearch) declarations.push({ path: calculatedSearch });
         if (calculatedSearches) declarations.push({ path: calculatedSearches, iterable: true });
+        if (sequence) declarations.push({ path: sequence });
+        if (sequences) declarations.push({ path: sequences, iterable: true });
+        if (sequenceTranspositions) declarations.push({ path: sequenceTranspositions });
         if (relationTree) declarations.push({ path: relationTree, iterable: true });
         if (calculStatistiqueResult?.trim()) {
           declarations.push({ path: calculStatistiqueResult.trim() });
@@ -257,6 +275,9 @@ export default {
     filters: '',
     sort: '',
     sorts: '',
+    sequence: '',
+    sequences: '',
+    sequenceTranspositions: '',
     dateFinancial: false,
     filterInactiveRecords: false,
     calculStatistiqueResult: '',
@@ -293,6 +314,7 @@ export default {
     showToolbarFiltering: true,
     showToolbarStatistics: false,
     showToolbarCalculatedSearch: false,
+    showToolbarSequence: true,
     showToolbarSaveView: true,
     showToolbarSavedViews: true,
     showRecordCount: true,
@@ -318,6 +340,12 @@ export interface IAgGridProps extends webforms.ComponentProps {
   calculatedSearch?: string;
   /** Scalar array: saved list of named calculated-search formats. */
   calculatedSearches?: string;
+  /** Scalar object: live sequence-programming draft / state. */
+  sequence?: string;
+  /** Scalar array: saved list of named sequence-programming records. */
+  sequences?: string;
+  /** Scalar object: available transposition targets shaped as `{ oneToN: [], nToOne: [] }`. */
+  sequenceTranspositions?: string;
   /** Scalar array: relation tree for “Available fields” in calculated search. */
   relationTree?: string;
   /** When true, show the fiscal-year checkbox in advanced / header filters (runtime value is emitted on `onfilter`, not injected into the query here). */
@@ -366,6 +394,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarStatistics?: boolean;
   /** Toolbar: Calculated search (opens modal) */
   showToolbarCalculatedSearch?: boolean;
+  /** Toolbar: Sequence programming (opens modal) */
+  showToolbarSequence?: boolean;
   /** Toolbar: Save new view */
   showToolbarSaveView?: boolean;
   /** Toolbar: Load / overwrite / delete saved views */
