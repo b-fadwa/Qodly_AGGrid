@@ -23,6 +23,12 @@ import {
   type CalculatedSearchEmitPayload,
 } from './dialogs/CalculatedSearchDialog';
 
+type SavedCalculatedSearch = {
+  name: string;
+  calculatedSearch: CalculatedSearchEmitPayload | null;
+  [key: string]: unknown;
+};
+
 const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) => {
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -206,7 +212,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const [savedCalculatedSearches, setSavedCalculatedSearches] = useState<
     { name: string; calculatedSearch: CalculatedSearchEmitPayload }[]
   >([]);
-  const [selectedCalculatedSearch, setSelectedCalculatedSearch] = useState<string>('');
+  const [selectedCalculatedSearch, setSelectedCalculatedSearch] =
+    useState<SavedCalculatedSearch | null>(null);
   const [sortRules, setSortRules] = useState<{ field: string; sort: 'asc' | 'desc' }[]>([]);
   const { i18n } = useI18n();
   const { selected: lang } = useLocalization();
@@ -715,7 +722,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         if (prev.some((r) => r.name === name)) return prev;
                         return [...prev, { name, calculatedSearch }];
                       });
-                      setSelectedCalculatedSearch(name);
+                      setSelectedCalculatedSearch({ name, calculatedSearch });
                     }}
                     onLoad={(key) => {
                       void key;
@@ -724,15 +731,15 @@ const AgGrid: FC<IAgGridProps> = ({
                       setSavedCalculatedSearches((prev) => {
                         const idx = prev.findIndex((r) => r.name === key);
                         if (idx === -1) return [...prev, { name: key, calculatedSearch }];
-                        return prev.map((r) =>
-                          r.name === key ? { ...r, calculatedSearch } : r,
-                        );
+                        return prev.map((r) => (r.name === key ? { ...r, calculatedSearch } : r));
                       });
-                      setSelectedCalculatedSearch(key);
+                      setSelectedCalculatedSearch({ name: key, calculatedSearch });
                     }}
-                    onDelete={(key) => {
+                    onDelete={(record) => {
+                      const key = record?.name ?? '';
+                      if (!key) return;
                       setSavedCalculatedSearches((prev) => prev.filter((r) => r.name !== key));
-                      setSelectedCalculatedSearch((prev) => (prev === key ? '' : prev));
+                      setSelectedCalculatedSearch((prev) => (prev?.name === key ? null : prev));
                     }}
                     onApply={async (payload: CalculatedSearchEmitPayload) => {
                       void payload;

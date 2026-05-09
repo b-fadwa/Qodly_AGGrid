@@ -4,6 +4,7 @@ import { GoTrash } from 'react-icons/go';
 import type { ViewsManager } from '../state/views';
 import type { SavedFilter } from '../state/types';
 import type { Translation } from '../state/sorts';
+import { savedRecordKey } from '../state/gridState';
 
 interface ViewDialogColumn {
   field: string;
@@ -66,9 +67,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
 }) => {
   if (!open) return null;
 
-  const filterIdsWithOptions = new Set(
-    savedFilters.filter((f) => f.id != null).map((f) => String(f.id)),
-  );
+  const filterIdsWithOptions = new Set(savedFilters.map((f) => savedRecordKey(f)).filter(Boolean));
   const showGhostLinkedOption =
     viewLinkedFilterId !== '' && !filterIdsWithOptions.has(viewLinkedFilterId);
 
@@ -351,7 +350,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                   >
                     <option value="">{translation('Select view')}</option>
                     {viewsManager.savedViews.map((savedView) => (
-                      <option key={savedView.name} value={savedView.name}>
+                      <option key={savedRecordKey(savedView)} value={savedRecordKey(savedView)}>
                         {savedView.name}
                       </option>
                     ))}
@@ -375,13 +374,11 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                         {translation('Filter')} ({viewLinkedFilterId})
                       </option>
                     )}
-                    {savedFilters
-                      .filter((f) => f.id != null)
-                      .map((f) => (
-                        <option key={String(f.id)} value={String(f.id)}>
-                          {f.name}
-                        </option>
-                      ))}
+                    {savedFilters.map((f) => (
+                      <option key={savedRecordKey(f)} value={savedRecordKey(f)}>
+                        {f.name}
+                      </option>
+                    ))}
                   </select>
                   <button
                     className="header-button-trash inline-flex items-center justify-center rounded-lg border"
