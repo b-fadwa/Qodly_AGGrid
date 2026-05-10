@@ -121,7 +121,7 @@ const TranspositionTree: FC<{
   }
 
   return (
-    <div className={depth === 0 ? 'space-y-1' : 'mt-1 space-y-1'}>
+    <div className={'space-y-1'}>
       {options.map((option) => {
         const key = optionKey(option);
         const selected = selectedKey === key;
@@ -130,7 +130,7 @@ const TranspositionTree: FC<{
         return (
           <div key={key || optionLabel(option)}>
             <div
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-0.5 hover:bg-slate-50"
               style={{
                 paddingLeft: `${8 + depth * 16}px`,
                 background: selected ? 'rgba(43, 87, 151, 0.10)' : undefined,
@@ -762,7 +762,7 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
             }}
             onClick={onClose}
           >
-            {translation('Clear')}
+            {translation('Cancel')}
           </button>
           <button
             type="button"

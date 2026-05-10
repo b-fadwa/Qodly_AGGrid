@@ -18,8 +18,6 @@ interface SortingDialogProps {
   initialSortModel: SortModelItem[];
   /** Apply the edited rules to the grid. */
   onApply: (sortModel: SortModelItem[]) => void;
-  /** Reset current grid sorting. */
-  onClear: () => void;
   savedSorts: SavedSort[];
   saveSort: (
     name: string,
@@ -49,7 +47,6 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   sortableColumns,
   initialSortModel,
   onApply,
-  onClear,
   savedSorts,
   saveSort,
   updateSort,
@@ -104,12 +101,6 @@ export const SortingDialog: FC<SortingDialogProps> = ({
 
   const handleApply = () => {
     onApply(sortDialogModel);
-    onClose();
-  };
-
-  const handleClear = () => {
-    setSortDialogModel([]);
-    onClear();
     onClose();
   };
 
@@ -288,9 +279,9 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                     color: '#44444C',
                     fontSize: '12px',
                   }}
-                  onClick={handleClear}
+                  onClick={onClose}
                 >
-                  {translation('Clear')}
+                  {translation('Cancel')}
                 </button>
                 <button
                   type="button"

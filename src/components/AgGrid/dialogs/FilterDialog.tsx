@@ -354,9 +354,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               color: '#44444C',
               fontSize: '12px',
             }}
-            onClick={() => setDraftFilterModel(null)}
+            onClick={onClose}
           >
-            {translation('Clear')}
+            {translation('Cancel')}
           </button>
           <button
             type="button"

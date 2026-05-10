@@ -2462,12 +2462,6 @@ const AgGrid: FC<IAgGridProps> = ({
     getState(params);
   }, []);
 
-  const handleColumnToggle = (colField: string) => {
-    setColumnVisibility((prev) =>
-      prev.map((c) => (c.field === colField ? { ...c, isHidden: !c.isHidden } : c)),
-    );
-  };
-
   const resetColumnview = () => {
     setColumnVisibility(initialColumnVisibility);
     setSelectedView('');
@@ -2476,16 +2470,6 @@ const AgGrid: FC<IAgGridProps> = ({
       gridRef.current.api.setFilterModel(null);
       sortsManager.applySortModelToGrid([]);
     }
-  };
-
-  const handlePinChange = (colField: string, value: string) => {
-    setColumnVisibility((prev) =>
-      prev.map((col) => {
-        if (col.field !== colField) return col;
-        const pinnedValue = value === 'unpinned' ? null : (value as 'left' | 'right');
-        return { ...col, pinned: pinnedValue };
-      }),
-    );
   };
 
   const handleLoadViewSelection = useCallback(
@@ -2538,49 +2522,6 @@ const AgGrid: FC<IAgGridProps> = ({
         !idFields.has(column.field),
     );
   }, [columnVisibility, columns]);
-
-  const filteredColumns = useMemo(() => {
-    const rawSearch = propertySearch.trim().toLowerCase();
-    const compactSearch = rawSearch.replace(/[_\s]+/g, '');
-
-    return [...normalizedColumns]
-      .sort((a, b) => {
-        const aVisible = !a.isHidden;
-        const bVisible = !b.isHidden;
-        if (aVisible !== bVisible) return aVisible ? -1 : 1;
-        const aLabel = String(columnLabelByStableField.get(a.field) ?? a.field);
-        const bLabel = String(columnLabelByStableField.get(b.field) ?? b.field);
-        const labelCompare = aLabel.localeCompare(bLabel, undefined, { sensitivity: 'base' });
-        if (labelCompare !== 0) return labelCompare;
-        return a.field.localeCompare(b.field);
-      })
-      .filter((column) => {
-        const isVisible = !column.isHidden;
-        if (showVisibleOnly && !isVisible) return false;
-        if (!rawSearch) return true;
-
-        const displayLabel = columnLabelByStableField.get(column.field) ?? column.field;
-        const field = column.field.toLowerCase();
-        const label = String(displayLabel).toLowerCase();
-        const compactField = field.replace(/[_\s]+/g, '');
-        const compactLabel = label.replace(/[_\s]+/g, '');
-        return (
-          field.includes(rawSearch) ||
-          compactField.includes(compactSearch) ||
-          label.includes(rawSearch) ||
-          compactLabel.includes(compactSearch)
-        );
-      });
-  }, [columnLabelByStableField, normalizedColumns, propertySearch, showVisibleOnly]);
-
-  const setFilteredColumnsVisible = (visible: boolean) => {
-    filteredColumns.forEach((column) => {
-      const isVisible = !column.isHidden;
-      if (isVisible !== visible) {
-        handleColumnToggle(column.field);
-      }
-    });
-  };
 
   const resolvedStyle = useMemo<CSSProperties>(() => {
     const s = { ...style };
@@ -2918,6 +2859,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       viewName={viewName}
                       setViewName={setViewName}
                       selectedView={selectedView}
+                      setSelectedView={setSelectedView}
                       onLoadView={handleLoadViewSelection}
                       isViewDefault={isViewDefault}
                       setIsViewDefault={setIsViewDefault}
@@ -2926,10 +2868,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       setPropertySearch={setPropertySearch}
                       showVisibleOnly={showVisibleOnly}
                       setShowVisibleOnly={setShowVisibleOnly}
-                      filteredColumns={filteredColumns}
-                      setFilteredColumnsVisible={setFilteredColumnsVisible}
-                      handleColumnToggle={handleColumnToggle}
-                      handlePinChange={handlePinChange}
+                      columns={normalizedColumns}
+                      applyColumns={setColumnVisibility}
                       columnLabelByStableField={columnLabelByStableField}
                       savedFilters={filtersManager.savedFilters}
                       viewLinkedFilterId={viewLinkedFilterId}
@@ -3221,9 +3161,6 @@ const AgGrid: FC<IAgGridProps> = ({
                       initialSortModel={sortDialogInitialModel}
                       onApply={(model) => {
                         sortsManager.applySortModelToGrid(model);
-                      }}
-                      onClear={() => {
-                        sortsManager.applySortModelToGrid([]);
                       }}
                       savedSorts={sortsManager.savedSorts}
                       saveSort={sortsManager.saveSort}

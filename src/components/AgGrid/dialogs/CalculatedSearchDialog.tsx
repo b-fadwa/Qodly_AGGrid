@@ -1657,7 +1657,7 @@ export const CalculatedSearchDialog: FC<{
             }}
             onClick={onClose}
           >
-            {translation('Clear')}
+            {translation('Cancel')}
           </button>
           <button
             type="button"
