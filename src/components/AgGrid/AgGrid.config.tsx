@@ -310,6 +310,7 @@ export default {
     rowCssField: '',
     showToolbarActions: true,
     showToolbarView: true,
+    showToolbarShortcuts: false,
     showToolbarSorting: true,
     showToolbarFiltering: true,
     showToolbarStatistics: false,
@@ -386,6 +387,8 @@ export interface IAgGridProps extends webforms.ComponentProps {
   showToolbarActions?: boolean;
   /** Toolbar: View (customize columns, reset default view) */
   showToolbarView?: boolean;
+  /** Toolbar: Quick shortcuts menu */
+  showToolbarShortcuts?: boolean;
   /** Toolbar: Advanced sorting */
   showToolbarSorting?: boolean;
   /** Toolbar: Advanced filtering (named filter sets) */

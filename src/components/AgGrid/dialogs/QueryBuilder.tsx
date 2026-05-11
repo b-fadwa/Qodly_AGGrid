@@ -190,7 +190,7 @@ export const rulesToFilterModel = (rules: FilterRule[], columns: IColumn[]): any
       const column = findColumnByKey(columns, rule.field);
       const filterType = getColumnAgGridFilterType(column);
       if (!filterType) return null;
-      const condition = buildCondition(rule, filterType);
+      const condition = buildCondition(rule, filterType, column);
       if (!condition) return null;
       return {
         field: rule.field,
@@ -208,8 +208,37 @@ export const rulesToFilterModel = (rules: FilterRule[], columns: IColumn[]): any
 };
 
 const ZERO_INPUT_OPERATORS = new Set(['isTrue', 'isFalse', 'blank', 'notBlank']);
+const EMPTY_TEXT_VALUE_OPERATORS = new Set(['equals', 'notEqual']);
+const NUMERIC_TEXT_INPUT_DATA_TYPES = new Set([
+  'word',
+  'short',
+  'long',
+  'number',
+  'long64',
+  'duration',
+]);
 
-const buildCondition = (rule: FilterRule, filterType: string): any | null => {
+const isEmptyTextComparisonAllowed = (
+  rule: FilterRule,
+  filterType: string,
+  column: IColumn | undefined,
+): boolean => {
+  const dataType = String(column?.dataType ?? '')
+    .trim()
+    .toLowerCase();
+  return (
+    filterType === 'text' &&
+    dataType !== 'date' &&
+    !NUMERIC_TEXT_INPUT_DATA_TYPES.has(dataType) &&
+    EMPTY_TEXT_VALUE_OPERATORS.has(rule.operator)
+  );
+};
+
+const buildCondition = (
+  rule: FilterRule,
+  filterType: string,
+  column?: IColumn,
+): any | null => {
   if (ZERO_INPUT_OPERATORS.has(rule.operator)) {
     return { filterType, type: rule.operator };
   }
@@ -234,7 +263,12 @@ const buildCondition = (rule: FilterRule, filterType: string): any | null => {
     rule.operator === COLLECTION_OPERATOR_KEY
       ? joinCollectionTokens(parseCollectionTokens(rule.value))
       : rule.value;
-  if (normalizedValue === '' || normalizedValue == null) return null;
+  if (
+    (normalizedValue === '' || normalizedValue == null) &&
+    !isEmptyTextComparisonAllowed(rule, filterType, column)
+  ) {
+    return null;
+  }
   return {
     filterType,
     type: rule.operator,
@@ -353,7 +387,7 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
     const column = findColumnByKey(columnsRef.current, rule.field);
     const filterType = getColumnAgGridFilterType(column);
     if (!filterType) return false;
-    return buildCondition(rule, filterType) != null;
+    return buildCondition(rule, filterType, column) != null;
   };
 
   const areAllRulesCompilable = (nextRules: FilterRule[]): boolean => {

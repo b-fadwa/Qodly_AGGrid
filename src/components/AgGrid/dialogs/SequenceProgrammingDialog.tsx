@@ -222,6 +222,17 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
       : draft.transposition.mode === 'nTo1'
         ? ((transpositions ?? fallbackTranspositions).nToOne ?? [])
         : [];
+  const selectedOperation =
+    draft.transposition.mode === 'nTo1' || draft.transposition.mode === 'oneToN'
+      ? draft.transposition.mode
+      : (draft.output.mode ?? '');
+  const isOutputOperation =
+    selectedOperation === 'display' ||
+    selectedOperation === 'export' ||
+    selectedOperation === 'list' ||
+    selectedOperation === 'table';
+  const isTranspositionOperation =
+    selectedOperation === 'nTo1' || selectedOperation === 'oneToN';
 
   useEffect(() => {
     if (!open) return;
@@ -308,6 +319,44 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
         selectionLink: option.link ?? '',
       },
     }));
+  };
+
+  const setSequenceOperation = (operation: string) => {
+    setExpandedTranspositionKeys(new Set());
+    setDraft((prev) => {
+      if (operation === 'nTo1' || operation === 'oneToN') {
+        return {
+          ...prev,
+          output: {
+            ...prev.output,
+            mode: undefined,
+          },
+          transposition: {
+            ...prev.transposition,
+            mode: operation as SequenceProgrammingPayload['transposition']['mode'],
+            selectionId: '',
+            selectionKey: '',
+            selectionLabel: '',
+            selectionLink: '',
+          },
+        };
+      }
+      return {
+        ...prev,
+        output: {
+          ...prev.output,
+          mode: operation as SequenceProgrammingPayload['output']['mode'],
+        },
+        transposition: {
+          ...prev.transposition,
+          mode: 'none',
+          selectionId: '',
+          selectionKey: '',
+          selectionLabel: '',
+          selectionLink: '',
+        },
+      };
+    });
   };
 
   const toggleTranspositionExpanded = (key: string) => {
@@ -497,46 +546,56 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                 ))}
               </div>
             </div>
-            <div className="grid gap-4 py-3 md:grid-cols-2">
+            <div className="space-y-3 py-3">
               <section className="rounded border border-slate-200 bg-slate-50 p-3">
                 <span
                   className="mb-3 block text-slate-800"
                   style={{ fontSize: '12px', fontWeight: 700 }}
                 >
-                  {translation('List display')}
+                  {translation('Sequence action')}
                 </span>
                 <div
                   className="grid gap-2"
                   style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}
                 >
                   {[
+                    ['display', 'List display'],
                     ['export', 'Data export'],
                     ['list', 'List representation'],
                     ['table', 'Table representation'],
+                    ['nTo1', 'Selection transposition: N to 1'],
+                    ['oneToN', 'Selection transposition: 1 to N'],
                   ].map(([value, label]) => (
                     <label
                       key={value}
-                      className="flex items-center gap-2 text-slate-700"
-                      style={{ fontSize: '12px' }}
+                      className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 text-slate-700"
+                      style={{
+                        fontSize: '12px',
+                        borderColor:
+                          selectedOperation === value ? '#2B5797' : undefined,
+                        color: selectedOperation === value ? '#2B5797' : undefined,
+                      }}
                     >
                       <input
                         type="radio"
-                        name="sequence-output"
-                        checked={draft.output.mode === value}
-                        onChange={() =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            output: {
-                              ...prev.output,
-                              mode: value as SequenceProgrammingPayload['output']['mode'],
-                            },
-                          }))
-                        }
+                        name="sequence-operation"
+                        checked={selectedOperation === value}
+                        onChange={() => setSequenceOperation(value)}
                       />
                       {translation(label)}
                     </label>
                   ))}
                 </div>
+              </section>
+
+              {isOutputOperation && (
+                <section className="rounded border border-slate-200 bg-slate-50 p-3">
+                  <span
+                    className="mb-3 block text-slate-800"
+                    style={{ fontSize: '12px', fontWeight: 700 }}
+                  >
+                    {translation('Output options')}
+                  </span>
                 <label className="block text-slate-700" style={{ fontSize: '12px' }}>
                   {translation('Reference document')}
                   <input
@@ -551,51 +610,18 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                     }
                   />
                 </label>
-              </section>
+                </section>
+              )}
 
-              <section className="rounded border border-slate-200 bg-slate-50   p-3">
+              {isTranspositionOperation && (
+              <section className="rounded border border-slate-200 bg-slate-50 p-3">
                 <span
                   className="mb-3 block text-slate-800"
                   style={{ fontSize: '12px', fontWeight: 700 }}
                 >
-                  {translation('Transposition')}
+                  {translation('Transposition options')}
                 </span>
-                <div
-                  className="grid gap-2"
-                  style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
-                >
-                  {[
-                    ['nTo1', 'Selection transposition: N to 1'],
-                    ['oneToN', 'Selection transposition: 1 to N'],
-                  ].map(([value, label]) => (
-                    <label
-                      key={value}
-                      className="flex items-center gap-2 text-slate-700"
-                      style={{ fontSize: '12px' }}
-                    >
-                      <input
-                        type="radio"
-                        name="sequence-transposition"
-                        checked={draft.transposition.mode === value}
-                        onChange={() =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            transposition: {
-                              ...prev.transposition,
-                              mode: value as SequenceProgrammingPayload['transposition']['mode'],
-                              selectionId: '',
-                              selectionKey: '',
-                              selectionLabel: '',
-                              selectionLink: '',
-                            },
-                          }))
-                        }
-                      />
-                      {translation(label)}
-                    </label>
-                  ))}
-                </div>
-                <div className="mt-3">
+                <div>
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <span className="text-slate-700" style={{ fontSize: '12px', fontWeight: 600 }}>
                       {translation('Transposition selection')}
@@ -682,6 +708,7 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                   />
                 </label>
               </section>
+              )}
             </div>
 
             <section className="flex flex-col gap-3 px-2 py-3">
@@ -740,6 +767,14 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                   onClick={handleSavePressed}
                 >
                   {willUpdateExisting ? translation('Update') : translation('Save')}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-gray-300 bg-white px-2 py-1"
+                  style={controlStyle}
+                  onClick={() => undefined}
+                >
+                  {translation('Share')}
                 </button>
               </div>
             </section>

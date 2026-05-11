@@ -169,6 +169,12 @@ const dataAccessSettings: TSetting[] = [
     key: 'showToolbarView',
   },
   {
+    label: 'Toolbar: Shortcuts',
+    defaultValue: false,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarShortcuts',
+  },
+  {
     label: 'Toolbar: Sorting',
     defaultValue: true,
     type: ESetting.CHECKBOX,

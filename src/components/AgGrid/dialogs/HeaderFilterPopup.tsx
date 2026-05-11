@@ -53,6 +53,15 @@ interface HeaderFilterPopupProps {
 }
 
 const ZERO_INPUT_OPERATORS = new Set(['isTrue', 'isFalse', 'blank', 'notBlank']);
+const EMPTY_TEXT_VALUE_OPERATORS = new Set(['equals', 'notEqual']);
+const NUMERIC_TEXT_INPUT_DATA_TYPES = new Set([
+  'word',
+  'short',
+  'long',
+  'number',
+  'long64',
+  'duration',
+]);
 const mk = (): string => `h_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
 const boolOps = (ops: FilterOperatorDescriptor[]) =>
   ops.some((o) => o.key === 'isTrue' || o.key === 'isFalse');
@@ -84,6 +93,7 @@ const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft
 const toCondition = (
   row: ConditionDraft,
   filterType: 'text' | 'number' | 'date' | 'qodlyRefSelect',
+  column?: IColumn | null,
 ): any | null => {
   if (!row.operator) return null;
   if (ZERO_INPUT_OPERATORS.has(row.operator)) return { filterType, type: row.operator };
@@ -102,7 +112,17 @@ const toCondition = (
     row.operator === COLLECTION_OPERATOR_KEY
       ? joinCollectionTokens(parseCollectionTokens(row.value))
       : row.value;
-  if (!normalizedValue) return null;
+  const dataType = String(column?.dataType ?? '')
+    .trim()
+    .toLowerCase();
+  const emptyTextComparisonAllowed =
+    filterType === 'text' &&
+    dataType !== 'date' &&
+    !NUMERIC_TEXT_INPUT_DATA_TYPES.has(dataType) &&
+    EMPTY_TEXT_VALUE_OPERATORS.has(row.operator);
+  if ((normalizedValue === '' || normalizedValue == null) && !emptyTextComparisonAllowed) {
+    return null;
+  }
   return {
     filterType,
     type: row.operator,
@@ -632,7 +652,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
           }}
           onClick={() => {
             const built = rows
-              .map((r) => toCondition(r, filterType))
+              .map((r) => toCondition(r, filterType, column))
               .filter((v): v is any => v !== null);
             const baseRules = activeRules.length
               ? activeRules

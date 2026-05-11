@@ -559,6 +559,7 @@ const AgGrid: FC<IAgGridProps> = ({
   showColumnActions,
   showToolbarActions = true,
   showToolbarView = true,
+  showToolbarShortcuts = false,
   showToolbarSorting = true,
   showToolbarFiltering = true,
   showToolbarStatistics = true,
@@ -2772,10 +2773,11 @@ const AgGrid: FC<IAgGridProps> = ({
                         {/* columns customizer button */}
                         <div className="customizer-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
                           <div className="flex gap-2">
-                            <QuickShortcutMenu
-                              menuLabel={translation('Open quick shortcuts')}
-                              buttonText={translation('Shortcuts')}
-                              sections={[
+                            {showToolbarShortcuts && (
+                              <QuickShortcutMenu
+                                menuLabel={translation('Open quick shortcuts')}
+                                buttonText={translation('Shortcuts')}
+                                sections={[
                                 {
                                   id: 'views',
                                   label: translation('Views'),
@@ -2825,8 +2827,37 @@ const AgGrid: FC<IAgGridProps> = ({
                                     sortsManager.loadSort(itemId);
                                   },
                                 },
-                              ]}
-                            />
+                                {
+                                  id: 'sequences',
+                                  label: translation('Sequence programming'),
+                                  emptyLabel: translation('No saved sequence programming'),
+                                  items: (showToolbarSequence ? savedSequences : []).map(
+                                    (sequenceRecord) => {
+                                      const key = savedRecordKey(sequenceRecord);
+                                      return { id: key, label: sequenceRecord.name };
+                                    },
+                                  ),
+                                  onSelect: (itemId) => {
+                                    const record = findSavedRecord(
+                                      savedSequences,
+                                      itemId,
+                                    ) as SavedSequence | null;
+                                    setSelectedSequence(record);
+                                    if (record?.sequence && sequenceDs) {
+                                      sequenceDs.setValue(null, record.sequence);
+                                    }
+                                    emit('onloadsequence', {
+                                      key: itemId,
+                                      sequence: record?.sequence,
+                                    });
+                                    if (record?.sequence) {
+                                      emit('onsequence', record.sequence);
+                                    }
+                                  },
+                                },
+                                ]}
+                              />
+                            )}
                             <IconPopover label={translation('Reset')}>
                               <button
                                 className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
@@ -3212,6 +3243,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       saveFilter={filtersManager.saveFilter}
                       updateFilter={filtersManager.updateFilter}
                       deleteFilter={filtersManager.deleteFilter}
+                      showSavedFilterManagement={Boolean(filters)}
                       applyLinkedSortForFilter={(record) => {
                         const sortKey = getLinkedSortKeyForFilter(record);
                         if (!sortKey) return;

@@ -55,7 +55,7 @@ export interface SequenceProgrammingPayload {
   filters: SequenceFilterStep[];
   sortId?: string | number;
   output: {
-    mode?: 'export' | 'list' | 'table';
+    mode?: 'display' | 'export' | 'list' | 'table';
     referenceDocumentId?: string | number;
   };
   transposition: {
