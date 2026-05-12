@@ -121,6 +121,15 @@ type SavedCalculatedSearch = {
   [key: string]: unknown;
 };
 
+type AppliedViewColumn = {
+  field: string;
+  isHidden: boolean;
+  pinned?: 'left' | 'right' | null;
+  width?: number | null;
+  flex?: number | null;
+  i18n?: string | null;
+};
+
 const sequenceIdValue = (value: unknown): string | number | undefined =>
   typeof value === 'string' || typeof value === 'number' ? value : undefined;
 
@@ -2498,6 +2507,24 @@ const AgGrid: FC<IAgGridProps> = ({
     [loadViewWithLinkedFilter],
   );
 
+  const applyViewDialogColumns = useCallback(
+    (nextColumns: AppliedViewColumn[]) => {
+      setColumnVisibility(nextColumns);
+      viewsManager.persistCurrent(
+        nextColumns.map((column) => ({
+          colId: column.field,
+          hide: Boolean(column.isHidden),
+          pinned: column.pinned ?? null,
+          width: column.width ?? null,
+          flex: column.flex ?? null,
+          i18n: column.i18n ?? null,
+        })),
+        { force: true },
+      );
+    },
+    [viewsManager],
+  );
+
   const openAdvancedSortingDialog = () => {
     const fromGrid = buildSortModelFromColumnState(gridRef.current?.api?.getColumnState());
     setSortDialogInitialModel(
@@ -2900,7 +2927,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       showVisibleOnly={showVisibleOnly}
                       setShowVisibleOnly={setShowVisibleOnly}
                       columns={normalizedColumns}
-                      applyColumns={setColumnVisibility}
+                      applyColumns={applyViewDialogColumns}
                       columnLabelByStableField={columnLabelByStableField}
                       savedFilters={filtersManager.savedFilters}
                       viewLinkedFilterId={viewLinkedFilterId}
