@@ -17,6 +17,7 @@ import {
   DateSaisieLibreSelect,
   makeDateSaisieLibreConditionMeta,
   readDateSaisieLibreConditionValue,
+  readDateSaisieLibreConditionValueTo,
   type DateEntryMode,
 } from './DateSaisieLibre';
 
@@ -96,7 +97,13 @@ const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft
           : c?.value != null
             ? String(c.value)
             : '',
-    value2: c?.filterTo != null ? String(c.filterTo) : c?.dateTo != null ? String(c.dateTo) : '',
+    value2: c?.dateSaisieLibre
+      ? readDateSaisieLibreConditionValueTo(c)
+      : c?.filterTo != null
+        ? String(c.filterTo)
+        : c?.dateTo != null
+          ? String(c.dateTo)
+          : '',
     entryMode: c?.filterType === 'date' ? (c?.dateSaisieLibre ? 'list' : 'free') : undefined,
   }));
   return rows.length ? rows : [{ id: mk(), operator: fallback, value: '', value2: '' }];
@@ -111,7 +118,10 @@ const toCondition = (
   if (ZERO_INPUT_OPERATORS.has(row.operator)) return { filterType, type: row.operator };
   if (filterType === 'date') {
     if (row.entryMode === 'list') {
-      const meta = makeDateSaisieLibreConditionMeta(row.value);
+      const meta = makeDateSaisieLibreConditionMeta(
+        row.value,
+        row.operator === 'inRange' ? row.value2 : undefined,
+      );
       if (!meta) return null;
       return { filterType, type: row.operator, dateFrom: null, dateTo: null, ...meta };
     }
@@ -215,8 +225,8 @@ const rulesFromPlainFilterModel = (
 const styles = {
   panel: {
     position: 'fixed',
-    width: '250px',
-    maxWidth: 'calc(100vw - 24px)',
+    minWidth: '250px',
+    maxWidth: '350px',
     maxHeight: '70vh',
     overflow: 'auto',
     background: '#F3F4F6',
@@ -227,6 +237,9 @@ const styles = {
   } as React.CSSProperties,
   control: {
     height: '32px',
+    boxSizing: 'border-box',
+    display: 'block',
+    minWidth: 0,
     borderRadius: '5px',
     border: '1px solid #CBD5E1',
     color: '#44444C',
@@ -287,6 +300,11 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     if (activeRules.some((r) => r.field !== colId)) return true;
     return Object.keys(currentModel ?? {}).some((k) => k !== '__qodlyAdvancedRules' && k !== colId);
   }, [activeRules, currentModel, colId]);
+  const hasCurrentColumnFilter = useMemo(() => {
+    if (!colId) return false;
+    if (activeRules.some((r) => r.field === colId)) return true;
+    return Boolean(currentEntry);
+  }, [activeRules, currentEntry, colId]);
 
   useEffect(() => {
     if (!open || !colId) return;
@@ -399,6 +417,16 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     onApply(nextModel);
   };
 
+  const getBaseRules = () =>
+    activeRules.length ? activeRules : rulesFromPlainFilterModel(currentModel);
+  const getRulesWithoutCurrentColumn = () => getBaseRules().filter((r) => r.field !== colId);
+  const removeCurrentColumnFilter = () => {
+    onDateFinancialFilterEnabledChange(dateFinancialFilterDraft);
+    onFilterInactiveRecordsEnabledChange(filterInactiveRecordsDraft);
+    applyRules(getRulesWithoutCurrentColumn());
+    onClose();
+  };
+
   return (
     <div ref={panelRef} style={{ ...styles.panel, top, left }}>
       <div className="border-b border-[#D1D5DB] p-2 flex items-center justify-between gap-2">
@@ -426,6 +454,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
           const isCollection = selectedOp?.key === COLLECTION_OPERATOR_KEY;
           const tokens = parseCollectionTokens(row.value);
           const canDelete = rows.length > 1;
+          const canRemoveOnlyColumnFilter =
+            inputs === 0 && rows.length === 1 && hasCurrentColumnFilter;
           const isDateInput = inputType === 'date';
           return (
             <div key={row.id}>
@@ -467,12 +497,16 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     </option>
                   ))}
                 </select>
-                {inputs === 0 && canDelete ? (
+                {inputs === 0 && (canDelete || canRemoveOnlyColumnFilter) ? (
                   <button
                     type="button"
                     className="inline-flex items-center justify-center rounded-lg border"
                     style={styles.trash}
                     onClick={() => {
+                      if (canRemoveOnlyColumnFilter) {
+                        removeCurrentColumnFilter();
+                        return;
+                      }
                       setRows((prev) => {
                         return normalize(
                           prev.filter((r) => r.id !== row.id),
@@ -486,7 +520,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                 ) : null}
               </div>
               {inputs >= 1 ? (
-                <div className="mb-1 flex items-center gap-2">
+                <div className="mb-1 flex items-end gap-2">
                   <div style={{ width: '100%', display: 'grid' }}>
                     {isDateInput ? (
                       <div className="mb-1 flex flex-wrap items-center gap-3">
@@ -514,7 +548,9 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                               }}
                               style={{ width: '14px', height: '14px', accentColor: '#2B5797' }}
                             />
-                            <span>{translation(mode === 'free' ? 'Saisie libre' : 'From list')}</span>
+                            <span>
+                              {translation(mode === 'free' ? 'Saisie libre' : 'From list')}
+                            </span>
                           </label>
                         ))}
                       </div>
@@ -555,22 +591,40 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     ) : null}
 
                     {isDateInput && row.entryMode === 'list' ? (
-                      <DateSaisieLibreSelect
-                        value={row.value}
-                        translation={translation}
-                        translateDateKey={dateSaisieLibreTranslation}
-                        style={{ ...styles.control, width: '100%' }}
-                        onChange={(nextValue) => {
-                          setRows((prev) => {
-                            return normalize(
-                              prev.map((r) =>
-                                r.id === row.id ? { ...r, value: nextValue, value2: '' } : r,
-                              ),
-                              operators,
-                            );
-                          });
-                        }}
-                      />
+                      <div className="flex flex-col gap-1">
+                        <DateSaisieLibreSelect
+                          value={row.value}
+                          translation={translation}
+                          translateDateKey={dateSaisieLibreTranslation}
+                          style={{ ...styles.control, width: '100%' }}
+                          onChange={(nextValue) => {
+                            setRows((prev) => {
+                              return normalize(
+                                prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
+                                operators,
+                              );
+                            });
+                          }}
+                        />
+                        {inputs === 2 ? (
+                          <DateSaisieLibreSelect
+                            value={row.value2}
+                            translation={translation}
+                            translateDateKey={dateSaisieLibreTranslation}
+                            style={{ ...styles.control, width: '100%' }}
+                            onChange={(nextValue2) => {
+                              setRows((prev) => {
+                                return normalize(
+                                  prev.map((r) =>
+                                    r.id === row.id ? { ...r, value2: nextValue2 } : r,
+                                  ),
+                                  operators,
+                                );
+                              });
+                            }}
+                          />
+                        ) : null}
+                      </div>
                     ) : filterType === 'qodlyRefSelect' ? (
                       <select
                         value={row.value}
@@ -614,6 +668,41 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                           });
                         }}
                       />
+                    ) : isDateInput && inputs === 2 ? (
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type={inputType}
+                          value={row.value}
+                          placeholder={translation('Filter...')}
+                          style={{ ...styles.control, width: '100%' }}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            setRows((prev) => {
+                              return normalize(
+                                prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
+                                operators,
+                              );
+                            });
+                          }}
+                        />
+                        <input
+                          type={inputType}
+                          value={row.value2}
+                          placeholder={translation('Filter...')}
+                          style={{ ...styles.control, width: '100%' }}
+                          onChange={(e) => {
+                            const nextValue2 = e.target.value;
+                            setRows((prev) => {
+                              return normalize(
+                                prev.map((r) =>
+                                  r.id === row.id ? { ...r, value2: nextValue2 } : r,
+                                ),
+                                operators,
+                              );
+                            });
+                          }}
+                        />
+                      </div>
                     ) : (
                       <input
                         type={inputType}
@@ -651,7 +740,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   ) : null}
                 </div>
               ) : null}
-              {inputs === 2 && !(isDateInput && row.entryMode === 'list') ? (
+              {inputs === 2 && !isDateInput ? (
                 <input
                   type={inputType}
                   value={row.value2}
@@ -727,10 +816,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
             const built = rows
               .map((r) => toCondition(r, filterType, column))
               .filter((v): v is any => v !== null);
-            const baseRules = activeRules.length
-              ? activeRules
-              : rulesFromPlainFilterModel(currentModel);
-            const remaining = baseRules.filter((r) => r.field !== colId);
+            const remaining = getRulesWithoutCurrentColumn();
             if (!built.length) {
               onDateFinancialFilterEnabledChange(dateFinancialFilterDraft);
               onFilterInactiveRecordsEnabledChange(filterInactiveRecordsDraft);

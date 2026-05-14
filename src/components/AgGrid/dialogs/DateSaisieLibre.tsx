@@ -5,7 +5,9 @@ import rawDateSaisieLibre from './dateSaisieLibre.json';
 
 export const DATE_SAISIE_LIBRE_FLAG = 'dateSaisieLibre';
 export const DATE_SAISIE_LIBRE_VALUE = 'dateSaisieLibreValue';
+export const DATE_SAISIE_LIBRE_VALUE_TO = 'dateSaisieLibreValueTo';
 export const DATE_SAISIE_LIBRE_KEY = 'dateSaisieLibreKey';
+export const DATE_SAISIE_LIBRE_KEY_TO = 'dateSaisieLibreKeyTo';
 
 export type DateEntryMode = 'free' | 'list';
 
@@ -18,7 +20,9 @@ export interface DateSaisieLibreOption {
 export interface DateSaisieLibreConditionMeta {
   dateSaisieLibre?: boolean;
   dateSaisieLibreValue?: number;
+  dateSaisieLibreValueTo?: number;
   dateSaisieLibreKey?: string;
+  dateSaisieLibreKeyTo?: string;
 }
 
 const buildDateSaisieLibreOption = (
@@ -84,13 +88,25 @@ export const getDateSaisieLibreOptionByValue = (
 
 export const makeDateSaisieLibreConditionMeta = (
   rawValue: string | number | null | undefined,
+  rawValueTo?: string | number | null | undefined,
 ): DateSaisieLibreConditionMeta | null => {
   const option = getDateSaisieLibreOptionByValue(rawValue);
   if (!option) return null;
+  const optionTo =
+    rawValueTo != null && String(rawValueTo).trim() !== ''
+      ? getDateSaisieLibreOptionByValue(rawValueTo)
+      : null;
+  if (rawValueTo != null && String(rawValueTo).trim() !== '' && !optionTo) return null;
   return {
     dateSaisieLibre: true,
     dateSaisieLibreValue: option.value,
     dateSaisieLibreKey: option.translationKey,
+    ...(optionTo
+      ? {
+          dateSaisieLibreValueTo: optionTo.value,
+          dateSaisieLibreKeyTo: optionTo.translationKey,
+        }
+      : {}),
   };
 };
 
@@ -102,6 +118,11 @@ export const readDateSaisieLibreConditionValue = (
   condition: DateSaisieLibreConditionMeta | null | undefined,
 ): string =>
   condition?.dateSaisieLibreValue != null ? String(condition.dateSaisieLibreValue) : '';
+
+export const readDateSaisieLibreConditionValueTo = (
+  condition: DateSaisieLibreConditionMeta | null | undefined,
+): string =>
+  condition?.dateSaisieLibreValueTo != null ? String(condition.dateSaisieLibreValueTo) : '';
 
 export const dateSaisieLibreDisplayLabel = (
   option: DateSaisieLibreOption,
@@ -132,7 +153,12 @@ export const DateSaisieLibreSelect: FC<DateSaisieLibreSelectProps> = ({
   className,
   style,
 }) => (
-  <select className={className} style={style} value={value} onChange={(e) => onChange(e.target.value)}>
+  <select
+    className={className}
+    style={style}
+    value={value}
+    onChange={(e) => onChange(e.target.value)}
+  >
     <option value="">{translation('Choose one')}</option>
     {DATE_SAISIE_LIBRE_OPTIONS.map((option) => (
       <option key={option.translationKey} value={String(option.value)}>

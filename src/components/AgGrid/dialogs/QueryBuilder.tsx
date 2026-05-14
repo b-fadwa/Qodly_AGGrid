@@ -1,11 +1,4 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { FC } from 'react';
 import get from 'lodash/get';
 import { GoTrash } from 'react-icons/go';
@@ -26,6 +19,7 @@ import {
   DateSaisieLibreSelect,
   makeDateSaisieLibreConditionMeta,
   readDateSaisieLibreConditionValue,
+  readDateSaisieLibreConditionValueTo,
   type DateEntryMode,
 } from './DateSaisieLibre';
 
@@ -127,7 +121,7 @@ const readConditionValues = (
     if (condition.dateSaisieLibre) {
       return {
         value: readDateSaisieLibreConditionValue(condition),
-        value2: '',
+        value2: readDateSaisieLibreConditionValueTo(condition),
       };
     }
     return {
@@ -265,18 +259,17 @@ const isEmptyTextComparisonAllowed = (
   );
 };
 
-const buildCondition = (
-  rule: FilterRule,
-  filterType: string,
-  column?: IColumn,
-): any | null => {
+const buildCondition = (rule: FilterRule, filterType: string, column?: IColumn): any | null => {
   if (ZERO_INPUT_OPERATORS.has(rule.operator)) {
     return { filterType, type: rule.operator };
   }
 
   if (filterType === 'date') {
     if (rule.entryMode === 'list') {
-      const meta = makeDateSaisieLibreConditionMeta(rule.value);
+      const meta = makeDateSaisieLibreConditionMeta(
+        rule.value,
+        rule.operator === 'inRange' ? rule.value2 : undefined,
+      );
       if (!meta) return null;
       return {
         filterType,
@@ -344,8 +337,16 @@ const neutralButtonStyle: React.CSSProperties = {
   border: '1px solid #0000001A',
 };
 
+const queryBuilderControlHeight = '31px';
+
 const selectStyle: React.CSSProperties = {
-  height: '31px',
+  height: queryBuilderControlHeight,
+  minHeight: queryBuilderControlHeight,
+  maxHeight: queryBuilderControlHeight,
+  lineHeight: queryBuilderControlHeight,
+  boxSizing: 'border-box',
+  display: 'block',
+  minWidth: 0,
   borderRadius: '6px',
   border: '1px solid #0000001A',
   color: '#44444C',
@@ -357,7 +358,6 @@ const selectStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   ...selectStyle,
   flex: 1,
-  minWidth: '120px',
 };
 
 const inputTypeFor = (column: IColumn | undefined): 'text' | 'number' | 'date' => {
@@ -378,20 +378,19 @@ const sameModel = (a: any, b: any): boolean => {
   }
 };
 
-export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
-  function QueryBuilder(
-    {
-      translation,
-      dateSaisieLibreTranslation,
-      columns,
-      i18n,
-      lang,
-      filterModel,
-      onChange,
-      deferEmit = false,
-    },
-    ref,
-  ) {
+export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(function QueryBuilder(
+  {
+    translation,
+    dateSaisieLibreTranslation,
+    columns,
+    i18n,
+    lang,
+    filterModel,
+    onChange,
+    deferEmit = false,
+  },
+  ref,
+) {
   const visibleColumns = useMemo(() => filterableColumns(columns), [columns]);
 
   // Own the rule list locally so "+ Rule" can add an empty row that isn't
@@ -618,8 +617,7 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
       )}
     </div>
   );
-  },
-);
+});
 
 interface CombinatorBadgeProps {
   translation: Translation;
@@ -803,9 +801,11 @@ const RuleRow: FC<RuleRowProps> = ({
                       value2: '',
                     })
                   }
-                  style={(rule.entryMode ?? 'free') === mode ? primaryButtonStyle : neutralButtonStyle}
+                  style={
+                    (rule.entryMode ?? 'free') === mode ? primaryButtonStyle : neutralButtonStyle
+                  }
                 >
-                  {translation(mode === 'free' ? 'Free entry' : 'Saisie libre')}
+                  {translation(mode === 'free' ? 'Free entry' : 'From list')}
                 </button>
               ))}
             </div>
@@ -838,13 +838,24 @@ const RuleRow: FC<RuleRowProps> = ({
           ) : null}
 
           {isDateInput && rule.entryMode === 'list' ? (
-            <DateSaisieLibreSelect
-              translation={translation}
-              translateDateKey={dateSaisieLibreTranslation}
-              value={rule.value ?? ''}
-              onChange={(value) => onChange({ value, value2: '' })}
-              style={{ ...selectStyle, width: '100%' }}
-            />
+            <div className="flex flex-col gap-2">
+              <DateSaisieLibreSelect
+                translation={translation}
+                translateDateKey={dateSaisieLibreTranslation}
+                value={rule.value ?? ''}
+                onChange={(value) => onChange({ value })}
+                style={{ ...selectStyle, width: '100%' }}
+              />
+              {inputCount === 2 ? (
+                <DateSaisieLibreSelect
+                  translation={translation}
+                  translateDateKey={dateSaisieLibreTranslation}
+                  value={rule.value2 ?? ''}
+                  onChange={(value2) => onChange({ value2 })}
+                  style={{ ...selectStyle, width: '100%' }}
+                />
+              ) : null}
+            </div>
           ) : filterType === 'qodlyRefSelect' && refOptions.length ? (
             <select
               style={{ ...selectStyle, width: '100%' }}
@@ -876,6 +887,31 @@ const RuleRow: FC<RuleRowProps> = ({
               onChange={(e) => onValueChange({ value: e.target.value })}
               onBlur={onValueCommit}
             />
+          ) : isDateInput && inputCount === 2 ? (
+            <div className="flex flex-col gap-2">
+              <input
+                type={htmlInputType}
+                placeholder={translation('Value')}
+                style={{ ...inputStyle, width: '100%' }}
+                value={rule.value}
+                onChange={(e) => onValueChange({ value: e.target.value })}
+                onBlur={onValueCommit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onValueCommit();
+                }}
+              />
+              <input
+                type={htmlInputType}
+                placeholder={translation('Value 2')}
+                style={{ ...inputStyle, width: '100%' }}
+                value={rule.value2 ?? ''}
+                onChange={(e) => onValueChange({ value2: e.target.value })}
+                onBlur={onValueCommit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onValueCommit();
+                }}
+              />
+            </div>
           ) : (
             <input
               type={htmlInputType}
@@ -892,18 +928,18 @@ const RuleRow: FC<RuleRowProps> = ({
         </div>
       )}
       {inputCount >= 2 &&
-        (isDateInput && rule.entryMode === 'list' ? null : (
-        <input
-          type={htmlInputType}
-          placeholder={translation('Value 2')}
-          style={inputStyle}
-          value={rule.value2 ?? ''}
-          onChange={(e) => onValueChange({ value2: e.target.value })}
-          onBlur={onValueCommit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onValueCommit();
-          }}
-        />
+        (isDateInput ? null : (
+          <input
+            type={htmlInputType}
+            placeholder={translation('Value 2')}
+            style={inputStyle}
+            value={rule.value2 ?? ''}
+            onChange={(e) => onValueChange({ value2: e.target.value })}
+            onBlur={onValueCommit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onValueCommit();
+            }}
+          />
         ))}
 
       <button
