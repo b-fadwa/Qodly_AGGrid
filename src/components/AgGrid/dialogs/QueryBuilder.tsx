@@ -96,6 +96,11 @@ const findColumnByKey = (columns: IColumn[], key: string): IColumn | undefined =
 const filterableColumns = (columns: IColumn[]): IColumn[] =>
   columns.filter((c) => getColumnAgGridFilterType(c) !== null && c.filtering);
 
+const defaultOperatorForColumn = (column: IColumn | undefined): string => {
+  const operators = getColumnFilterOperators(column);
+  return operators.find((op) => op.key === 'isTrue')?.key ?? operators[0]?.key ?? 'equals';
+};
+
 /** Read a value from a single AG Grid condition payload. */
 const readConditionValues = (
   condition: any,
@@ -186,11 +191,12 @@ export const rulesToFilterModel = (rules: FilterRule[], columns: IColumn[]): any
   const compiled = rules
     .map((rule, index) => ({ rule, index }))
     .map(({ rule, index }) => {
-      if (!rule.field || !rule.operator) return null;
+      if (!rule.field) return null;
       const column = findColumnByKey(columns, rule.field);
+      const operator = rule.operator || defaultOperatorForColumn(column);
       const filterType = getColumnAgGridFilterType(column);
       if (!filterType) return null;
-      const condition = buildCondition(rule, filterType, column);
+      const condition = buildCondition({ ...rule, operator }, filterType, column);
       if (!condition) return null;
       return {
         field: rule.field,
@@ -383,11 +389,12 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
   );
 
   const isRuleCompilable = (rule: FilterRule): boolean => {
-    if (!rule.field || !rule.operator) return false;
+    if (!rule.field) return false;
     const column = findColumnByKey(columnsRef.current, rule.field);
+    const operator = rule.operator || defaultOperatorForColumn(column);
     const filterType = getColumnAgGridFilterType(column);
     if (!filterType) return false;
-    return buildCondition(rule, filterType, column) != null;
+    return buildCondition({ ...rule, operator }, filterType, column) != null;
   };
 
   const areAllRulesCompilable = (nextRules: FilterRule[]): boolean => {
@@ -491,12 +498,10 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
   const addRule = () => {
     const defaultColumn = visibleColumns[0];
     if (!defaultColumn) return;
-    const operators = getColumnFilterOperators(defaultColumn);
-    const defaultOp = operators[0]?.key ?? 'equals';
     const next = rules.concat({
       id: newId(),
       field: defaultColumn.source ?? defaultColumn.title,
-      operator: defaultOp,
+      operator: defaultOperatorForColumn(defaultColumn),
       value: '',
     });
     // Keep the new rule as a local draft row until it becomes compilable.
@@ -692,7 +697,7 @@ const RuleRow: FC<RuleRowProps> = ({
     const nextOperators = getColumnFilterOperators(nextColumn);
     const nextOperator = nextOperators.some((op) => op.key === rule.operator)
       ? rule.operator
-      : (nextOperators[0]?.key ?? 'equals');
+      : defaultOperatorForColumn(nextColumn);
     onChange({ field: nextKey, operator: nextOperator, value: '', value2: '' });
   };
 

@@ -66,7 +66,9 @@ const mk = (): string => `h_${Math.random().toString(36).slice(2)}_${Date.now().
 const boolOps = (ops: FilterOperatorDescriptor[]) =>
   ops.some((o) => o.key === 'isTrue' || o.key === 'isFalse');
 const defaultOp = (ops: FilterOperatorDescriptor[]) =>
-  boolOps(ops) ? '' : (ops[0]?.key ?? 'equals');
+  boolOps(ops)
+    ? (ops.find((o) => o.key === 'isTrue')?.key ?? ops[0]?.key ?? 'equals')
+    : (ops[0]?.key ?? 'equals');
 
 const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft[] => {
   const fallback = defaultOp(ops);
@@ -142,6 +144,11 @@ const filled = (row: ConditionDraft, ops: FilterOperatorDescriptor[]) => {
 const normalize = (rows: ConditionDraft[], ops: FilterOperatorDescriptor[]): ConditionDraft[] => {
   const fallback = defaultOp(ops);
   const safe = rows.length ? rows : [{ id: mk(), operator: fallback, value: '', value2: '' }];
+  if (boolOps(ops)) {
+    const selected =
+      safe.find((row) => row.operator === 'isFalse' || row.operator === 'isTrue') ?? safe[0];
+    return [{ ...selected, operator: selected.operator || fallback, value: '', value2: '' }];
+  }
   const lastFilled = [...safe]
     .map((row, idx) => (filled(row, ops) ? idx : -1))
     .reduce((acc, idx) => Math.max(acc, idx), -1);
@@ -431,11 +438,6 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     });
                   }}
                 >
-                  {boolOps(operators) ? (
-                    <option value="" disabled>
-                      {translation('Choose one')}
-                    </option>
-                  ) : null}
                   {operators.map((op) => (
                     <option key={op.key} value={op.key}>
                       {translation(op.label)}
