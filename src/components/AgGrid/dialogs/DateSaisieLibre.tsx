@@ -26,7 +26,7 @@ const buildDateSaisieLibreOption = (
   rawTranslationKey: string,
 ): DateSaisieLibreOption | null => {
   const value = Number(rawValue);
-  if (!Number.isInteger(value) || value < 1 || value > 140) return null;
+  if (!Number.isInteger(value) || value < 1 || value > 142) return null;
   const translationKey = String(rawTranslationKey ?? '').trim();
   if (!translationKey) return null;
   const code = String(value).padStart(3, '0');
@@ -37,12 +37,42 @@ const buildDateSaisieLibreOption = (
   };
 };
 
+const dateSaisieLibreTranslationOrder = (option: DateSaisieLibreOption): number => {
+  const match = option.translationKey.match(/^(\d{2,3})_/);
+  const value = match ? Number(match[1]) : Number.NaN;
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+};
+
+const sameCodeDateSaisieLibreOrder = (option: DateSaisieLibreOption): number => {
+  switch (option.translationKey) {
+    case '009_date_du_jour_7_jours':
+      return 0;
+    case '009_date_du_jour_14_jours':
+      return 1;
+    case '025_fin_of_semaine_suivante':
+      return 0;
+    case '025_debut_du_mois_courant_2':
+      return 1;
+    case '025_fin_du_mois_courant_2':
+      return 2;
+    default:
+      return 0;
+  }
+};
+
 export const DATE_SAISIE_LIBRE_OPTIONS: DateSaisieLibreOption[] = Object.entries(
   rawDateSaisieLibre as Record<string, string>,
 )
   .map(([value, label]) => buildDateSaisieLibreOption(value, label))
   .filter((option): option is DateSaisieLibreOption => option !== null)
-  .sort((a, b) => a.value - b.value);
+  .sort((a, b) => {
+    const byTranslationCode =
+      dateSaisieLibreTranslationOrder(a) - dateSaisieLibreTranslationOrder(b);
+    if (byTranslationCode !== 0) return byTranslationCode;
+    const bySameCode = sameCodeDateSaisieLibreOrder(a) - sameCodeDateSaisieLibreOrder(b);
+    if (bySameCode !== 0) return bySameCode;
+    return a.translationKey.localeCompare(b.translationKey);
+  });
 
 export const getDateSaisieLibreOptionByValue = (
   rawValue: string | number | null | undefined,
