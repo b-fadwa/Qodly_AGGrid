@@ -330,7 +330,9 @@ export type CalculatedSearchExpressionCondition = {
     entryMode?: DateEntryMode;
     dateSaisieLibre?: boolean;
     dateSaisieLibreValue?: number;
+    dateSaisieLibreValueTo?: number;
     dateSaisieLibreKey?: string;
+    dateSaisieLibreKeyTo?: string;
   };
 };
 
@@ -746,7 +748,18 @@ export const CalculatedSearchDialog: FC<{
     if (selectedRelationNode.type !== 'attribute') return true;
     // Attribute requires an operator if operators exist and isn't the boolean sentinel.
     if (selectedIsDate && entryMode === 'list') {
-      return Boolean(targetOperator || targetOperators.length === 0) && Boolean(targetValue);
+      return (
+        Boolean(targetOperator || targetOperators.length === 0) &&
+        Boolean(targetValue) &&
+        (targetInputs < 2 || Boolean(targetValue2))
+      );
+    }
+    if (selectedIsDate) {
+      return (
+        Boolean(targetOperator || targetOperators.length === 0) &&
+        Boolean(targetValue) &&
+        (targetInputs < 2 || Boolean(targetValue2))
+      );
     }
     if (targetIsBooleanOperators) return Boolean(targetOperator);
     return Boolean(targetOperator || targetOperators.length === 0);
@@ -757,7 +770,9 @@ export const CalculatedSearchDialog: FC<{
     targetIsBooleanOperators,
     targetOperator,
     targetOperators.length,
+    targetInputs,
     targetValue,
+    targetValue2,
   ]);
 
   const buildConditionFromInputs = useCallback((): CalculatedSearchExpressionCondition | null => {
@@ -789,7 +804,9 @@ export const CalculatedSearchDialog: FC<{
     const v1 = String(targetValue ?? '');
     const v2 = String(targetValue2 ?? '');
     const dateSaisieLibreMeta =
-      selectedIsDate && entryMode === 'list' ? makeDateSaisieLibreConditionMeta(v1) : null;
+      selectedIsDate && entryMode === 'list'
+        ? makeDateSaisieLibreConditionMeta(v1, op === 'inRange' ? v2 : undefined)
+        : null;
     if (selectedIsDate && entryMode === 'list' && !dateSaisieLibreMeta) return null;
 
     return {
@@ -797,7 +814,7 @@ export const CalculatedSearchDialog: FC<{
       comparison: {
         operator: op,
         value: v1,
-        value2: entryMode === 'list' ? '' : v2,
+        value2: op === 'inRange' ? v2 : '',
         entryMode,
         ...(selectedIsDate && entryMode === 'free' ? { dateSaisieLibre: false } : {}),
         ...(dateSaisieLibreMeta ?? {}),
@@ -1047,7 +1064,9 @@ export const CalculatedSearchDialog: FC<{
       // Comparison inputs (only for attribute rows)
       setTargetOperator(String(row.comparison?.operator ?? ''));
       setTargetValue(String(row.comparison?.value ?? ''));
-      setTargetValue2(String(row.comparison?.value2 ?? ''));
+      setTargetValue2(
+        String(row.comparison?.value2 ?? row.comparison?.dateSaisieLibreValueTo ?? ''),
+      );
     },
     [expression.conditions, relationTree],
   );
@@ -1384,24 +1403,47 @@ export const CalculatedSearchDialog: FC<{
                               ))}
                             </div>
                             {entryMode === 'list' ? (
-                              <DateSaisieLibreSelect
-                                className="h-8 w-full rounded border px-3 text-xs outline-none"
-                                value={targetValue}
-                                translation={translation}
-                                translateDateKey={dateSaisieLibreTranslation}
-                                onChange={(value) => {
-                                  setTargetValue(value);
-                                  setTargetValue2('');
-                                }}
-                              />
+                              <div className="flex flex-col gap-2">
+                                <DateSaisieLibreSelect
+                                  className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                  value={targetValue}
+                                  translation={translation}
+                                  translateDateKey={dateSaisieLibreTranslation}
+                                  onChange={(value) => {
+                                    setTargetValue(value);
+                                  }}
+                                />
+                                {targetInputs === 2 ? (
+                                  <DateSaisieLibreSelect
+                                    className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                    value={targetValue2}
+                                    translation={translation}
+                                    translateDateKey={dateSaisieLibreTranslation}
+                                    onChange={(value) => {
+                                      setTargetValue2(value);
+                                    }}
+                                  />
+                                ) : null}
+                              </div>
                             ) : (
-                              <input
-                                type="date"
-                                className="h-8 w-full rounded border px-3 text-xs outline-none"
-                                placeholder={translation('Filter...')}
-                                value={targetValue}
-                                onChange={(e) => setTargetValue(e.target.value)}
-                              />
+                              <div className="flex flex-col gap-2">
+                                <input
+                                  type="date"
+                                  className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                  placeholder={translation('Filter...')}
+                                  value={targetValue}
+                                  onChange={(e) => setTargetValue(e.target.value)}
+                                />
+                                {targetInputs === 2 ? (
+                                  <input
+                                    type="date"
+                                    className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                    placeholder={translation('Filter...')}
+                                    value={targetValue2}
+                                    onChange={(e) => setTargetValue2(e.target.value)}
+                                  />
+                                ) : null}
+                              </div>
                             )}
                           </div>
                         ) : null}
@@ -1519,12 +1561,29 @@ export const CalculatedSearchDialog: FC<{
                         row.isAttribute && row.comparison
                           ? row.comparison.entryMode === 'list'
                             ? (() => {
-                                const option = getDateSaisieLibreOptionByValue(
+                                const rawValue2 =
+                                  row.comparison?.value2 ??
+                                  (row.comparison?.dateSaisieLibreValueTo != null
+                                    ? String(row.comparison.dateSaisieLibreValueTo)
+                                    : '');
+                                const optionFrom = getDateSaisieLibreOptionByValue(
                                   row.comparison?.value,
                                 );
-                                return option
-                                  ? dateSaisieLibreDisplayLabel(option, dateSaisieLibreTranslation)
+                                const fromText = optionFrom
+                                  ? dateSaisieLibreDisplayLabel(
+                                      optionFrom,
+                                      dateSaisieLibreTranslation,
+                                    )
                                   : (row.comparison?.value ?? '—');
+                                if (!rawValue2) return fromText;
+                                const optionTo = getDateSaisieLibreOptionByValue(rawValue2);
+                                const toText = optionTo
+                                  ? dateSaisieLibreDisplayLabel(
+                                      optionTo,
+                                      dateSaisieLibreTranslation,
+                                    )
+                                  : rawValue2;
+                                return `${fromText} ; ${toText}`;
                               })()
                             : row.comparison.value2
                               ? `${row.comparison.value ?? ''} ; ${row.comparison.value2 ?? ''}`
