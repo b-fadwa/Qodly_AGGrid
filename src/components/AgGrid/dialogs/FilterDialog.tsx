@@ -11,6 +11,7 @@ interface FilterDialogProps {
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  dateSaisieLibreTranslation?: (key: string) => string;
   i18n?: any;
   lang?: string;
   columns: IColumn[];
@@ -56,6 +57,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   open,
   onClose,
   translation,
+  dateSaisieLibreTranslation,
   i18n,
   lang,
   columns,
@@ -204,6 +206,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             ref={queryBuilderRef}
             deferEmit
             translation={translation}
+            dateSaisieLibreTranslation={dateSaisieLibreTranslation}
             columns={visibleColumns}
             i18n={i18n}
             lang={lang}

@@ -1,4 +1,9 @@
 import { format } from 'date-fns';
+import {
+  DATE_SAISIE_LIBRE_FLAG,
+  DATE_SAISIE_LIBRE_VALUE,
+  isDateSaisieLibreCondition,
+} from './dialogs/DateSaisieLibre';
 
 export const MAX_FILTER_CONDITIONS = 10;
 
@@ -368,6 +373,12 @@ export const buildFilterQuery = (filter: any, source: string, column?: any): str
           return '';
       }
     case 'date': {
+      if (isDateSaisieLibreCondition(filter)) {
+        const specialValue = Number(filter[DATE_SAISIE_LIBRE_VALUE]);
+        return Number.isInteger(specialValue)
+          ? `${source} ${DATE_SAISIE_LIBRE_FLAG} ${specialValue}`
+          : '';
+      }
       const dateFrom = new Date(filter.dateFrom);
       switch (filter.type) {
         case 'equals':

@@ -14,6 +14,13 @@ import {
 
 import type { SavedSort } from '../state/types';
 import { getColumnAgGridFilterType, getColumnFilterOperators } from '../AgGrid.filtering';
+import {
+  DateSaisieLibreSelect,
+  dateSaisieLibreDisplayLabel,
+  getDateSaisieLibreOptionByValue,
+  makeDateSaisieLibreConditionMeta,
+  type DateEntryMode,
+} from './DateSaisieLibre';
 
 type Translation = (key: string) => string;
 
@@ -320,7 +327,10 @@ export type CalculatedSearchExpressionCondition = {
     /** Serialized as strings because inputs are string-based in the UI (including dates). */
     value?: string;
     value2?: string;
-    entryMode?: 'free' | 'list';
+    entryMode?: DateEntryMode;
+    dateSaisieLibre?: boolean;
+    dateSaisieLibreValue?: number;
+    dateSaisieLibreKey?: string;
   };
 };
 
@@ -456,6 +466,7 @@ export const CalculatedSearchDialog: FC<{
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  dateSaisieLibreTranslation?: (key: string) => string;
   relationTree: RelationTreeNode[];
   savedSorts: SavedSort[];
   /** Toolbar / grid selected saved sort name; synced when the dialog opens. */
@@ -477,6 +488,7 @@ export const CalculatedSearchDialog: FC<{
   open,
   onClose,
   translation,
+  dateSaisieLibreTranslation,
   relationTree,
   savedSorts,
   selectedSortKey: _selectedSortKey,
@@ -506,7 +518,7 @@ export const CalculatedSearchDialog: FC<{
   const [targetOperator, setTargetOperator] = useState<string>('');
   const [targetValue, setTargetValue] = useState<string>('');
   const [targetValue2, setTargetValue2] = useState<string>('');
-  const [entryMode, setEntryMode] = useState<'free' | 'list'>('free');
+  const [entryMode, setEntryMode] = useState<DateEntryMode>('free');
   const [logicForNewCondition, setLogicForNewCondition] = useState<ExpressionLogicKind>('and');
   const [expression, setExpression] = useState<CalculatedSearchExpression>(() => ({
     conditions: [],
@@ -733,9 +745,20 @@ export const CalculatedSearchDialog: FC<{
     // We allow table nodes too (comparison will be omitted).
     if (selectedRelationNode.type !== 'attribute') return true;
     // Attribute requires an operator if operators exist and isn't the boolean sentinel.
+    if (selectedIsDate && entryMode === 'list') {
+      return Boolean(targetOperator || targetOperators.length === 0) && Boolean(targetValue);
+    }
     if (targetIsBooleanOperators) return Boolean(targetOperator);
     return Boolean(targetOperator || targetOperators.length === 0);
-  }, [selectedRelationNode, targetIsBooleanOperators, targetOperator, targetOperators.length]);
+  }, [
+    entryMode,
+    selectedIsDate,
+    selectedRelationNode,
+    targetIsBooleanOperators,
+    targetOperator,
+    targetOperators.length,
+    targetValue,
+  ]);
 
   const buildConditionFromInputs = useCallback((): CalculatedSearchExpressionCondition | null => {
     if (!selectedRelationNode) return null;
@@ -765,14 +788,19 @@ export const CalculatedSearchDialog: FC<{
     const op = String(targetOperator ?? '').trim();
     const v1 = String(targetValue ?? '');
     const v2 = String(targetValue2 ?? '');
+    const dateSaisieLibreMeta =
+      selectedIsDate && entryMode === 'list' ? makeDateSaisieLibreConditionMeta(v1) : null;
+    if (selectedIsDate && entryMode === 'list' && !dateSaisieLibreMeta) return null;
 
     return {
       ...base,
       comparison: {
         operator: op,
         value: v1,
-        value2: v2,
+        value2: entryMode === 'list' ? '' : v2,
         entryMode,
+        ...(selectedIsDate && entryMode === 'free' ? { dateSaisieLibre: false } : {}),
+        ...(dateSaisieLibreMeta ?? {}),
       },
     };
   }, [
@@ -781,6 +809,7 @@ export const CalculatedSearchDialog: FC<{
     expression.conditions.length,
     logicForNewCondition,
     normalizeConstraintDrafts,
+    selectedIsDate,
     selectedLabel,
     selectedRelationNode,
     targetOperator,
@@ -1106,7 +1135,7 @@ export const CalculatedSearchDialog: FC<{
               {/* Column 1 — Available fields */}
               <div
                 className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden rounded border border-slate-200 bg-white"
-                style={{ minHeight: '200px', maxHeight: '300px' }}
+                style={{ minHeight: '200px', maxHeight: '330px' }}
               >
                 <div
                   className="border-b border-slate-200 bg-slate-50 px-2 py-1.5"
@@ -1212,55 +1241,57 @@ export const CalculatedSearchDialog: FC<{
                           </select>
                         </label>
                         <div>
-                        <span
-                          className="mb-1 block font-medium text-slate-600"
-                          style={{ fontSize: '11px' }}
-                        >
-                          {translation('Number of related records')}
-                        </span>
-                        <div className="flex flex-wrap items-end">
-                          <label className="flex flex-row items-center gap-1 text-left w-1/2 px-1">
-                            <span style={styleLabel11}>{translation('From')}</span>
-                            <input
-                              type="number"
-                              className="h-7 rounded border px-1 text-xs leading-tight w-full"
-                              min={0}
-                              max={999}
-                              value={constraintFromDraft}
-                              disabled={!selectedRelationNode}
-                              onBlur={normalizeConstraintDrafts}
-                              onChange={(e) => {
-                                const next = e.target.value;
-                                setConstraintFromDraft(next);
-                                const parsed = Number(next);
-                                if (next !== '' && Number.isFinite(parsed)) {
-                                  setConstraintFrom(Math.min(Math.max(0, parsed), 999));
-                                }
-                              }}
-                            />
-                          </label>
-                          <label className="flex flex-row items-center gap-1 text-left w-1/2 px-1">
-                            <span style={styleLabel11}>{translation('To')}</span>
-                            <input
-                              type="number"
-                              className="h-7 rounded border px-1 text-xs leading-tight w-full"
-                              min={constraintFrom}
-                              max={999}
-                              value={constraintToDraft}
-                              disabled={!selectedRelationNode}
-                              onBlur={normalizeConstraintDrafts}
-                              onChange={(e) => {
-                                const next = e.target.value;
-                                setConstraintToDraft(next);
-                                const parsed = Number(next);
-                                if (next !== '' && Number.isFinite(parsed)) {
-                                  setConstraintToDraft(String(Math.min(Math.max(0, parsed), 999)));
-                                }
-                              }}
-                            />
-                          </label>
+                          <span
+                            className="mb-1 block font-medium text-slate-600"
+                            style={{ fontSize: '11px' }}
+                          >
+                            {translation('Number of related records')}
+                          </span>
+                          <div className="flex flex-wrap items-end">
+                            <label className="flex flex-row items-center gap-1 text-left w-1/2 px-1">
+                              <span style={styleLabel11}>{translation('From')}</span>
+                              <input
+                                type="number"
+                                className="h-7 rounded border px-1 text-xs leading-tight w-full"
+                                min={0}
+                                max={999}
+                                value={constraintFromDraft}
+                                disabled={!selectedRelationNode}
+                                onBlur={normalizeConstraintDrafts}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setConstraintFromDraft(next);
+                                  const parsed = Number(next);
+                                  if (next !== '' && Number.isFinite(parsed)) {
+                                    setConstraintFrom(Math.min(Math.max(0, parsed), 999));
+                                  }
+                                }}
+                              />
+                            </label>
+                            <label className="flex flex-row items-center gap-1 text-left w-1/2 px-1">
+                              <span style={styleLabel11}>{translation('To')}</span>
+                              <input
+                                type="number"
+                                className="h-7 rounded border px-1 text-xs leading-tight w-full"
+                                min={constraintFrom}
+                                max={999}
+                                value={constraintToDraft}
+                                disabled={!selectedRelationNode}
+                                onBlur={normalizeConstraintDrafts}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setConstraintToDraft(next);
+                                  const parsed = Number(next);
+                                  if (next !== '' && Number.isFinite(parsed)) {
+                                    setConstraintToDraft(
+                                      String(Math.min(Math.max(0, parsed), 999)),
+                                    );
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
                         </div>
-                      </div>
                       </>
                     )}
                   </div>
@@ -1301,10 +1332,10 @@ export const CalculatedSearchDialog: FC<{
                             ))}
                           </select>
 
-                          {targetInputs >= 1 ? (
+                          {targetInputs >= 1 && !selectedIsDate ? (
                             targetFilterType === 'qodlyRefSelect' ? (
                               <select
-                                className="h-8 w-full rounded border px-3 text-sm outline-none"
+                                className="h-8 w-full rounded border px-3 text-xs outline-none"
                                 value={targetValue}
                                 onChange={(e) => setTargetValue(e.target.value)}
                               >
@@ -1318,7 +1349,7 @@ export const CalculatedSearchDialog: FC<{
                             ) : (
                               <input
                                 type={targetHtmlInputType}
-                                className="h-8 w-full rounded border px-3 text-sm outline-none"
+                                className="h-8 w-full rounded border px-3 text-xs outline-none"
                                 placeholder={translation('Filter...')}
                                 value={targetValue}
                                 onChange={(e) => setTargetValue(e.target.value)}
@@ -1327,31 +1358,64 @@ export const CalculatedSearchDialog: FC<{
                           ) : null}
                         </div>
 
-                        {targetInputs === 2 ? (
+                        {selectedIsDate && targetInputs >= 1 ? (
+                          <div className="flex flex-col gap-2 rounded border border-slate-200 bg-white p-2">
+                            <div className="flex flex-wrap items-center gap-3" style={styleBody11}>
+                              {(['free', 'list'] as DateEntryMode[]).map((mode) => (
+                                <label
+                                  key={mode}
+                                  className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700"
+                                >
+                                  <input
+                                    type="radio"
+                                    name="calcsearch-date-entry-mode"
+                                    checked={entryMode === mode}
+                                    onChange={() => {
+                                      setEntryMode(mode);
+                                      setTargetValue('');
+                                      setTargetValue2('');
+                                    }}
+                                    style={styleControl14}
+                                  />
+                                  <span>
+                                    {translation(mode === 'free' ? 'Free entry' : 'From List')}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                            {entryMode === 'list' ? (
+                              <DateSaisieLibreSelect
+                                className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                value={targetValue}
+                                translation={translation}
+                                translateDateKey={dateSaisieLibreTranslation}
+                                onChange={(value) => {
+                                  setTargetValue(value);
+                                  setTargetValue2('');
+                                }}
+                              />
+                            ) : (
+                              <input
+                                type="date"
+                                className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                placeholder={translation('Filter...')}
+                                value={targetValue}
+                                onChange={(e) => setTargetValue(e.target.value)}
+                              />
+                            )}
+                          </div>
+                        ) : null}
+
+                        {targetInputs === 2 && !selectedIsDate ? (
                           <input
                             type={targetHtmlInputType}
-                            className="h-8 w-full rounded border px-3 text-sm outline-none"
+                            className="h-8 w-full rounded border px-3 text-xs outline-none"
                             placeholder={translation('Filter...')}
                             value={targetValue2}
                             onChange={(e) => setTargetValue2(e.target.value)}
                           />
                         ) : null}
                       </div>
-                      {selectedIsDate ? (
-                        <div className="mt-2">
-                          <label className="flex w-full flex-col gap-1 text-left">
-                            <span style={styleLabel11}>{translation('Entry mode')}</span>
-                            <select
-                              className="h-7 w-full rounded border px-2 text-xs outline-none"
-                              value={entryMode}
-                              onChange={(e) => setEntryMode(e.target.value as 'free' | 'list')}
-                            >
-                              <option value="free">{translation('Free entry')}</option>
-                              <option value="list">{translation('From list')}</option>
-                            </select>
-                          </label>
-                        </div>
-                      ) : null}
                     </>
                   )}
                 </section>
@@ -1453,9 +1517,18 @@ export const CalculatedSearchDialog: FC<{
                         : '—';
                       const targetText =
                         row.isAttribute && row.comparison
-                          ? row.comparison.value2
-                            ? `${row.comparison.value ?? ''} ; ${row.comparison.value2 ?? ''}`
-                            : (row.comparison.value ?? '—')
+                          ? row.comparison.entryMode === 'list'
+                            ? (() => {
+                                const option = getDateSaisieLibreOptionByValue(
+                                  row.comparison?.value,
+                                );
+                                return option
+                                  ? dateSaisieLibreDisplayLabel(option, dateSaisieLibreTranslation)
+                                  : (row.comparison?.value ?? '—');
+                              })()
+                            : row.comparison.value2
+                              ? `${row.comparison.value ?? ''} ; ${row.comparison.value2 ?? ''}`
+                              : (row.comparison.value ?? '—')
                           : '—';
                       return (
                         <button

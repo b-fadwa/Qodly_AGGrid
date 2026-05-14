@@ -678,6 +678,8 @@ const AgGrid: FC<IAgGridProps> = ({
       get(i18n, `keys.aggrid_${formattedKey}.default`, key),
     );
   };
+  const dateSaisieLibreTranslation = (key: string): string =>
+    get(i18n, `keys.${key}.${lang}`, get(i18n, `keys.${key}.default`, key));
 
   const { fetchIndex } = useDataLoader({
     source: ds,
@@ -2939,6 +2941,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showCalculatedSearchDialog}
                       onClose={() => setShowCalculatedSearchDialog(false)}
                       translation={translation}
+                      dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                       relationTree={relationTreeValue}
                       savedSorts={sortsManager.savedSorts}
                       selectedSortKey={selectedSortName}
@@ -3233,6 +3236,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showFilterDialog}
                       onClose={() => setShowFilterDialog(false)}
                       translation={translation}
+                      dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                       i18n={i18n}
                       lang={lang}
                       columns={columns}
@@ -3396,6 +3400,7 @@ const AgGrid: FC<IAgGridProps> = ({
               filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
               onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
               translation={translation}
+              dateSaisieLibreTranslation={dateSaisieLibreTranslation}
               onApply={(nextModel) => {
                 applyHeaderFilterModel(nextModel ?? {});
               }}

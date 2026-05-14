@@ -22,6 +22,12 @@ import {
   refOptionI18nCompositeKey,
   withAdvancedRulesOnFilterModel,
 } from '../AgGrid.filtering';
+import {
+  DateSaisieLibreSelect,
+  makeDateSaisieLibreConditionMeta,
+  readDateSaisieLibreConditionValue,
+  type DateEntryMode,
+} from './DateSaisieLibre';
 
 /**
  * Delay applied to value-input changes before pushing them up to AG Grid.
@@ -61,6 +67,7 @@ export interface FilterRule {
   operator: string;
   value: string;
   value2?: string;
+  entryMode?: DateEntryMode;
   /** Combinator joining this rule with the previous global rule. */
   combinator?: ColumnCombinator;
 }
@@ -74,6 +81,7 @@ export type QueryBuilderHandle = {
 
 interface QueryBuilderProps {
   translation: Translation;
+  dateSaisieLibreTranslation?: (key: string) => string;
   columns: IColumn[];
   i18n?: any;
   lang?: string;
@@ -101,6 +109,14 @@ const defaultOperatorForColumn = (column: IColumn | undefined): string => {
   return operators.find((op) => op.key === 'isTrue')?.key ?? operators[0]?.key ?? 'equals';
 };
 
+const dateEntryModeForCondition = (
+  filterType: string | null,
+  condition: any,
+): DateEntryMode | undefined => {
+  if (filterType !== 'date') return undefined;
+  return condition?.dateSaisieLibre ? 'list' : 'free';
+};
+
 /** Read a value from a single AG Grid condition payload. */
 const readConditionValues = (
   condition: any,
@@ -108,6 +124,12 @@ const readConditionValues = (
 ): { value: string; value2: string } => {
   if (!condition || typeof condition !== 'object') return { value: '', value2: '' };
   if (filterType === 'date') {
+    if (condition.dateSaisieLibre) {
+      return {
+        value: readDateSaisieLibreConditionValue(condition),
+        value2: '',
+      };
+    }
     return {
       value: condition.dateFrom != null ? String(condition.dateFrom) : '',
       value2: condition.dateTo != null ? String(condition.dateTo) : '',
@@ -142,6 +164,7 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
         operator: rule.condition?.type ?? '',
         value,
         value2,
+        entryMode: dateEntryModeForCondition(filterType, rule.condition),
         combinator: index === 0 ? undefined : rule.combinator,
       };
     });
@@ -164,6 +187,7 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
           operator: condition?.type ?? '',
           value,
           value2,
+          entryMode: dateEntryModeForCondition(filterType, condition),
           combinator: index === 0 ? undefined : combinator,
         });
       });
@@ -177,6 +201,7 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
         operator: entry?.type ?? '',
         value,
         value2,
+        entryMode: dateEntryModeForCondition(filterType, entry),
         combinator: isFirstRule
           ? undefined
           : readCombinator(entry?.qodlyCombinator ?? entry?.operator),
@@ -250,12 +275,24 @@ const buildCondition = (
   }
 
   if (filterType === 'date') {
+    if (rule.entryMode === 'list') {
+      const meta = makeDateSaisieLibreConditionMeta(rule.value);
+      if (!meta) return null;
+      return {
+        filterType,
+        type: rule.operator,
+        dateFrom: null,
+        dateTo: null,
+        ...meta,
+      };
+    }
     if (!rule.value) return null;
     return {
       filterType,
       type: rule.operator,
       dateFrom: rule.value,
       dateTo: rule.value2 || null,
+      dateSaisieLibre: false,
     };
   }
   if (filterType === 'qodlyRefSelect') {
@@ -345,6 +382,7 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
   function QueryBuilder(
     {
       translation,
+      dateSaisieLibreTranslation,
       columns,
       i18n,
       lang,
@@ -503,6 +541,7 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
       field: defaultColumn.source ?? defaultColumn.title,
       operator: defaultOperatorForColumn(defaultColumn),
       value: '',
+      entryMode: inputTypeFor(defaultColumn) === 'date' ? 'free' : undefined,
     });
     // Keep the new rule as a local draft row until it becomes compilable.
     setDraftRulesOnly(next);
@@ -549,6 +588,7 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
                 )}
                 <RuleRow
                   translation={translation}
+                  dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                   columns={visibleColumns}
                   i18n={i18n}
                   lang={lang}
@@ -606,6 +646,7 @@ const CombinatorBadge: FC<CombinatorBadgeProps> = ({ translation, value, onChang
 
 interface RuleRowProps {
   translation: Translation;
+  dateSaisieLibreTranslation?: (key: string) => string;
   columns: IColumn[];
   i18n?: any;
   lang?: string;
@@ -621,6 +662,7 @@ interface RuleRowProps {
 
 const RuleRow: FC<RuleRowProps> = ({
   translation,
+  dateSaisieLibreTranslation,
   columns,
   i18n,
   lang,
@@ -638,6 +680,7 @@ const RuleRow: FC<RuleRowProps> = ({
   const operatorDescriptor = operators.find((op) => op.key === rule.operator) ?? operators[0];
   const inputCount = operatorDescriptor?.inputs ?? 1;
   const htmlInputType = inputTypeFor(column);
+  const isDateInput = htmlInputType === 'date';
   const isCollection = operatorDescriptor?.key === COLLECTION_OPERATOR_KEY;
   const collectionTokens = useMemo(() => parseCollectionTokens(rule.value), [rule.value]);
   const filterType = useMemo(() => getColumnAgGridFilterType(column), [column]);
@@ -698,7 +741,13 @@ const RuleRow: FC<RuleRowProps> = ({
     const nextOperator = nextOperators.some((op) => op.key === rule.operator)
       ? rule.operator
       : defaultOperatorForColumn(nextColumn);
-    onChange({ field: nextKey, operator: nextOperator, value: '', value2: '' });
+    onChange({
+      field: nextKey,
+      operator: nextOperator,
+      value: '',
+      value2: '',
+      entryMode: inputTypeFor(nextColumn) === 'date' ? 'free' : undefined,
+    });
   };
 
   return (
@@ -741,6 +790,26 @@ const RuleRow: FC<RuleRowProps> = ({
 
       {inputCount >= 1 && (
         <div style={{ flex: 1, minWidth: '160px' }}>
+          {isDateInput ? (
+            <div className="mb-1 flex gap-1">
+              {(['free', 'list'] as DateEntryMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      entryMode: mode,
+                      value: '',
+                      value2: '',
+                    })
+                  }
+                  style={(rule.entryMode ?? 'free') === mode ? primaryButtonStyle : neutralButtonStyle}
+                >
+                  {translation(mode === 'free' ? 'Free entry' : 'Saisie libre')}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {isCollection && collectionTokens.length ? (
             <div className="mb-1 flex flex-wrap gap-1">
               {collectionTokens.map((token) => (
@@ -768,7 +837,15 @@ const RuleRow: FC<RuleRowProps> = ({
             </div>
           ) : null}
 
-          {filterType === 'qodlyRefSelect' && refOptions.length ? (
+          {isDateInput && rule.entryMode === 'list' ? (
+            <DateSaisieLibreSelect
+              translation={translation}
+              translateDateKey={dateSaisieLibreTranslation}
+              value={rule.value ?? ''}
+              onChange={(value) => onChange({ value, value2: '' })}
+              style={{ ...selectStyle, width: '100%' }}
+            />
+          ) : filterType === 'qodlyRefSelect' && refOptions.length ? (
             <select
               style={{ ...selectStyle, width: '100%' }}
               value={rule.value ?? ''}
@@ -814,7 +891,8 @@ const RuleRow: FC<RuleRowProps> = ({
           )}
         </div>
       )}
-      {inputCount >= 2 && (
+      {inputCount >= 2 &&
+        (isDateInput && rule.entryMode === 'list' ? null : (
         <input
           type={htmlInputType}
           placeholder={translation('Value 2')}
@@ -826,7 +904,7 @@ const RuleRow: FC<RuleRowProps> = ({
             if (e.key === 'Enter') onValueCommit();
           }}
         />
-      )}
+        ))}
 
       <button
         type="button"

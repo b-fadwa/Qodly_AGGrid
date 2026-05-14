@@ -13,12 +13,19 @@ import {
   refOptionI18nCompositeKey,
   withAdvancedRulesOnFilterModel,
 } from '../AgGrid.filtering';
+import {
+  DateSaisieLibreSelect,
+  makeDateSaisieLibreConditionMeta,
+  readDateSaisieLibreConditionValue,
+  type DateEntryMode,
+} from './DateSaisieLibre';
 
 interface ConditionDraft {
   id: string;
   operator: string;
   value: string;
   value2: string;
+  entryMode?: DateEntryMode;
 }
 
 const COLLECTION_OPERATOR_KEY = 'inCollection';
@@ -48,6 +55,7 @@ interface HeaderFilterPopupProps {
   filterInactiveRecordsEnabled: boolean;
   onFilterInactiveRecordsEnabledChange: (enabled: boolean) => void;
   translation: (key: string) => string;
+  dateSaisieLibreTranslation?: (key: string) => string;
   onApply: (nextModel: any | null) => void;
   onClose: () => void;
 }
@@ -79,8 +87,9 @@ const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft
   const rows = conditions.map((c: any) => ({
     id: mk(),
     operator: c?.type ?? fallback,
-    value:
-      c?.filter != null
+    value: c?.dateSaisieLibre
+      ? readDateSaisieLibreConditionValue(c)
+      : c?.filter != null
         ? String(c.filter)
         : c?.dateFrom != null
           ? String(c.dateFrom)
@@ -88,6 +97,7 @@ const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft
             ? String(c.value)
             : '',
     value2: c?.filterTo != null ? String(c.filterTo) : c?.dateTo != null ? String(c.dateTo) : '',
+    entryMode: c?.filterType === 'date' ? (c?.dateSaisieLibre ? 'list' : 'free') : undefined,
   }));
   return rows.length ? rows : [{ id: mk(), operator: fallback, value: '', value2: '' }];
 };
@@ -100,8 +110,19 @@ const toCondition = (
   if (!row.operator) return null;
   if (ZERO_INPUT_OPERATORS.has(row.operator)) return { filterType, type: row.operator };
   if (filterType === 'date') {
+    if (row.entryMode === 'list') {
+      const meta = makeDateSaisieLibreConditionMeta(row.value);
+      if (!meta) return null;
+      return { filterType, type: row.operator, dateFrom: null, dateTo: null, ...meta };
+    }
     if (!row.value) return null;
-    return { filterType, type: row.operator, dateFrom: row.value, dateTo: row.value2 || null };
+    return {
+      filterType,
+      type: row.operator,
+      dateFrom: row.value,
+      dateTo: row.value2 || null,
+      dateSaisieLibre: false,
+    };
   }
   if (filterType === 'qodlyRefSelect') {
     const raw = String(row.value ?? '').trim();
@@ -240,6 +261,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   filterInactiveRecordsEnabled,
   onFilterInactiveRecordsEnabledChange,
   translation,
+  dateSaisieLibreTranslation,
   onApply,
   onClose,
 }) => {
@@ -404,6 +426,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
           const isCollection = selectedOp?.key === COLLECTION_OPERATOR_KEY;
           const tokens = parseCollectionTokens(row.value);
           const canDelete = rows.length > 1;
+          const isDateInput = inputType === 'date';
           return (
             <div key={row.id}>
               {idx > 0 ? (
@@ -465,6 +488,37 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
               {inputs >= 1 ? (
                 <div className="mb-1 flex items-center gap-2">
                   <div style={{ width: '100%', display: 'grid' }}>
+                    {isDateInput ? (
+                      <div className="mb-1 flex flex-wrap items-center gap-3">
+                        {(['free', 'list'] as DateEntryMode[]).map((mode) => (
+                          <label
+                            key={mode}
+                            className="inline-flex cursor-pointer items-center gap-1.5"
+                            style={{ color: '#334155', fontSize: '13px' }}
+                          >
+                            <input
+                              type="radio"
+                              name={`header-filter-date-entry-mode-${row.id}`}
+                              checked={(row.entryMode ?? 'free') === mode}
+                              onChange={() => {
+                                setRows((prev) =>
+                                  normalize(
+                                    prev.map((r) =>
+                                      r.id === row.id
+                                        ? { ...r, entryMode: mode, value: '', value2: '' }
+                                        : r,
+                                    ),
+                                    operators,
+                                  ),
+                                );
+                              }}
+                              style={{ width: '14px', height: '14px', accentColor: '#2B5797' }}
+                            />
+                            <span>{translation(mode === 'free' ? 'Saisie libre' : 'From list')}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
                     {isCollection && tokens.length ? (
                       <div className="mb-1 flex flex-wrap gap-1">
                         {tokens.map((token) => (
@@ -500,7 +554,24 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                       </div>
                     ) : null}
 
-                    {filterType === 'qodlyRefSelect' ? (
+                    {isDateInput && row.entryMode === 'list' ? (
+                      <DateSaisieLibreSelect
+                        value={row.value}
+                        translation={translation}
+                        translateDateKey={dateSaisieLibreTranslation}
+                        style={{ ...styles.control, width: '100%' }}
+                        onChange={(nextValue) => {
+                          setRows((prev) => {
+                            return normalize(
+                              prev.map((r) =>
+                                r.id === row.id ? { ...r, value: nextValue, value2: '' } : r,
+                              ),
+                              operators,
+                            );
+                          });
+                        }}
+                      />
+                    ) : filterType === 'qodlyRefSelect' ? (
                       <select
                         value={row.value}
                         style={{ ...styles.control, width: '100%' }}
@@ -580,7 +651,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   ) : null}
                 </div>
               ) : null}
-              {inputs === 2 ? (
+              {inputs === 2 && !(isDateInput && row.entryMode === 'list') ? (
                 <input
                   type={inputType}
                   value={row.value2}
