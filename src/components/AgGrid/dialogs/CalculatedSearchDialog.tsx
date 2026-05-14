@@ -148,6 +148,7 @@ function sortSelectValueForPayload(
 }
 
 const ACCENT = '#2B5797';
+const ACCENT_SELECTED_BG = '#2B579733'; // 20% opacity
 
 const styleSectionHeading: CSSProperties = {
   fontSize: '12px',
@@ -245,7 +246,7 @@ function TreeNodeRow({
         className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-50"
         style={{
           paddingLeft: `${6 + depth * 12}px`,
-          background: isSelected ? 'rgba(43, 87, 151, 0.10)' : undefined,
+          background: isSelected ? ACCENT_SELECTED_BG : undefined,
         }}
       >
         <button
@@ -255,7 +256,7 @@ function TreeNodeRow({
             width: '12px',
             height: '18px',
             cursor: hasChildren ? 'pointer' : 'default',
-            color: '#64748B',
+            color: isSelected ? ACCENT : '#64748B',
           }}
           aria-label={expanded ? 'Collapse' : 'Expand'}
           aria-expanded={hasChildren ? expanded : undefined}
@@ -274,8 +275,15 @@ function TreeNodeRow({
           onClick={() => onSelect(node)}
           title={String(node.label ?? node.name ?? node.link ?? node.key)}
         >
-          {isAttribute ? <AttributeTypeIcon dataType={(node as any).dataType} /> : null}
-          <span className="truncate" style={{ fontSize: '12px' }}>
+          {isAttribute ? <AttributeTypeIcon dataType={node.dataType} /> : null}
+          <span
+            className="truncate"
+            style={{
+              color: isSelected ? ACCENT : undefined,
+              fontSize: '12px',
+              fontWeight: isSelected ? 600 : undefined,
+            }}
+          >
             {String(node.label ?? node.name ?? node.link ?? node.key)}
           </span>
         </button>
