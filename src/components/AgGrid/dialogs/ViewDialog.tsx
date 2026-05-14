@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
 import type { ViewsManager } from '../state/views';
@@ -21,6 +21,7 @@ interface ViewDialogProps {
   viewName: string;
   setViewName: (value: string) => void;
   selectedView: string;
+  setSelectedView: (value: string) => void;
   onLoadView: (value: string) => void;
   isViewDefault: boolean;
   setIsViewDefault: (value: boolean) => void;
@@ -29,10 +30,8 @@ interface ViewDialogProps {
   setPropertySearch: (value: string) => void;
   showVisibleOnly: boolean;
   setShowVisibleOnly: (value: boolean) => void;
-  filteredColumns: ViewDialogColumn[];
-  setFilteredColumnsVisible: (visible: boolean) => void;
-  handleColumnToggle: (field: string) => void;
-  handlePinChange: (field: string, value: string) => void;
+  columns: ViewDialogColumn[];
+  applyColumns: (columns: ViewDialogColumn[]) => void;
   columnLabelByStableField: Map<string, string>;
   savedFilters: SavedFilter[];
   viewLinkedFilterId: string;
@@ -48,6 +47,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
   viewName,
   setViewName,
   selectedView,
+  setSelectedView,
   onLoadView,
   isViewDefault,
   setIsViewDefault,
@@ -56,20 +56,115 @@ export const ViewDialog: FC<ViewDialogProps> = ({
   setPropertySearch,
   showVisibleOnly,
   setShowVisibleOnly,
-  filteredColumns,
-  setFilteredColumnsVisible,
-  handleColumnToggle,
-  handlePinChange,
+  columns,
+  applyColumns,
   columnLabelByStableField,
   savedFilters,
   viewLinkedFilterId,
   setViewLinkedFilterId,
 }) => {
-  if (!open) return null;
+  const [draftColumns, setDraftColumns] = useState<ViewDialogColumn[]>([]);
+  const [draftSelectedView, setDraftSelectedView] = useState('');
+  const wasOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setDraftColumns(columns.map((column) => ({ ...column })));
+      setDraftSelectedView(selectedView);
+    }
+    wasOpenRef.current = open;
+  }, [open, columns, selectedView]);
 
   const filterIdsWithOptions = new Set(savedFilters.map((f) => savedRecordKey(f)).filter(Boolean));
   const showGhostLinkedOption =
     viewLinkedFilterId !== '' && !filterIdsWithOptions.has(viewLinkedFilterId);
+
+  const filteredColumns = useMemo(() => {
+    const rawSearch = propertySearch.trim().toLowerCase();
+    const compactSearch = rawSearch.replace(/[_\s]+/g, '');
+
+    return [...draftColumns]
+      .sort((a, b) => {
+        const aVisible = !a.isHidden;
+        const bVisible = !b.isHidden;
+        if (aVisible !== bVisible) return aVisible ? -1 : 1;
+        const aLabel = String(columnLabelByStableField.get(a.field) ?? a.field);
+        const bLabel = String(columnLabelByStableField.get(b.field) ?? b.field);
+        const labelCompare = aLabel.localeCompare(bLabel, undefined, { sensitivity: 'base' });
+        if (labelCompare !== 0) return labelCompare;
+        return a.field.localeCompare(b.field);
+      })
+      .filter((column) => {
+        const isVisible = !column.isHidden;
+        if (showVisibleOnly && !isVisible) return false;
+        if (!rawSearch) return true;
+
+        const displayLabel = columnLabelByStableField.get(column.field) ?? column.field;
+        const field = column.field.toLowerCase();
+        const label = String(displayLabel).toLowerCase();
+        const compactField = field.replace(/[_\s]+/g, '');
+        const compactLabel = label.replace(/[_\s]+/g, '');
+        return (
+          field.includes(rawSearch) ||
+          compactField.includes(compactSearch) ||
+          label.includes(rawSearch) ||
+          compactLabel.includes(compactSearch)
+        );
+      });
+  }, [columnLabelByStableField, draftColumns, propertySearch, showVisibleOnly]);
+
+  const setFilteredColumnsVisible = (visible: boolean) => {
+    const visibleFields = new Set(filteredColumns.map((column) => column.field));
+    setDraftColumns((prev) =>
+      prev.map((column) =>
+        visibleFields.has(column.field) ? { ...column, isHidden: !visible } : column,
+      ),
+    );
+  };
+
+  const handleColumnToggle = (field: string) => {
+    setDraftColumns((prev) =>
+      prev.map((column) =>
+        column.field === field ? { ...column, isHidden: !column.isHidden } : column,
+      ),
+    );
+  };
+
+  const handlePinChange = (field: string, value: string) => {
+    const pinned = value === 'unpinned' ? null : (value as 'left' | 'right');
+    setDraftColumns((prev) =>
+      prev.map((column) => (column.field === field ? { ...column, pinned } : column)),
+    );
+  };
+
+  const handleSavedViewDraftSelection = (next: string) => {
+    setDraftSelectedView(next);
+    setSelectedView(next);
+    if (!next) return;
+    const record = viewsManager.savedViews.find((view) => savedRecordKey(view) === next);
+    if (!record || !Array.isArray(record.columnState)) return;
+    setDraftColumns((prev) =>
+      prev.map((column) => {
+        const state = record.columnState.find((entry: any) => entry?.colId === column.field);
+        if (!state) return column;
+        return {
+          ...column,
+          isHidden: Boolean(state.hide),
+          pinned: state.pinned || null,
+          width: state.width ?? (column as any).width ?? null,
+          flex: state.flex ?? (column as any).flex ?? null,
+        };
+      }),
+    );
+  };
+
+  const handleApply = () => {
+    if (draftSelectedView) {
+      onLoadView(draftSelectedView);
+    }
+    applyColumns(draftColumns);
+    onClose();
+  };
 
   const handleSaveOrUpdateView = () => {
     const trimmed = viewName.trim();
@@ -94,19 +189,21 @@ export const ViewDialog: FC<ViewDialogProps> = ({
             : {}),
         });
       }
-    } else if (selectedView) {
-      viewsManager.updateView(selectedView, linkedOpts);
+    } else if (draftSelectedView) {
+      viewsManager.updateView(draftSelectedView, linkedOpts);
     }
     setViewName('');
-    if (!selectedView) setIsViewDefault(false);
+    if (!draftSelectedView) setIsViewDefault(false);
   };
 
   const trimmedViewName = viewName.trim();
   const matchingView = trimmedViewName
     ? viewsManager.savedViews.find((v) => v.name === trimmedViewName || v.title === trimmedViewName)
     : null;
-  const willUpdateView = Boolean(matchingView) || (!trimmedViewName && !!selectedView);
-  const canSaveOrUpdateView = Boolean(trimmedViewName || selectedView);
+  const willUpdateView = Boolean(matchingView) || (!trimmedViewName && !!draftSelectedView);
+  const canSaveOrUpdateView = Boolean(trimmedViewName || draftSelectedView);
+
+  if (!open) return null;
 
   return (
     <div
@@ -333,11 +430,10 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                 </span>
                 <div className="flex gap-2">
                   <select
-                    value={selectedView}
+                    value={draftSelectedView}
                     className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
                     onChange={(e: any) => {
-                      const next = e.target.value;
-                      onLoadView(next);
+                      handleSavedViewDraftSelection(e.target.value);
                     }}
                     style={{
                       height: '31px',
@@ -391,8 +487,8 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                       backgroundColor: '#EC7B8033',
                     }}
                     onClick={() => {
-                      if (!selectedView) return;
-                      viewsManager.deleteView(selectedView);
+                      if (!draftSelectedView) return;
+                      viewsManager.deleteView(draftSelectedView);
                     }}
                   >
                     <GoTrash size={14} />
@@ -417,6 +513,37 @@ export const ViewDialog: FC<ViewDialogProps> = ({
             )}
           </div>
         )}
+        <div
+          className="flex w-full shrink-0 items-center justify-end gap-2 p-4"
+          style={{ borderTop: '1px solid #E5E7EB' }}
+        >
+          <button
+            type="button"
+            className="flex items-center justify-center rounded-md border px-3 py-2"
+            style={{
+              height: '31px',
+              borderRadius: '6px',
+              borderColor: '#0000001A',
+              color: '#44444C',
+              fontSize: '12px',
+            }}
+            onClick={onClose}
+          >
+            {translation('Cancel')}
+          </button>
+          <button
+            type="button"
+            className="flex items-center justify-center rounded-md border px-3 py-2 text-center text-sm text-white"
+            style={{
+              background: '#2B5797',
+              height: '31px',
+              fontSize: '12px',
+            }}
+            onClick={handleApply}
+          >
+            {translation('Apply')}
+          </button>
+        </div>
       </div>
     </div>
   );

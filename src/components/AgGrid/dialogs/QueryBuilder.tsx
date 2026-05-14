@@ -1,11 +1,4 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { FC } from 'react';
 import get from 'lodash/get';
 import { GoTrash } from 'react-icons/go';
@@ -22,6 +15,13 @@ import {
   refOptionI18nCompositeKey,
   withAdvancedRulesOnFilterModel,
 } from '../AgGrid.filtering';
+import {
+  DateSaisieLibreSelect,
+  makeDateSaisieLibreConditionMeta,
+  readDateSaisieLibreConditionValue,
+  readDateSaisieLibreConditionValueTo,
+  type DateEntryMode,
+} from './DateSaisieLibre';
 
 /**
  * Delay applied to value-input changes before pushing them up to AG Grid.
@@ -61,6 +61,7 @@ export interface FilterRule {
   operator: string;
   value: string;
   value2?: string;
+  entryMode?: DateEntryMode;
   /** Combinator joining this rule with the previous global rule. */
   combinator?: ColumnCombinator;
 }
@@ -74,6 +75,7 @@ export type QueryBuilderHandle = {
 
 interface QueryBuilderProps {
   translation: Translation;
+  dateSaisieLibreTranslation?: (key: string) => string;
   columns: IColumn[];
   i18n?: any;
   lang?: string;
@@ -96,6 +98,19 @@ const findColumnByKey = (columns: IColumn[], key: string): IColumn | undefined =
 const filterableColumns = (columns: IColumn[]): IColumn[] =>
   columns.filter((c) => getColumnAgGridFilterType(c) !== null && c.filtering);
 
+const defaultOperatorForColumn = (column: IColumn | undefined): string => {
+  const operators = getColumnFilterOperators(column);
+  return operators.find((op) => op.key === 'isTrue')?.key ?? operators[0]?.key ?? 'equals';
+};
+
+const dateEntryModeForCondition = (
+  filterType: string | null,
+  condition: any,
+): DateEntryMode | undefined => {
+  if (filterType !== 'date') return undefined;
+  return condition?.dateSaisieLibre ? 'list' : 'free';
+};
+
 /** Read a value from a single AG Grid condition payload. */
 const readConditionValues = (
   condition: any,
@@ -103,6 +118,12 @@ const readConditionValues = (
 ): { value: string; value2: string } => {
   if (!condition || typeof condition !== 'object') return { value: '', value2: '' };
   if (filterType === 'date') {
+    if (condition.dateSaisieLibre) {
+      return {
+        value: readDateSaisieLibreConditionValue(condition),
+        value2: readDateSaisieLibreConditionValueTo(condition),
+      };
+    }
     return {
       value: condition.dateFrom != null ? String(condition.dateFrom) : '',
       value2: condition.dateTo != null ? String(condition.dateTo) : '',
@@ -137,6 +158,7 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
         operator: rule.condition?.type ?? '',
         value,
         value2,
+        entryMode: dateEntryModeForCondition(filterType, rule.condition),
         combinator: index === 0 ? undefined : rule.combinator,
       };
     });
@@ -159,6 +181,7 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
           operator: condition?.type ?? '',
           value,
           value2,
+          entryMode: dateEntryModeForCondition(filterType, condition),
           combinator: index === 0 ? undefined : combinator,
         });
       });
@@ -172,6 +195,7 @@ export const filterModelToRules = (model: any, columns: IColumn[]): FilterRule[]
         operator: entry?.type ?? '',
         value,
         value2,
+        entryMode: dateEntryModeForCondition(filterType, entry),
         combinator: isFirstRule
           ? undefined
           : readCombinator(entry?.qodlyCombinator ?? entry?.operator),
@@ -186,11 +210,12 @@ export const rulesToFilterModel = (rules: FilterRule[], columns: IColumn[]): any
   const compiled = rules
     .map((rule, index) => ({ rule, index }))
     .map(({ rule, index }) => {
-      if (!rule.field || !rule.operator) return null;
+      if (!rule.field) return null;
       const column = findColumnByKey(columns, rule.field);
+      const operator = rule.operator || defaultOperatorForColumn(column);
       const filterType = getColumnAgGridFilterType(column);
       if (!filterType) return null;
-      const condition = buildCondition(rule, filterType);
+      const condition = buildCondition({ ...rule, operator }, filterType, column);
       if (!condition) return null;
       return {
         field: rule.field,
@@ -208,19 +233,59 @@ export const rulesToFilterModel = (rules: FilterRule[], columns: IColumn[]): any
 };
 
 const ZERO_INPUT_OPERATORS = new Set(['isTrue', 'isFalse', 'blank', 'notBlank']);
+const EMPTY_TEXT_VALUE_OPERATORS = new Set(['equals', 'notEqual']);
+const NUMERIC_TEXT_INPUT_DATA_TYPES = new Set([
+  'word',
+  'short',
+  'long',
+  'number',
+  'long64',
+  'duration',
+]);
 
-const buildCondition = (rule: FilterRule, filterType: string): any | null => {
+const isEmptyTextComparisonAllowed = (
+  rule: FilterRule,
+  filterType: string,
+  column: IColumn | undefined,
+): boolean => {
+  const dataType = String(column?.dataType ?? '')
+    .trim()
+    .toLowerCase();
+  return (
+    filterType === 'text' &&
+    dataType !== 'date' &&
+    !NUMERIC_TEXT_INPUT_DATA_TYPES.has(dataType) &&
+    EMPTY_TEXT_VALUE_OPERATORS.has(rule.operator)
+  );
+};
+
+const buildCondition = (rule: FilterRule, filterType: string, column?: IColumn): any | null => {
   if (ZERO_INPUT_OPERATORS.has(rule.operator)) {
     return { filterType, type: rule.operator };
   }
 
   if (filterType === 'date') {
+    if (rule.entryMode === 'list') {
+      const meta = makeDateSaisieLibreConditionMeta(
+        rule.value,
+        rule.operator === 'inRange' ? rule.value2 : undefined,
+      );
+      if (!meta) return null;
+      return {
+        filterType,
+        type: rule.operator,
+        dateFrom: null,
+        dateTo: null,
+        ...meta,
+      };
+    }
     if (!rule.value) return null;
     return {
       filterType,
       type: rule.operator,
       dateFrom: rule.value,
       dateTo: rule.value2 || null,
+      dateSaisieLibre: false,
     };
   }
   if (filterType === 'qodlyRefSelect') {
@@ -234,7 +299,12 @@ const buildCondition = (rule: FilterRule, filterType: string): any | null => {
     rule.operator === COLLECTION_OPERATOR_KEY
       ? joinCollectionTokens(parseCollectionTokens(rule.value))
       : rule.value;
-  if (normalizedValue === '' || normalizedValue == null) return null;
+  if (
+    (normalizedValue === '' || normalizedValue == null) &&
+    !isEmptyTextComparisonAllowed(rule, filterType, column)
+  ) {
+    return null;
+  }
   return {
     filterType,
     type: rule.operator,
@@ -267,8 +337,16 @@ const neutralButtonStyle: React.CSSProperties = {
   border: '1px solid #0000001A',
 };
 
+const queryBuilderControlHeight = '31px';
+
 const selectStyle: React.CSSProperties = {
-  height: '31px',
+  height: queryBuilderControlHeight,
+  minHeight: queryBuilderControlHeight,
+  maxHeight: queryBuilderControlHeight,
+  lineHeight: queryBuilderControlHeight,
+  boxSizing: 'border-box',
+  display: 'block',
+  minWidth: 0,
   borderRadius: '6px',
   border: '1px solid #0000001A',
   color: '#44444C',
@@ -280,7 +358,6 @@ const selectStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   ...selectStyle,
   flex: 1,
-  minWidth: '120px',
 };
 
 const inputTypeFor = (column: IColumn | undefined): 'text' | 'number' | 'date' => {
@@ -301,19 +378,19 @@ const sameModel = (a: any, b: any): boolean => {
   }
 };
 
-export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
-  function QueryBuilder(
-    {
-      translation,
-      columns,
-      i18n,
-      lang,
-      filterModel,
-      onChange,
-      deferEmit = false,
-    },
-    ref,
-  ) {
+export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(function QueryBuilder(
+  {
+    translation,
+    dateSaisieLibreTranslation,
+    columns,
+    i18n,
+    lang,
+    filterModel,
+    onChange,
+    deferEmit = false,
+  },
+  ref,
+) {
   const visibleColumns = useMemo(() => filterableColumns(columns), [columns]);
 
   // Own the rule list locally so "+ Rule" can add an empty row that isn't
@@ -349,11 +426,12 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
   );
 
   const isRuleCompilable = (rule: FilterRule): boolean => {
-    if (!rule.field || !rule.operator) return false;
+    if (!rule.field) return false;
     const column = findColumnByKey(columnsRef.current, rule.field);
+    const operator = rule.operator || defaultOperatorForColumn(column);
     const filterType = getColumnAgGridFilterType(column);
     if (!filterType) return false;
-    return buildCondition(rule, filterType) != null;
+    return buildCondition({ ...rule, operator }, filterType, column) != null;
   };
 
   const areAllRulesCompilable = (nextRules: FilterRule[]): boolean => {
@@ -457,13 +535,12 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
   const addRule = () => {
     const defaultColumn = visibleColumns[0];
     if (!defaultColumn) return;
-    const operators = getColumnFilterOperators(defaultColumn);
-    const defaultOp = operators[0]?.key ?? 'equals';
     const next = rules.concat({
       id: newId(),
       field: defaultColumn.source ?? defaultColumn.title,
-      operator: defaultOp,
+      operator: defaultOperatorForColumn(defaultColumn),
       value: '',
+      entryMode: inputTypeFor(defaultColumn) === 'date' ? 'free' : undefined,
     });
     // Keep the new rule as a local draft row until it becomes compilable.
     setDraftRulesOnly(next);
@@ -510,6 +587,7 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
                 )}
                 <RuleRow
                   translation={translation}
+                  dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                   columns={visibleColumns}
                   i18n={i18n}
                   lang={lang}
@@ -539,8 +617,7 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(
       )}
     </div>
   );
-  },
-);
+});
 
 interface CombinatorBadgeProps {
   translation: Translation;
@@ -567,6 +644,7 @@ const CombinatorBadge: FC<CombinatorBadgeProps> = ({ translation, value, onChang
 
 interface RuleRowProps {
   translation: Translation;
+  dateSaisieLibreTranslation?: (key: string) => string;
   columns: IColumn[];
   i18n?: any;
   lang?: string;
@@ -582,6 +660,7 @@ interface RuleRowProps {
 
 const RuleRow: FC<RuleRowProps> = ({
   translation,
+  dateSaisieLibreTranslation,
   columns,
   i18n,
   lang,
@@ -599,6 +678,7 @@ const RuleRow: FC<RuleRowProps> = ({
   const operatorDescriptor = operators.find((op) => op.key === rule.operator) ?? operators[0];
   const inputCount = operatorDescriptor?.inputs ?? 1;
   const htmlInputType = inputTypeFor(column);
+  const isDateInput = htmlInputType === 'date';
   const isCollection = operatorDescriptor?.key === COLLECTION_OPERATOR_KEY;
   const collectionTokens = useMemo(() => parseCollectionTokens(rule.value), [rule.value]);
   const filterType = useMemo(() => getColumnAgGridFilterType(column), [column]);
@@ -658,8 +738,14 @@ const RuleRow: FC<RuleRowProps> = ({
     const nextOperators = getColumnFilterOperators(nextColumn);
     const nextOperator = nextOperators.some((op) => op.key === rule.operator)
       ? rule.operator
-      : (nextOperators[0]?.key ?? 'equals');
-    onChange({ field: nextKey, operator: nextOperator, value: '', value2: '' });
+      : defaultOperatorForColumn(nextColumn);
+    onChange({
+      field: nextKey,
+      operator: nextOperator,
+      value: '',
+      value2: '',
+      entryMode: inputTypeFor(nextColumn) === 'date' ? 'free' : undefined,
+    });
   };
 
   return (
@@ -702,6 +788,28 @@ const RuleRow: FC<RuleRowProps> = ({
 
       {inputCount >= 1 && (
         <div style={{ flex: 1, minWidth: '160px' }}>
+          {isDateInput ? (
+            <div className="mb-1 flex gap-1">
+              {(['free', 'list'] as DateEntryMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      entryMode: mode,
+                      value: '',
+                      value2: '',
+                    })
+                  }
+                  style={
+                    (rule.entryMode ?? 'free') === mode ? primaryButtonStyle : neutralButtonStyle
+                  }
+                >
+                  {translation(mode === 'free' ? 'Free entry' : 'From list')}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {isCollection && collectionTokens.length ? (
             <div className="mb-1 flex flex-wrap gap-1">
               {collectionTokens.map((token) => (
@@ -729,7 +837,26 @@ const RuleRow: FC<RuleRowProps> = ({
             </div>
           ) : null}
 
-          {filterType === 'qodlyRefSelect' && refOptions.length ? (
+          {isDateInput && rule.entryMode === 'list' ? (
+            <div className="flex flex-col gap-2">
+              <DateSaisieLibreSelect
+                translation={translation}
+                translateDateKey={dateSaisieLibreTranslation}
+                value={rule.value ?? ''}
+                onChange={(value) => onChange({ value })}
+                style={{ ...selectStyle, width: '100%' }}
+              />
+              {inputCount === 2 ? (
+                <DateSaisieLibreSelect
+                  translation={translation}
+                  translateDateKey={dateSaisieLibreTranslation}
+                  value={rule.value2 ?? ''}
+                  onChange={(value2) => onChange({ value2 })}
+                  style={{ ...selectStyle, width: '100%' }}
+                />
+              ) : null}
+            </div>
+          ) : filterType === 'qodlyRefSelect' && refOptions.length ? (
             <select
               style={{ ...selectStyle, width: '100%' }}
               value={rule.value ?? ''}
@@ -760,6 +887,31 @@ const RuleRow: FC<RuleRowProps> = ({
               onChange={(e) => onValueChange({ value: e.target.value })}
               onBlur={onValueCommit}
             />
+          ) : isDateInput && inputCount === 2 ? (
+            <div className="flex flex-col gap-2">
+              <input
+                type={htmlInputType}
+                placeholder={translation('Value')}
+                style={{ ...inputStyle, width: '100%' }}
+                value={rule.value}
+                onChange={(e) => onValueChange({ value: e.target.value })}
+                onBlur={onValueCommit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onValueCommit();
+                }}
+              />
+              <input
+                type={htmlInputType}
+                placeholder={translation('Value 2')}
+                style={{ ...inputStyle, width: '100%' }}
+                value={rule.value2 ?? ''}
+                onChange={(e) => onValueChange({ value2: e.target.value })}
+                onBlur={onValueCommit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onValueCommit();
+                }}
+              />
+            </div>
           ) : (
             <input
               type={htmlInputType}
@@ -775,19 +927,20 @@ const RuleRow: FC<RuleRowProps> = ({
           )}
         </div>
       )}
-      {inputCount >= 2 && (
-        <input
-          type={htmlInputType}
-          placeholder={translation('Value 2')}
-          style={inputStyle}
-          value={rule.value2 ?? ''}
-          onChange={(e) => onValueChange({ value2: e.target.value })}
-          onBlur={onValueCommit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onValueCommit();
-          }}
-        />
-      )}
+      {inputCount >= 2 &&
+        (isDateInput ? null : (
+          <input
+            type={htmlInputType}
+            placeholder={translation('Value 2')}
+            style={inputStyle}
+            value={rule.value2 ?? ''}
+            onChange={(e) => onValueChange({ value2: e.target.value })}
+            onBlur={onValueCommit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onValueCommit();
+            }}
+          />
+        ))}
 
       <button
         type="button"

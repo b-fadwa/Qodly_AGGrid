@@ -13,12 +13,20 @@ import {
   refOptionI18nCompositeKey,
   withAdvancedRulesOnFilterModel,
 } from '../AgGrid.filtering';
+import {
+  DateSaisieLibreSelect,
+  makeDateSaisieLibreConditionMeta,
+  readDateSaisieLibreConditionValue,
+  readDateSaisieLibreConditionValueTo,
+  type DateEntryMode,
+} from './DateSaisieLibre';
 
 interface ConditionDraft {
   id: string;
   operator: string;
   value: string;
   value2: string;
+  entryMode?: DateEntryMode;
 }
 
 const COLLECTION_OPERATOR_KEY = 'inCollection';
@@ -48,16 +56,28 @@ interface HeaderFilterPopupProps {
   filterInactiveRecordsEnabled: boolean;
   onFilterInactiveRecordsEnabledChange: (enabled: boolean) => void;
   translation: (key: string) => string;
+  dateSaisieLibreTranslation?: (key: string) => string;
   onApply: (nextModel: any | null) => void;
   onClose: () => void;
 }
 
 const ZERO_INPUT_OPERATORS = new Set(['isTrue', 'isFalse', 'blank', 'notBlank']);
+const EMPTY_TEXT_VALUE_OPERATORS = new Set(['equals', 'notEqual']);
+const NUMERIC_TEXT_INPUT_DATA_TYPES = new Set([
+  'word',
+  'short',
+  'long',
+  'number',
+  'long64',
+  'duration',
+]);
 const mk = (): string => `h_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
 const boolOps = (ops: FilterOperatorDescriptor[]) =>
   ops.some((o) => o.key === 'isTrue' || o.key === 'isFalse');
 const defaultOp = (ops: FilterOperatorDescriptor[]) =>
-  boolOps(ops) ? '' : (ops[0]?.key ?? 'equals');
+  boolOps(ops)
+    ? (ops.find((o) => o.key === 'isTrue')?.key ?? ops[0]?.key ?? 'equals')
+    : (ops[0]?.key ?? 'equals');
 
 const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft[] => {
   const fallback = defaultOp(ops);
@@ -68,15 +88,23 @@ const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft
   const rows = conditions.map((c: any) => ({
     id: mk(),
     operator: c?.type ?? fallback,
-    value:
-      c?.filter != null
+    value: c?.dateSaisieLibre
+      ? readDateSaisieLibreConditionValue(c)
+      : c?.filter != null
         ? String(c.filter)
         : c?.dateFrom != null
           ? String(c.dateFrom)
           : c?.value != null
             ? String(c.value)
             : '',
-    value2: c?.filterTo != null ? String(c.filterTo) : c?.dateTo != null ? String(c.dateTo) : '',
+    value2: c?.dateSaisieLibre
+      ? readDateSaisieLibreConditionValueTo(c)
+      : c?.filterTo != null
+        ? String(c.filterTo)
+        : c?.dateTo != null
+          ? String(c.dateTo)
+          : '',
+    entryMode: c?.filterType === 'date' ? (c?.dateSaisieLibre ? 'list' : 'free') : undefined,
   }));
   return rows.length ? rows : [{ id: mk(), operator: fallback, value: '', value2: '' }];
 };
@@ -84,12 +112,27 @@ const parseEntry = (entry: any, ops: FilterOperatorDescriptor[]): ConditionDraft
 const toCondition = (
   row: ConditionDraft,
   filterType: 'text' | 'number' | 'date' | 'qodlyRefSelect',
+  column?: IColumn | null,
 ): any | null => {
   if (!row.operator) return null;
   if (ZERO_INPUT_OPERATORS.has(row.operator)) return { filterType, type: row.operator };
   if (filterType === 'date') {
+    if (row.entryMode === 'list') {
+      const meta = makeDateSaisieLibreConditionMeta(
+        row.value,
+        row.operator === 'inRange' ? row.value2 : undefined,
+      );
+      if (!meta) return null;
+      return { filterType, type: row.operator, dateFrom: null, dateTo: null, ...meta };
+    }
     if (!row.value) return null;
-    return { filterType, type: row.operator, dateFrom: row.value, dateTo: row.value2 || null };
+    return {
+      filterType,
+      type: row.operator,
+      dateFrom: row.value,
+      dateTo: row.value2 || null,
+      dateSaisieLibre: false,
+    };
   }
   if (filterType === 'qodlyRefSelect') {
     const raw = String(row.value ?? '').trim();
@@ -102,7 +145,17 @@ const toCondition = (
     row.operator === COLLECTION_OPERATOR_KEY
       ? joinCollectionTokens(parseCollectionTokens(row.value))
       : row.value;
-  if (!normalizedValue) return null;
+  const dataType = String(column?.dataType ?? '')
+    .trim()
+    .toLowerCase();
+  const emptyTextComparisonAllowed =
+    filterType === 'text' &&
+    dataType !== 'date' &&
+    !NUMERIC_TEXT_INPUT_DATA_TYPES.has(dataType) &&
+    EMPTY_TEXT_VALUE_OPERATORS.has(row.operator);
+  if ((normalizedValue === '' || normalizedValue == null) && !emptyTextComparisonAllowed) {
+    return null;
+  }
   return {
     filterType,
     type: row.operator,
@@ -122,6 +175,11 @@ const filled = (row: ConditionDraft, ops: FilterOperatorDescriptor[]) => {
 const normalize = (rows: ConditionDraft[], ops: FilterOperatorDescriptor[]): ConditionDraft[] => {
   const fallback = defaultOp(ops);
   const safe = rows.length ? rows : [{ id: mk(), operator: fallback, value: '', value2: '' }];
+  if (boolOps(ops)) {
+    const selected =
+      safe.find((row) => row.operator === 'isFalse' || row.operator === 'isTrue') ?? safe[0];
+    return [{ ...selected, operator: selected.operator || fallback, value: '', value2: '' }];
+  }
   const lastFilled = [...safe]
     .map((row, idx) => (filled(row, ops) ? idx : -1))
     .reduce((acc, idx) => Math.max(acc, idx), -1);
@@ -167,8 +225,8 @@ const rulesFromPlainFilterModel = (
 const styles = {
   panel: {
     position: 'fixed',
-    width: '250px',
-    maxWidth: 'calc(100vw - 24px)',
+    minWidth: '250px',
+    maxWidth: '350px',
     maxHeight: '70vh',
     overflow: 'auto',
     background: '#F3F4F6',
@@ -179,6 +237,9 @@ const styles = {
   } as React.CSSProperties,
   control: {
     height: '32px',
+    boxSizing: 'border-box',
+    display: 'block',
+    minWidth: 0,
     borderRadius: '5px',
     border: '1px solid #CBD5E1',
     color: '#44444C',
@@ -213,6 +274,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   filterInactiveRecordsEnabled,
   onFilterInactiveRecordsEnabledChange,
   translation,
+  dateSaisieLibreTranslation,
   onApply,
   onClose,
 }) => {
@@ -238,6 +300,11 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     if (activeRules.some((r) => r.field !== colId)) return true;
     return Object.keys(currentModel ?? {}).some((k) => k !== '__qodlyAdvancedRules' && k !== colId);
   }, [activeRules, currentModel, colId]);
+  const hasCurrentColumnFilter = useMemo(() => {
+    if (!colId) return false;
+    if (activeRules.some((r) => r.field === colId)) return true;
+    return Boolean(currentEntry);
+  }, [activeRules, currentEntry, colId]);
 
   useEffect(() => {
     if (!open || !colId) return;
@@ -350,6 +417,16 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     onApply(nextModel);
   };
 
+  const getBaseRules = () =>
+    activeRules.length ? activeRules : rulesFromPlainFilterModel(currentModel);
+  const getRulesWithoutCurrentColumn = () => getBaseRules().filter((r) => r.field !== colId);
+  const removeCurrentColumnFilter = () => {
+    onDateFinancialFilterEnabledChange(dateFinancialFilterDraft);
+    onFilterInactiveRecordsEnabledChange(filterInactiveRecordsDraft);
+    applyRules(getRulesWithoutCurrentColumn());
+    onClose();
+  };
+
   return (
     <div ref={panelRef} style={{ ...styles.panel, top, left }}>
       <div className="border-b border-[#D1D5DB] p-2 flex items-center justify-between gap-2">
@@ -377,6 +454,9 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
           const isCollection = selectedOp?.key === COLLECTION_OPERATOR_KEY;
           const tokens = parseCollectionTokens(row.value);
           const canDelete = rows.length > 1;
+          const canRemoveOnlyColumnFilter =
+            inputs === 0 && rows.length === 1 && hasCurrentColumnFilter;
+          const isDateInput = inputType === 'date';
           return (
             <div key={row.id}>
               {idx > 0 ? (
@@ -411,23 +491,22 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     });
                   }}
                 >
-                  {boolOps(operators) ? (
-                    <option value="" disabled>
-                      {translation('Choose one')}
-                    </option>
-                  ) : null}
                   {operators.map((op) => (
                     <option key={op.key} value={op.key}>
                       {translation(op.label)}
                     </option>
                   ))}
                 </select>
-                {inputs === 0 && canDelete ? (
+                {inputs === 0 && (canDelete || canRemoveOnlyColumnFilter) ? (
                   <button
                     type="button"
                     className="inline-flex items-center justify-center rounded-lg border"
                     style={styles.trash}
                     onClick={() => {
+                      if (canRemoveOnlyColumnFilter) {
+                        removeCurrentColumnFilter();
+                        return;
+                      }
                       setRows((prev) => {
                         return normalize(
                           prev.filter((r) => r.id !== row.id),
@@ -441,8 +520,41 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                 ) : null}
               </div>
               {inputs >= 1 ? (
-                <div className="mb-1 flex items-center gap-2">
+                <div className="mb-1 flex items-end gap-2">
                   <div style={{ width: '100%', display: 'grid' }}>
+                    {isDateInput ? (
+                      <div className="mb-1 flex flex-wrap items-center gap-3">
+                        {(['free', 'list'] as DateEntryMode[]).map((mode) => (
+                          <label
+                            key={mode}
+                            className="inline-flex cursor-pointer items-center gap-1.5"
+                            style={{ color: '#334155', fontSize: '13px' }}
+                          >
+                            <input
+                              type="radio"
+                              name={`header-filter-date-entry-mode-${row.id}`}
+                              checked={(row.entryMode ?? 'free') === mode}
+                              onChange={() => {
+                                setRows((prev) =>
+                                  normalize(
+                                    prev.map((r) =>
+                                      r.id === row.id
+                                        ? { ...r, entryMode: mode, value: '', value2: '' }
+                                        : r,
+                                    ),
+                                    operators,
+                                  ),
+                                );
+                              }}
+                              style={{ width: '14px', height: '14px', accentColor: '#2B5797' }}
+                            />
+                            <span>
+                              {translation(mode === 'free' ? 'Saisie libre' : 'From list')}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : null}
                     {isCollection && tokens.length ? (
                       <div className="mb-1 flex flex-wrap gap-1">
                         {tokens.map((token) => (
@@ -478,7 +590,42 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                       </div>
                     ) : null}
 
-                    {filterType === 'qodlyRefSelect' ? (
+                    {isDateInput && row.entryMode === 'list' ? (
+                      <div className="flex flex-col gap-1">
+                        <DateSaisieLibreSelect
+                          value={row.value}
+                          translation={translation}
+                          translateDateKey={dateSaisieLibreTranslation}
+                          style={{ ...styles.control, width: '100%' }}
+                          onChange={(nextValue) => {
+                            setRows((prev) => {
+                              return normalize(
+                                prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
+                                operators,
+                              );
+                            });
+                          }}
+                        />
+                        {inputs === 2 ? (
+                          <DateSaisieLibreSelect
+                            value={row.value2}
+                            translation={translation}
+                            translateDateKey={dateSaisieLibreTranslation}
+                            style={{ ...styles.control, width: '100%' }}
+                            onChange={(nextValue2) => {
+                              setRows((prev) => {
+                                return normalize(
+                                  prev.map((r) =>
+                                    r.id === row.id ? { ...r, value2: nextValue2 } : r,
+                                  ),
+                                  operators,
+                                );
+                              });
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    ) : filterType === 'qodlyRefSelect' ? (
                       <select
                         value={row.value}
                         style={{ ...styles.control, width: '100%' }}
@@ -521,6 +668,41 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                           });
                         }}
                       />
+                    ) : isDateInput && inputs === 2 ? (
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type={inputType}
+                          value={row.value}
+                          placeholder={translation('Filter...')}
+                          style={{ ...styles.control, width: '100%' }}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            setRows((prev) => {
+                              return normalize(
+                                prev.map((r) => (r.id === row.id ? { ...r, value: nextValue } : r)),
+                                operators,
+                              );
+                            });
+                          }}
+                        />
+                        <input
+                          type={inputType}
+                          value={row.value2}
+                          placeholder={translation('Filter...')}
+                          style={{ ...styles.control, width: '100%' }}
+                          onChange={(e) => {
+                            const nextValue2 = e.target.value;
+                            setRows((prev) => {
+                              return normalize(
+                                prev.map((r) =>
+                                  r.id === row.id ? { ...r, value2: nextValue2 } : r,
+                                ),
+                                operators,
+                              );
+                            });
+                          }}
+                        />
+                      </div>
                     ) : (
                       <input
                         type={inputType}
@@ -558,7 +740,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   ) : null}
                 </div>
               ) : null}
-              {inputs === 2 ? (
+              {inputs === 2 && !isDateInput ? (
                 <input
                   type={inputType}
                   value={row.value2}
@@ -632,12 +814,9 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
           }}
           onClick={() => {
             const built = rows
-              .map((r) => toCondition(r, filterType))
+              .map((r) => toCondition(r, filterType, column))
               .filter((v): v is any => v !== null);
-            const baseRules = activeRules.length
-              ? activeRules
-              : rulesFromPlainFilterModel(currentModel);
-            const remaining = baseRules.filter((r) => r.field !== colId);
+            const remaining = getRulesWithoutCurrentColumn();
             if (!built.length) {
               onDateFinancialFilterEnabledChange(dateFinancialFilterDraft);
               onFilterInactiveRecordsEnabledChange(filterInactiveRecordsDraft);

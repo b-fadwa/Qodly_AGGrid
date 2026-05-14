@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.__mf__temp
 .yalc
 yalc.lock
 manifest.json
