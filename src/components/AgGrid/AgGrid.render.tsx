@@ -156,6 +156,17 @@ function sequencePayloadFromRecord(record: unknown): SequenceProgrammingPayload 
           sequenceIdValue(output.referenceDocumentId) ??
           sequenceIdValue(source.referenceDocumentId) ??
           '',
+        uppercase: Boolean(output.uppercase ?? source.uppercase),
+        header:
+          output.header !== undefined || source.header !== undefined
+            ? Boolean(output.header ?? source.header)
+            : true,
+        type:
+          output.type === 'csv' || output.type === 'txt' || output.type === 'xml'
+            ? output.type
+            : source.type === 'csv' || source.type === 'txt' || source.type === 'xml'
+              ? source.type
+              : 'csv',
       },
       transposition: {
         mode: (transposition.mode ?? source.transpositionMode ?? 'none') as SequenceProgrammingPayload['transposition']['mode'],
@@ -3176,7 +3187,11 @@ const AgGrid: FC<IAgGridProps> = ({
                         if (sequenceDs) {
                           sequenceDs.setValue(null, sequencePayload);
                         }
-                        emit('onupdatesequence', { key, sequence: sequencePayload });
+                        emit('onupdatesequence', {
+                          selectedSequence: key,
+                          sequencePayload,
+                          sequence: nextRecord,
+                        });
                       }}
                       onDelete={(record) => {
                         const key = savedRecordKey(record);
@@ -3201,7 +3216,10 @@ const AgGrid: FC<IAgGridProps> = ({
                             }
                           })();
                         }
-                        emit('ondeletesequence', record);
+                        emit('ondeletesequence', {
+                          selectedSequence: key,
+                          sequence: record,
+                        });
                       }}
                       onApply={(sequencePayload) => {
                         if (sequenceDs) {

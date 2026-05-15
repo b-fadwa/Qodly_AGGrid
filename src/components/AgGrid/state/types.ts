@@ -55,8 +55,11 @@ export interface SequenceProgrammingPayload {
   filters: SequenceFilterStep[];
   sortId?: string | number;
   output: {
-    mode?: 'display' | 'export' | 'list' | 'table';
+    mode?: 'display' | 'export' | 'list' | 'table' | 'predefinedDocuments';
     referenceDocumentId?: string | number;
+    uppercase?: boolean;
+    header?: boolean;
+    type?: 'csv' | 'txt' | 'xml';
   };
   transposition: {
     mode?: 'none' | 'nTo1' | 'oneToN';

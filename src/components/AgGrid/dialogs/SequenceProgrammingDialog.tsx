@@ -46,6 +46,7 @@ export type SequenceTranspositionOption = {
 export type SequenceTranspositionsValue = {
   oneToN?: SequenceTranspositionOption[];
   nToOne?: SequenceTranspositionOption[];
+  predefinedDocuments?: SequenceTranspositionOption[];
 };
 
 const emptySequence = (): SequenceProgrammingPayload => ({
@@ -55,6 +56,9 @@ const emptySequence = (): SequenceProgrammingPayload => ({
   output: {
     mode: undefined,
     referenceDocumentId: '',
+    uppercase: false,
+    header: true,
+    type: 'csv',
   },
   transposition: {
     mode: 'none',
@@ -94,6 +98,7 @@ const recordLabel = (record: { name?: string; title?: string; id?: string | numb
 const fallbackTranspositions: SequenceTranspositionsValue = {
   oneToN: [],
   nToOne: [],
+  predefinedDocuments: [],
 };
 
 const optionKey = (option: SequenceTranspositionOption): string =>
@@ -222,17 +227,22 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
       : draft.transposition.mode === 'nTo1'
         ? ((transpositions ?? fallbackTranspositions).nToOne ?? [])
         : [];
+  const predefinedDocumentOptions =
+    (transpositions ?? fallbackTranspositions).predefinedDocuments ?? [];
   const selectedOperation =
     draft.transposition.mode === 'nTo1' || draft.transposition.mode === 'oneToN'
       ? draft.transposition.mode
       : (draft.output.mode ?? '');
   const isOutputOperation =
-    selectedOperation === 'display' ||
     selectedOperation === 'export' ||
     selectedOperation === 'list' ||
-    selectedOperation === 'table';
-  const isTranspositionOperation =
-    selectedOperation === 'nTo1' || selectedOperation === 'oneToN';
+    selectedOperation === 'table' ||
+    selectedOperation === 'predefinedDocuments';
+  const needsPredefinedDocument =
+    selectedOperation === 'list' ||
+    selectedOperation === 'table' ||
+    selectedOperation === 'predefinedDocuments';
+  const isTranspositionOperation = selectedOperation === 'nTo1' || selectedOperation === 'oneToN';
 
   useEffect(() => {
     if (!open) return;
@@ -280,10 +290,45 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
     onLoad(key);
   };
 
-  const sequenceToPersist = (): SequenceProgrammingPayload => ({
-    ...draft,
-    filters: normalizedFilters.filter((step) => String(step.filterId ?? '').trim() !== ''),
-  });
+  const sequenceToPersist = (): SequenceProgrammingPayload => {
+    const filters = normalizedFilters.filter((step) => String(step.filterId ?? '').trim() !== '');
+    if (draft.transposition.mode === 'nTo1' || draft.transposition.mode === 'oneToN') {
+      return { ...draft, filters };
+    }
+    const mode = draft.output.mode;
+    if (mode === 'display') {
+      return {
+        ...draft,
+        filters,
+        output: {
+          mode: 'display',
+        },
+      };
+    }
+    if (mode === 'export') {
+      return {
+        ...draft,
+        filters,
+        output: {
+          mode: 'export',
+          uppercase: Boolean(draft.output.uppercase),
+          header: Boolean(draft.output.header),
+          type: draft.output.type ?? 'csv',
+        },
+      };
+    }
+    if (mode === 'list' || mode === 'table' || mode === 'predefinedDocuments') {
+      return {
+        ...draft,
+        filters,
+        output: {
+          mode,
+          referenceDocumentId: draft.output.referenceDocumentId ?? '',
+        },
+      };
+    }
+    return { ...draft, filters };
+  };
 
   const trimmedName = sequenceName.trim();
   const matchingExisting = trimmedName
@@ -319,6 +364,28 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
         selectionLink: option.link ?? '',
       },
     }));
+  };
+
+  const renderPredefinedDocumentOptions = (currentValue: string) => {
+    const hasCurrentValue = predefinedDocumentOptions.some(
+      (option) => optionKey(option) === currentValue,
+    );
+    return (
+      <>
+        <option value="">{translation('Select predefined document')}</option>
+        {predefinedDocumentOptions.map((option) => {
+          const key = optionKey(option);
+          return (
+            <option key={key || optionLabel(option)} value={key}>
+              {optionLabel(option)}
+            </option>
+          );
+        })}
+        {currentValue && !hasCurrentValue ? (
+          <option value={currentValue}>{currentValue}</option>
+        ) : null}
+      </>
+    );
   };
 
   const setSequenceOperation = (operation: string) => {
@@ -563,6 +630,7 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                     ['export', 'Data export'],
                     ['list', 'List representation'],
                     ['table', 'Table representation'],
+                    ['predefinedDocuments', 'Documents prédifinis'],
                     ['nTo1', 'Selection transposition: N to 1'],
                     ['oneToN', 'Selection transposition: 1 to N'],
                   ].map(([value, label]) => (
@@ -571,8 +639,7 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                       className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 text-slate-700"
                       style={{
                         fontSize: '12px',
-                        borderColor:
-                          selectedOperation === value ? '#2B5797' : undefined,
+                        borderColor: selectedOperation === value ? '#2B5797' : undefined,
                         color: selectedOperation === value ? '#2B5797' : undefined,
                       }}
                     >
@@ -596,118 +663,171 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                   >
                     {translation('Output options')}
                   </span>
-                <label className="block text-slate-700" style={{ fontSize: '12px' }}>
-                  {translation('Reference document')}
-                  <input
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1"
-                    style={controlStyle}
-                    value={String(draft.output.referenceDocumentId ?? '')}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        output: { ...prev.output, referenceDocumentId: e.target.value },
-                      }))
-                    }
-                  />
-                </label>
+                  {selectedOperation === 'export' ? (
+                    <div className="flex flex-row gap-3">
+                      <label
+                        className="flex items-center gap-2 text-slate-700"
+                        style={{ fontSize: '12px' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={Boolean(draft.output.uppercase)}
+                          onChange={(e) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              output: { ...prev.output, uppercase: e.target.checked },
+                            }))
+                          }
+                        />
+                        {translation('Uppercase')}
+                      </label>
+                      <label
+                        className="flex items-center gap-2 text-slate-700"
+                        style={{ fontSize: '12px' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={Boolean(draft.output.header)}
+                          onChange={(e) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              output: { ...prev.output, header: e.target.checked },
+                            }))
+                          }
+                        />
+                        {translation('Header')}
+                      </label>
+                      <label className="block text-slate-700" style={{ fontSize: '12px' }}>
+                        {translation('Type')}
+                        <select
+                          className={`${selectClass} mt-1 w-full`}
+                          style={controlStyle}
+                          value={draft.output.type ?? 'csv'}
+                          onChange={(e) =>
+                            setDraft((prev) => ({
+                              ...prev,
+                              output: {
+                                ...prev.output,
+                                type: e.target
+                                  .value as SequenceProgrammingPayload['output']['type'],
+                              },
+                            }))
+                          }
+                        >
+                          <option value="csv">csv</option>
+                          <option value="txt">txt</option>
+                          <option value="xml">xml</option>
+                        </select>
+                      </label>
+                    </div>
+                  ) : null}
+                  {needsPredefinedDocument ? (
+                    <label className="block text-slate-700" style={{ fontSize: '12px' }}>
+                      {translation('Predefined documents')}
+                      <select
+                        className={`${selectClass} mt-1 w-full`}
+                        style={controlStyle}
+                        value={String(draft.output.referenceDocumentId ?? '')}
+                        onChange={(e) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            output: { ...prev.output, referenceDocumentId: e.target.value },
+                          }))
+                        }
+                      >
+                        {renderPredefinedDocumentOptions(
+                          String(draft.output.referenceDocumentId ?? ''),
+                        )}
+                      </select>
+                    </label>
+                  ) : null}
                 </section>
               )}
 
               {isTranspositionOperation && (
-              <section className="rounded border border-slate-200 bg-slate-50 p-3">
-                <span
-                  className="mb-3 block text-slate-800"
-                  style={{ fontSize: '12px', fontWeight: 700 }}
-                >
-                  {translation('Transposition options')}
-                </span>
-                <div>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <span className="text-slate-700" style={{ fontSize: '12px', fontWeight: 600 }}>
-                      {translation('Transposition selection')}
-                    </span>
-                    {draft.transposition.selectionLabel ? (
-                      <span className="truncate text-slate-500" style={{ fontSize: '11px' }}>
-                        {draft.transposition.selectionLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div
-                    className="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-1"
-                    style={{ minHeight: '88px' }}
+                <section className="rounded border border-slate-200 bg-slate-50 p-3">
+                  <span
+                    className="mb-3 block text-slate-800"
+                    style={{ fontSize: '12px', fontWeight: 700 }}
                   >
-                    <TranspositionTree
-                      options={currentTranspositionTree}
-                      selectedKey={String(draft.transposition.selectionKey ?? '')}
-                      expandedKeys={expandedTranspositionKeys}
-                      toggleExpanded={toggleTranspositionExpanded}
-                      onSelect={selectTranspositionTreeOption}
-                      emptyLabel={
-                        draft.transposition.mode === 'none'
-                          ? translation('Choose a transposition type')
-                          : translation('No transposition available')
+                    {translation('Transposition options')}
+                  </span>
+                  <div>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span
+                        className="text-slate-700"
+                        style={{ fontSize: '12px', fontWeight: 600 }}
+                      >
+                        {translation('Transposition selection')}
+                      </span>
+                      {draft.transposition.selectionLabel ? (
+                        <span className="truncate text-slate-500" style={{ fontSize: '11px' }}>
+                          {draft.transposition.selectionLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div
+                      className="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-1"
+                      style={{ minHeight: '88px' }}
+                    >
+                      <TranspositionTree
+                        options={currentTranspositionTree}
+                        selectedKey={String(draft.transposition.selectionKey ?? '')}
+                        expandedKeys={expandedTranspositionKeys}
+                        toggleExpanded={toggleTranspositionExpanded}
+                        onSelect={selectTranspositionTreeOption}
+                        emptyLabel={
+                          draft.transposition.mode === 'none'
+                            ? translation('Choose a transposition type')
+                            : translation('No transposition available')
+                        }
+                      />
+                    </div>
+                  </div>
+                  <label className="block text-slate-700" style={{ fontSize: '12px' }}>
+                    {translation('Chained sequence')}
+                    <select
+                      className={`${selectClass} mt-1 w-full`}
+                      style={controlStyle}
+                      value={String(draft.transposition.chainedSequenceId ?? '')}
+                      onChange={(e) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          transposition: {
+                            ...prev.transposition,
+                            chainedSequenceId: e.target.value,
+                          },
+                        }))
+                      }
+                    >
+                      <option value="">{translation('No sequence')}</option>
+                      {savedSequences.map((record) => (
+                        <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
+                          {recordLabel(record)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
+                    className="my-2 flex items-center gap-2 text-slate-700"
+                    style={{ fontSize: '12px' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(draft.transposition.runSearchesOnResultSelection)}
+                      onChange={(e) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          transposition: {
+                            ...prev.transposition,
+                            runSearchesOnResultSelection: e.target.checked,
+                          },
+                        }))
                       }
                     />
-                  </div>
-                </div>
-                <label className="block text-slate-700" style={{ fontSize: '12px' }}>
-                  {translation('Chained sequence')}
-                  <select
-                    className={`${selectClass} mt-1 w-full`}
-                    style={controlStyle}
-                    value={String(draft.transposition.chainedSequenceId ?? '')}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        transposition: { ...prev.transposition, chainedSequenceId: e.target.value },
-                      }))
-                    }
-                  >
-                    <option value="">{translation('No sequence')}</option>
-                    {savedSequences.map((record) => (
-                      <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
-                        {recordLabel(record)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label
-                  className="my-2 flex items-center gap-2 text-slate-700"
-                  style={{ fontSize: '12px' }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={Boolean(draft.transposition.runSearchesOnResultSelection)}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        transposition: {
-                          ...prev.transposition,
-                          runSearchesOnResultSelection: e.target.checked,
-                        },
-                      }))
-                    }
-                  />
-                  {translation('Run sequence searches on the resulting selection')}
-                </label>
-                <label className="block text-slate-700" style={{ fontSize: '12px' }}>
-                  {translation('Predefined documents')}
-                  <input
-                    className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1"
-                    style={controlStyle}
-                    value={String(draft.transposition.predefinedDocumentId ?? '')}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        transposition: {
-                          ...prev.transposition,
-                          predefinedDocumentId: e.target.value,
-                        },
-                      }))
-                    }
-                  />
-                </label>
-              </section>
+                    {translation('Run sequence searches on the resulting selection')}
+                  </label>
+                </section>
               )}
             </div>
 
