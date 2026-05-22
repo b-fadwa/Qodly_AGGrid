@@ -47,6 +47,7 @@ const SimpleAgGrid: FC<ISimpleAgGridProps> = ({
       headerName: resolveSimpleColumnTitle(col.title, i18n, lang),
       hide: !!col.hidden,
       editable: enableAddNewRow && col.editable !== false,
+      headerClass: col.editable !== false ? 'editable-cell' : '',
       sortable: !!col.sorting,
       width: col.width,
       flex: col.flex,

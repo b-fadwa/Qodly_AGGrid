@@ -35,6 +35,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
         field: col.title,
         hide: !!col.hidden,
         editable: col.editable !== false,
+        headerClass: col.editable === true ? 'editable-cell' : '',
         sortable: !!col.sorting,
         width: col.width,
         flex: col.flex,
