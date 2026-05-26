@@ -83,7 +83,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
 import set from 'lodash/set';
-import { FaTableColumns, FaCopy, FaClockRotateLeft, FaSearchengin } from 'react-icons/fa6';
+import { FaTableColumns, FaCopy, FaClockRotateLeft, FaSearchengin, FaListCheck } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { FaSortAmountDown, FaFilter } from 'react-icons/fa';
 import {
@@ -109,6 +109,9 @@ import {
   type CalculatedSearchEmitPayload,
   type RelationTreeNode,
 } from './dialogs/CalculatedSearchDialog';
+import { SequenceProgrammingDialog } from './dialogs/SequenceProgrammingDialog';
+import type { SequenceTranspositionsValue } from './dialogs/SequenceProgrammingDialog';
+import type { SavedSequence, SequenceProgrammingPayload } from './state/types';
 
 type SavedCalculatedSearch = {
   name: string;
@@ -117,6 +120,110 @@ type SavedCalculatedSearch = {
   calculatedSearch: CalculatedSearchEmitPayload | null;
   [key: string]: unknown;
 };
+
+type FilterSearchScopeKind = 'global' | 'selection';
+type FilterSearchTypeKind = 'replace' | 'add' | 'remove';
+type FilterApplyOptions = {
+  scope: {
+    option: FilterSearchScopeKind;
+  };
+  searchType: {
+    option: FilterSearchTypeKind;
+  };
+};
+
+type AppliedViewColumn = {
+  field: string;
+  isHidden: boolean;
+  pinned?: 'left' | 'right' | null;
+  width?: number | null;
+  flex?: number | null;
+  i18n?: string | null;
+};
+
+const sequenceIdValue = (value: unknown): string | number | undefined =>
+  typeof value === 'string' || typeof value === 'number' ? value : undefined;
+
+function sequencePayloadFromRecord(record: unknown): SequenceProgrammingPayload | null {
+  if (!record || typeof record !== 'object') return null;
+  const source = record as Record<string, unknown>;
+  if (source.sequence && typeof source.sequence === 'object') {
+    return source.sequence as SequenceProgrammingPayload;
+  }
+  if ('viewId' in source || 'filters' in source || 'sortId' in source || 'output' in source) {
+    const output = source.output && typeof source.output === 'object'
+      ? (source.output as Record<string, unknown>)
+      : {};
+    const transposition = source.transposition && typeof source.transposition === 'object'
+      ? (source.transposition as Record<string, unknown>)
+      : {};
+    return {
+      viewId: sequenceIdValue(source.viewId) ?? sequenceIdValue(source.linkedViewId) ?? '',
+      filters: Array.isArray(source.filters) ? source.filters as SequenceProgrammingPayload['filters'] : [],
+      sortId: sequenceIdValue(source.sortId) ?? sequenceIdValue(source.linkedSortId) ?? '',
+      output: {
+        mode: output.mode as SequenceProgrammingPayload['output']['mode'],
+        referenceDocumentId:
+          sequenceIdValue(output.referenceDocumentId) ??
+          sequenceIdValue(source.referenceDocumentId) ??
+          '',
+        uppercase: Boolean(output.uppercase ?? source.uppercase),
+        header:
+          output.header !== undefined || source.header !== undefined
+            ? Boolean(output.header ?? source.header)
+            : true,
+        type:
+          output.type === 'csv' || output.type === 'txt' || output.type === 'xml'
+            ? output.type
+            : source.type === 'csv' || source.type === 'txt' || source.type === 'xml'
+              ? source.type
+              : 'csv',
+      },
+      transposition: {
+        mode: (transposition.mode ?? source.transpositionMode ?? 'none') as SequenceProgrammingPayload['transposition']['mode'],
+        chainedSequenceId:
+          sequenceIdValue(transposition.chainedSequenceId) ??
+          sequenceIdValue(source.chainedSequenceId) ??
+          '',
+        runSearchesOnResultSelection: Boolean(
+          transposition.runSearchesOnResultSelection ?? source.runSearchesOnResultSelection,
+        ),
+        predefinedDocumentId:
+          sequenceIdValue(transposition.predefinedDocumentId) ??
+          sequenceIdValue(source.predefinedDocumentId) ??
+          '',
+        selectionId:
+          sequenceIdValue(transposition.selectionId) ?? sequenceIdValue(source.selectionId) ?? '',
+        selectionKey:
+          sequenceIdValue(transposition.selectionKey) ?? sequenceIdValue(source.selectionKey) ?? '',
+        selectionLabel:
+          typeof transposition.selectionLabel === 'string'
+            ? transposition.selectionLabel
+            : typeof source.selectionLabel === 'string'
+              ? source.selectionLabel
+              : '',
+        selectionLink:
+          typeof transposition.selectionLink === 'string'
+            ? transposition.selectionLink
+            : typeof source.selectionLink === 'string'
+              ? source.selectionLink
+              : '',
+      },
+    };
+  }
+  return null;
+}
+
+function sequenceRecordMatches(record: unknown, key: string | number): boolean {
+  const selectedKey = String(key ?? '').trim();
+  if (!selectedKey || !record || typeof record !== 'object') return false;
+  const source = record as Record<string, unknown>;
+  return (
+    source.name === selectedKey ||
+    source.title === selectedKey ||
+    (source.id != null && String(source.id) === selectedKey)
+  );
+}
 
 function calculatedSearchPayloadFromRecord(record: any): CalculatedSearchEmitPayload | null {
   if (!record || typeof record !== 'object') return null;
@@ -447,6 +554,9 @@ const AgGrid: FC<IAgGridProps> = ({
   sorts = '',
   calculatedSearch = '',
   calculatedSearches = '',
+  sequence = '',
+  sequences = '',
+  sequenceTranspositions = '',
   relationTree = '',
   dateFinancial = false,
   filterInactiveRecords = false,
@@ -480,10 +590,12 @@ const AgGrid: FC<IAgGridProps> = ({
   showColumnActions,
   showToolbarActions = true,
   showToolbarView = true,
+  showToolbarShortcuts = false,
   showToolbarSorting = true,
   showToolbarFiltering = true,
   showToolbarStatistics = true,
   showToolbarCalculatedSearch = true,
+  showToolbarSequence = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
   className,
@@ -522,6 +634,11 @@ const AgGrid: FC<IAgGridProps> = ({
       'onloadcalculatedsearch',
       'onupdatecalculatedsearch',
       'ondeletecalculatedsearch',
+      'onsequence',
+      'onsavesequence',
+      'onloadsequence',
+      'onupdatesequence',
+      'ondeletesequence',
     ],
   });
   const { resolver } = useEnhancedEditor(selectResolver);
@@ -557,6 +674,10 @@ const AgGrid: FC<IAgGridProps> = ({
   const filterInactiveRecordsEnabledRef = useRef<boolean>(false);
   const [dateFinancialFilterEnabled, setDateFinancialFilterEnabled] = useState(false);
   const [filterInactiveRecordsEnabled, setFilterInactiveRecordsEnabled] = useState(false);
+  const filterApplyOptionsRef = useRef<FilterApplyOptions>({
+    scope: { option: 'global' },
+    searchType: { option: 'replace' },
+  });
 
   useEffect(() => {
     const el = containerRef.current;
@@ -583,6 +704,8 @@ const AgGrid: FC<IAgGridProps> = ({
       get(i18n, `keys.aggrid_${formattedKey}.default`, key),
     );
   };
+  const dateSaisieLibreTranslation = (key: string): string =>
+    get(i18n, `keys.${key}.${lang}`, get(i18n, `keys.${key}.default`, key));
 
   const { fetchIndex } = useDataLoader({
     source: ds,
@@ -646,6 +769,19 @@ const AgGrid: FC<IAgGridProps> = ({
   const calculatedSearchesDs = useMemo(
     () => (calculatedSearches ? window.DataSource.getSource(calculatedSearches, path) : null),
     [calculatedSearches, path],
+  );
+  const sequenceDs = useMemo(
+    () => (sequence ? window.DataSource.getSource(sequence, path) : null),
+    [sequence, path],
+  );
+  const sequencesDs = useMemo(
+    () => (sequences ? window.DataSource.getSource(sequences, path) : null),
+    [sequences, path],
+  );
+  const sequenceTranspositionsDs = useMemo(
+    () =>
+      sequenceTranspositions ? window.DataSource.getSource(sequenceTranspositions, path) : null,
+    [sequenceTranspositions, path],
   );
   const relationTreeDs = useMemo(
     () => (relationTree ? window.DataSource.getSource(relationTree, path) : null),
@@ -714,6 +850,7 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
   const [showCalculatedSearchDialog, setShowCalculatedSearchDialog] = useState(false);
+  const [showSequenceDialog, setShowSequenceDialog] = useState(false);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [liveFilterModel, setLiveFilterModel] = useState<any>({});
   const liveFilterModelRef = useRef<any>({});
@@ -738,6 +875,10 @@ const AgGrid: FC<IAgGridProps> = ({
   );
   const [selectedCalculatedSearch, setSelectedCalculatedSearch] =
     useState<SavedCalculatedSearch | null>(null);
+  const [savedSequences, setSavedSequences] = useState<SavedSequence[]>([]);
+  const [selectedSequence, setSelectedSequence] = useState<SavedSequence | null>(null);
+  const [sequenceTranspositionsValue, setSequenceTranspositionsValue] =
+    useState<SequenceTranspositionsValue | null>(null);
   const [relationTreeValue, setRelationTreeValue] = useState<RelationTreeNode[]>([]);
 
   const commitLiveFilterModel = useCallback((nextModel: any) => {
@@ -772,6 +913,56 @@ const AgGrid: FC<IAgGridProps> = ({
       calculatedSearchesDs.removeListener('changed', listener);
     };
   }, [calculatedSearchesDs]);
+
+  // sequence-programming records: list datasource -> local dropdown list
+  useEffect(() => {
+    if (!sequencesDs) {
+      setSavedSequences([]);
+      return;
+    }
+    const listener = async () => {
+      try {
+        const value = await sequencesDs.getValue();
+        const next = savedRecordsFromDatasourceValue<SavedSequence>(value)
+          .map((record) => ({
+            ...record,
+            sequence: sequencePayloadFromRecord(record),
+          }))
+          .filter((record): record is SavedSequence => Boolean(record.sequence));
+        setSavedSequences(next);
+      } catch {
+        setSavedSequences([]);
+      }
+    };
+    void listener();
+    sequencesDs.addListener('changed', listener);
+    return () => {
+      sequencesDs.removeListener('changed', listener);
+    };
+  }, [sequencesDs]);
+
+  // sequence transpositions datasource -> oneToN / nToOne choices
+  useEffect(() => {
+    if (!sequenceTranspositionsDs) {
+      setSequenceTranspositionsValue(null);
+      return;
+    }
+    const listener = async () => {
+      try {
+        const value = await sequenceTranspositionsDs.getValue();
+        setSequenceTranspositionsValue(
+          value && typeof value === 'object' ? (value as SequenceTranspositionsValue) : null,
+        );
+      } catch {
+        setSequenceTranspositionsValue(null);
+      }
+    };
+    void listener();
+    sequenceTranspositionsDs.addListener('changed', listener);
+    return () => {
+      sequenceTranspositionsDs.removeListener('changed', listener);
+    };
+  }, [sequenceTranspositionsDs]);
 
   // relation tree datasource -> available fields tree
   useEffect(() => {
@@ -1732,10 +1923,29 @@ const AgGrid: FC<IAgGridProps> = ({
     [commitLiveFilterModel, filtersManager],
   );
 
+  const applyFilterRuntimeOptions = useCallback((options?: FilterApplyOptions) => {
+    if (!options) return false;
+    const next: FilterApplyOptions = {
+      scope: {
+        option: options.scope?.option === 'selection' ? 'selection' : 'global',
+      },
+      searchType: {
+        option:
+          options.searchType?.option === 'add' || options.searchType?.option === 'remove'
+            ? options.searchType.option
+            : 'replace',
+      },
+    };
+    const changed = !isEqual(filterApplyOptionsRef.current, next);
+    filterApplyOptionsRef.current = next;
+    return changed;
+  }, []);
+
   const applyHeaderFilterModel = useCallback(
-    (nextModel: any) => {
+    (nextModel: any, options?: FilterApplyOptions) => {
       const api = gridRef.current?.api;
       if (!api || api.isDestroyed()) return;
+      const runtimeOptionsChanged = applyFilterRuntimeOptions(options);
       const prevLiveModel = liveFilterModelRef.current ?? {};
       const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
       const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
@@ -1751,9 +1961,11 @@ const AgGrid: FC<IAgGridProps> = ({
         persistFilterDsNow(nextAg);
         filtersManager.persistCurrent(nextAg);
         api.refreshInfiniteCache();
+      } else if (!agChanged && !liveChanged && runtimeOptionsChanged) {
+        api.refreshInfiniteCache();
       }
     },
-    [commitLiveFilterModel, filtersManager, persistFilterDsNow],
+    [applyFilterRuntimeOptions, commitLiveFilterModel, filtersManager, persistFilterDsNow],
   );
 
   const getState = useCallback(
@@ -2161,6 +2373,8 @@ const AgGrid: FC<IAgGridProps> = ({
         filterInactiveRecords: Boolean(
           filterInactiveRecords && filterInactiveRecordsEnabledRef.current,
         ),
+        scope: filterApplyOptionsRef.current.scope,
+        searchType: filterApplyOptionsRef.current.searchType,
         filterQuery,
       };
 
@@ -2309,12 +2523,6 @@ const AgGrid: FC<IAgGridProps> = ({
     getState(params);
   }, []);
 
-  const handleColumnToggle = (colField: string) => {
-    setColumnVisibility((prev) =>
-      prev.map((c) => (c.field === colField ? { ...c, isHidden: !c.isHidden } : c)),
-    );
-  };
-
   const resetColumnview = () => {
     setColumnVisibility(initialColumnVisibility);
     setSelectedView('');
@@ -2323,16 +2531,6 @@ const AgGrid: FC<IAgGridProps> = ({
       gridRef.current.api.setFilterModel(null);
       sortsManager.applySortModelToGrid([]);
     }
-  };
-
-  const handlePinChange = (colField: string, value: string) => {
-    setColumnVisibility((prev) =>
-      prev.map((col) => {
-        if (col.field !== colField) return col;
-        const pinnedValue = value === 'unpinned' ? null : (value as 'left' | 'right');
-        return { ...col, pinned: pinnedValue };
-      }),
-    );
   };
 
   const handleLoadViewSelection = useCallback(
@@ -2358,6 +2556,24 @@ const AgGrid: FC<IAgGridProps> = ({
       );
     },
     [loadViewWithLinkedFilter],
+  );
+
+  const applyViewDialogColumns = useCallback(
+    (nextColumns: AppliedViewColumn[]) => {
+      setColumnVisibility(nextColumns);
+      viewsManager.persistCurrent(
+        nextColumns.map((column) => ({
+          colId: column.field,
+          hide: Boolean(column.isHidden),
+          pinned: column.pinned ?? null,
+          width: column.width ?? null,
+          flex: column.flex ?? null,
+          i18n: column.i18n ?? null,
+        })),
+        { force: true },
+      );
+    },
+    [viewsManager],
   );
 
   const openAdvancedSortingDialog = () => {
@@ -2386,49 +2602,6 @@ const AgGrid: FC<IAgGridProps> = ({
     );
   }, [columnVisibility, columns]);
 
-  const filteredColumns = useMemo(() => {
-    const rawSearch = propertySearch.trim().toLowerCase();
-    const compactSearch = rawSearch.replace(/[_\s]+/g, '');
-
-    return [...normalizedColumns]
-      .sort((a, b) => {
-        const aVisible = !a.isHidden;
-        const bVisible = !b.isHidden;
-        if (aVisible !== bVisible) return aVisible ? -1 : 1;
-        const aLabel = String(columnLabelByStableField.get(a.field) ?? a.field);
-        const bLabel = String(columnLabelByStableField.get(b.field) ?? b.field);
-        const labelCompare = aLabel.localeCompare(bLabel, undefined, { sensitivity: 'base' });
-        if (labelCompare !== 0) return labelCompare;
-        return a.field.localeCompare(b.field);
-      })
-      .filter((column) => {
-        const isVisible = !column.isHidden;
-        if (showVisibleOnly && !isVisible) return false;
-        if (!rawSearch) return true;
-
-        const displayLabel = columnLabelByStableField.get(column.field) ?? column.field;
-        const field = column.field.toLowerCase();
-        const label = String(displayLabel).toLowerCase();
-        const compactField = field.replace(/[_\s]+/g, '');
-        const compactLabel = label.replace(/[_\s]+/g, '');
-        return (
-          field.includes(rawSearch) ||
-          compactField.includes(compactSearch) ||
-          label.includes(rawSearch) ||
-          compactLabel.includes(compactSearch)
-        );
-      });
-  }, [columnLabelByStableField, normalizedColumns, propertySearch, showVisibleOnly]);
-
-  const setFilteredColumnsVisible = (visible: boolean) => {
-    filteredColumns.forEach((column) => {
-      const isVisible = !column.isHidden;
-      if (isVisible !== visible) {
-        handleColumnToggle(column.field);
-      }
-    });
-  };
-
   const resolvedStyle = useMemo<CSSProperties>(() => {
     const s = { ...style };
     if (s.height === '100%' || s.height === 'auto' || s.height === 'inherit') {
@@ -2447,6 +2620,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarSorting ||
     showToolbarStatistics ||
     showToolbarCalculatedSearch ||
+    showToolbarSequence ||
     showToolbarSaveView ||
     showToolbarSavedViews;
 
@@ -2567,6 +2741,27 @@ const AgGrid: FC<IAgGridProps> = ({
                             </IconPopover>
                           </div>
                         )}
+                        {showToolbarSequence && (
+                          <div className="sequence-section">
+                            <IconPopover label={translation('Programmation séquence')}>
+                              <button
+                                type="button"
+                                onClick={() => setShowSequenceDialog(true)}
+                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
+                                style={{
+                                  width: '31px',
+                                  height: '31px',
+                                  borderRadius: '8px',
+                                  borderColor: '#0000001A',
+                                  color: '#44444C',
+                                }}
+                                aria-label={translation('Programmation séquence')}
+                              >
+                                <FaListCheck size={14} />
+                              </button>
+                            </IconPopover>
+                          </div>
+                        )}
                         {showToolbarSorting && (
                           <div className="sorting-section ">
                             <IconPopover label={translation('Advanced sorting')}>
@@ -2656,10 +2851,11 @@ const AgGrid: FC<IAgGridProps> = ({
                         {/* columns customizer button */}
                         <div className="customizer-section flex flex-col gap-2 rounded-lg bg-white px-4 py-2">
                           <div className="flex gap-2">
-                            <QuickShortcutMenu
-                              menuLabel={translation('Open quick shortcuts')}
-                              buttonText={translation('Shortcuts')}
-                              sections={[
+                            {showToolbarShortcuts && (
+                              <QuickShortcutMenu
+                                menuLabel={translation('Open quick shortcuts')}
+                                buttonText={translation('Shortcuts')}
+                                sections={[
                                 {
                                   id: 'views',
                                   label: translation('Views'),
@@ -2709,8 +2905,37 @@ const AgGrid: FC<IAgGridProps> = ({
                                     sortsManager.loadSort(itemId);
                                   },
                                 },
-                              ]}
-                            />
+                                {
+                                  id: 'sequences',
+                                  label: translation('Sequence programming'),
+                                  emptyLabel: translation('No saved sequence programming'),
+                                  items: (showToolbarSequence ? savedSequences : []).map(
+                                    (sequenceRecord) => {
+                                      const key = savedRecordKey(sequenceRecord);
+                                      return { id: key, label: sequenceRecord.name };
+                                    },
+                                  ),
+                                  onSelect: (itemId) => {
+                                    const record = findSavedRecord(
+                                      savedSequences,
+                                      itemId,
+                                    ) as SavedSequence | null;
+                                    setSelectedSequence(record);
+                                    if (record?.sequence && sequenceDs) {
+                                      sequenceDs.setValue(null, record.sequence);
+                                    }
+                                    emit('onloadsequence', {
+                                      key: itemId,
+                                      sequence: record?.sequence,
+                                    });
+                                    if (record?.sequence) {
+                                      emit('onsequence', record.sequence);
+                                    }
+                                  },
+                                },
+                                ]}
+                              />
+                            )}
                             <IconPopover label={translation('Reset')}>
                               <button
                                 className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
@@ -2743,6 +2968,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       viewName={viewName}
                       setViewName={setViewName}
                       selectedView={selectedView}
+                      setSelectedView={setSelectedView}
                       onLoadView={handleLoadViewSelection}
                       isViewDefault={isViewDefault}
                       setIsViewDefault={setIsViewDefault}
@@ -2751,10 +2977,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       setPropertySearch={setPropertySearch}
                       showVisibleOnly={showVisibleOnly}
                       setShowVisibleOnly={setShowVisibleOnly}
-                      filteredColumns={filteredColumns}
-                      setFilteredColumnsVisible={setFilteredColumnsVisible}
-                      handleColumnToggle={handleColumnToggle}
-                      handlePinChange={handlePinChange}
+                      columns={normalizedColumns}
+                      applyColumns={applyViewDialogColumns}
                       columnLabelByStableField={columnLabelByStableField}
                       savedFilters={filtersManager.savedFilters}
                       viewLinkedFilterId={viewLinkedFilterId}
@@ -2766,6 +2990,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showCalculatedSearchDialog}
                       onClose={() => setShowCalculatedSearchDialog(false)}
                       translation={translation}
+                      dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                       relationTree={relationTreeValue}
                       savedSorts={sortsManager.savedSorts}
                       selectedSortKey={selectedSortName}
@@ -2891,6 +3116,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       }}
                       onApply={async (payload: CalculatedSearchEmitPayload) => {
                         const linkedSort = payload.linkedSortId ?? payload.linkedSort;
+                        let sortForPayload = payload.sort;
                         if (
                           linkedSort !== null &&
                           linkedSort !== undefined &&
@@ -2905,9 +3131,169 @@ const AgGrid: FC<IAgGridProps> = ({
                             setSelectedSortName(sortKey);
                             skipAutoSortDefaultRef.current = true;
                           }
+                          sortForPayload = normalizeSortModel(
+                            sortRecord?.sortModel ?? payload.sort,
+                            columnsRef.current,
+                            sortableColIdsRef.current,
+                          );
+                        } else {
+                          const api = gridRef.current?.api;
+                          sortForPayload = api
+                            ? normalizeSortModel(
+                                buildSortModelFromColumnState(api.getColumnState()),
+                                columnsRef.current,
+                                sortableColIdsRef.current,
+                              )
+                            : [];
                         }
-                        await emit('oncalculatedsearch', payload);
+
+                        if (payload.scope?.option === 'global') {
+                          const api = gridRef.current?.api;
+                          if (api && !api.isDestroyed()) {
+                            api.setFilterModel(null);
+                          }
+                          commitLiveFilterModel({});
+                          persistFilterDsNow({});
+                          setSelectedFilterName('');
+                        }
+
+                        await emit('oncalculatedsearch', {
+                          ...payload,
+                          sort: sortForPayload,
+                        });
                         setShowCalculatedSearchDialog(false);
+                      }}
+                    />
+                  )}
+                  {showToolbarSequence && (
+                    <SequenceProgrammingDialog
+                      open={showSequenceDialog}
+                      onClose={() => setShowSequenceDialog(false)}
+                      translation={translation}
+                      savedViews={viewsManager.savedViews}
+                      savedFilters={filtersManager.savedFilters}
+                      savedSorts={sortsManager.savedSorts}
+                      savedSequences={savedSequences}
+                      transpositions={sequenceTranspositionsValue}
+                      selectedSequence={selectedSequence}
+                      setSelectedSequence={setSelectedSequence}
+                      onSave={(name, sequencePayload) => {
+                        const nextRecord: SavedSequence = { name, sequence: sequencePayload };
+                        setSavedSequences((prev) => {
+                          if (prev.some((record) => sequenceRecordMatches(record, name))) {
+                            return prev;
+                          }
+                          return [...prev, nextRecord];
+                        });
+                        setSelectedSequence(nextRecord);
+                        if (sequencesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await sequencesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              const exists = arr.some((record: any) =>
+                                sequenceRecordMatches(record, name),
+                              );
+                              if (!exists) {
+                                sequencesDs.setValue(null, [...arr, nextRecord]);
+                              }
+                            } catch {
+                              sequencesDs.setValue(null, [nextRecord]);
+                            }
+                          })();
+                        }
+                        if (sequenceDs) {
+                          sequenceDs.setValue(null, sequencePayload);
+                        }
+                        emit('onsavesequence', { name, sequence: sequencePayload });
+                      }}
+                      onLoad={(key) => {
+                        const record = findSavedRecord(savedSequences, key) as SavedSequence | null;
+                        if (record?.sequence && sequenceDs) {
+                          sequenceDs.setValue(null, record.sequence);
+                        }
+                        emit('onloadsequence', { key, sequence: record?.sequence });
+                      }}
+                      onUpdate={(key, sequencePayload) => {
+                        const existing = findSavedRecord(savedSequences, key) as SavedSequence | null;
+                        const nextRecord: SavedSequence = {
+                          ...(existing ?? { name: String(key) }),
+                          sequence: sequencePayload,
+                        };
+                        setSavedSequences((prev) => {
+                          const exists = prev.some((record) => sequenceRecordMatches(record, key));
+                          if (!exists) return [...prev, nextRecord];
+                          return prev.map((record) =>
+                            sequenceRecordMatches(record, key)
+                              ? { ...record, sequence: sequencePayload }
+                              : record,
+                          );
+                        });
+                        setSelectedSequence(nextRecord);
+                        if (sequencesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await sequencesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              const exists = arr.some((record: any) =>
+                                sequenceRecordMatches(record, key),
+                              );
+                              const next = exists
+                                ? arr.map((record: any) =>
+                                    sequenceRecordMatches(record, key)
+                                      ? { ...record, sequence: sequencePayload }
+                                      : record,
+                                  )
+                                : [...arr, nextRecord];
+                              sequencesDs.setValue(null, next);
+                            } catch {
+                              sequencesDs.setValue(null, [nextRecord]);
+                            }
+                          })();
+                        }
+                        if (sequenceDs) {
+                          sequenceDs.setValue(null, sequencePayload);
+                        }
+                        emit('onupdatesequence', {
+                          selectedSequence: key,
+                          sequencePayload,
+                          sequence: nextRecord,
+                        });
+                      }}
+                      onDelete={(record) => {
+                        const key = savedRecordKey(record);
+                        if (!key) return;
+                        setSavedSequences((prev) =>
+                          prev.filter((item) => !sequenceRecordMatches(item, key)),
+                        );
+                        setSelectedSequence((prev) =>
+                          prev && sequenceRecordMatches(prev, key) ? null : prev,
+                        );
+                        if (sequencesDs) {
+                          void (async () => {
+                            try {
+                              const prev = await sequencesDs.getValue();
+                              const arr = Array.isArray(prev) ? prev : [];
+                              sequencesDs.setValue(
+                                null,
+                                arr.filter((item: any) => !sequenceRecordMatches(item, key)),
+                              );
+                            } catch {
+                              sequencesDs.setValue(null, []);
+                            }
+                          })();
+                        }
+                        emit('ondeletesequence', {
+                          selectedSequence: key,
+                          sequence: record,
+                        });
+                      }}
+                      onApply={(sequencePayload) => {
+                        if (sequenceDs) {
+                          sequenceDs.setValue(null, sequencePayload);
+                        }
+                        emit('onsequence', sequencePayload);
+                        setShowSequenceDialog(false);
                       }}
                     />
                   )}
@@ -2922,9 +3308,6 @@ const AgGrid: FC<IAgGridProps> = ({
                       onApply={(model) => {
                         sortsManager.applySortModelToGrid(model);
                       }}
-                      onClear={() => {
-                        sortsManager.applySortModelToGrid([]);
-                      }}
                       savedSorts={sortsManager.savedSorts}
                       saveSort={sortsManager.saveSort}
                       updateSort={sortsManager.updateSort}
@@ -2938,6 +3321,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showFilterDialog}
                       onClose={() => setShowFilterDialog(false)}
                       translation={translation}
+                      dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                       i18n={i18n}
                       lang={lang}
                       columns={columns}
@@ -2947,10 +3331,13 @@ const AgGrid: FC<IAgGridProps> = ({
                       showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
                       filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
                       onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
+                      initialScopeOption={filterApplyOptionsRef.current.scope.option}
+                      initialSearchTypeOption={filterApplyOptionsRef.current.searchType.option}
                       filterModel={liveFilterModel}
-                      setFilterModel={(next) => {
+                      setFilterModel={(next, options) => {
                         const api = gridRef.current?.api;
                         if (!api || api.isDestroyed()) return;
+                        const runtimeOptionsChanged = applyFilterRuntimeOptions(options);
                         const prevLiveModel = liveFilterModelRef.current ?? {};
                         const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
                         const currentAg = stripAdvancedRulesFromFilterModel(
@@ -2968,6 +3355,8 @@ const AgGrid: FC<IAgGridProps> = ({
                           persistFilterDsNow(nextAg);
                           filtersManager.persistCurrent(nextAg);
                           api.refreshInfiniteCache();
+                        } else if (!agChanged && !liveChanged && runtimeOptionsChanged) {
+                          api.refreshInfiniteCache();
                         }
                       }}
                       savedFilters={filtersManager.savedFilters}
@@ -2975,6 +3364,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       saveFilter={filtersManager.saveFilter}
                       updateFilter={filtersManager.updateFilter}
                       deleteFilter={filtersManager.deleteFilter}
+                      showSavedFilterManagement={Boolean(filters)}
                       applyLinkedSortForFilter={(record) => {
                         const sortKey = getLinkedSortKeyForFilter(record);
                         if (!sortKey) return;
@@ -3099,9 +3489,12 @@ const AgGrid: FC<IAgGridProps> = ({
               showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
               filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
               onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
+              initialScopeOption={filterApplyOptionsRef.current.scope.option}
+              initialSearchTypeOption={filterApplyOptionsRef.current.searchType.option}
               translation={translation}
-              onApply={(nextModel) => {
-                applyHeaderFilterModel(nextModel ?? {});
+              dateSaisieLibreTranslation={dateSaisieLibreTranslation}
+              onApply={(nextModel, options) => {
+                applyHeaderFilterModel(nextModel ?? {}, options);
               }}
               onClose={() => setHeaderFilterPopupState(null)}
             />

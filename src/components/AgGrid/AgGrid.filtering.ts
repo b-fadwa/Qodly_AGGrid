@@ -1,4 +1,10 @@
 import { format } from 'date-fns';
+import {
+  DATE_SAISIE_LIBRE_FLAG,
+  DATE_SAISIE_LIBRE_VALUE,
+  DATE_SAISIE_LIBRE_VALUE_TO,
+  isDateSaisieLibreCondition,
+} from './dialogs/DateSaisieLibre';
 
 export const MAX_FILTER_CONDITIONS = 10;
 
@@ -368,6 +374,20 @@ export const buildFilterQuery = (filter: any, source: string, column?: any): str
           return '';
       }
     case 'date': {
+      if (isDateSaisieLibreCondition(filter)) {
+        const specialValue = Number(filter[DATE_SAISIE_LIBRE_VALUE]);
+        const specialValueTo = Number(filter[DATE_SAISIE_LIBRE_VALUE_TO]);
+        if (
+          filter.type === 'inRange' &&
+          Number.isInteger(specialValue) &&
+          Number.isInteger(specialValueTo)
+        ) {
+          return `${source} ${DATE_SAISIE_LIBRE_FLAG} ${specialValue} AND ${source} ${DATE_SAISIE_LIBRE_FLAG} ${specialValueTo}`;
+        }
+        return Number.isInteger(specialValue)
+          ? `${source} ${DATE_SAISIE_LIBRE_FLAG} ${specialValue}`
+          : '';
+      }
       const dateFrom = new Date(filter.dateFrom);
       switch (filter.type) {
         case 'equals':
@@ -473,7 +493,7 @@ export const getColumnFilterOperators = (column: any): FilterOperatorDescriptor[
         return {
           key: option.displayKey,
           label: option.displayName ?? option.displayKey,
-          inputs: ((option.numberOfInputs ?? 1) as 0 | 1 | 2),
+          inputs: (option.numberOfInputs ?? 1) as 0 | 1 | 2,
         };
       }
       return null;
@@ -582,7 +602,9 @@ export const buildFilterQueries = (filterModel: any, columns: any[]): string[] =
         if (!query) return null;
         return { query, combinator: rule.combinator };
       })
-      .filter((item): item is { query: string; combinator: QodlyFilterCombinator } => item !== null);
+      .filter(
+        (item): item is { query: string; combinator: QodlyFilterCombinator } => item !== null,
+      );
     if (!compiled.length) return [];
     let chain = `(${compiled[0].query})`;
     for (let i = 1; i < compiled.length; i += 1) {

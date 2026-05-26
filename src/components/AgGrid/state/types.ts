@@ -43,7 +43,41 @@ export interface SavedSort extends SavedRecordBase {
   sortModel: SortModelItem[];
 }
 
-export type SavedRecord = SavedView | SavedFilter | SavedSort;
+export type SequenceFilterMode = 'intersection' | 'reunion' | 'exclusion';
+
+export interface SequenceFilterStep {
+  filterId: string | number;
+  mode?: SequenceFilterMode;
+}
+
+export interface SequenceProgrammingPayload {
+  viewId?: string | number;
+  filters: SequenceFilterStep[];
+  sortId?: string | number;
+  output: {
+    mode?: 'display' | 'export' | 'list' | 'table' | 'predefinedDocuments';
+    referenceDocumentId?: string | number;
+    uppercase?: boolean;
+    header?: boolean;
+    type?: 'csv' | 'txt' | 'xml';
+  };
+  transposition: {
+    mode?: 'none' | 'nTo1' | 'oneToN';
+    selectionId?: string | number;
+    selectionKey?: string | number;
+    selectionLabel?: string;
+    selectionLink?: string;
+    chainedSequenceId?: string | number;
+    runSearchesOnResultSelection?: boolean;
+    predefinedDocumentId?: string | number;
+  };
+}
+
+export interface SavedSequence extends SavedRecordBase {
+  sequence: SequenceProgrammingPayload;
+}
+
+export type SavedRecord = SavedView | SavedFilter | SavedSort | SavedSequence;
 
 /** Scalar object datasource bound to the live view (current columnState). */
 export interface ViewStateValue {

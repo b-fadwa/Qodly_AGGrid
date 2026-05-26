@@ -169,6 +169,12 @@ const dataAccessSettings: TSetting[] = [
     key: 'showToolbarView',
   },
   {
+    label: 'Toolbar: Shortcuts',
+    defaultValue: false,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarShortcuts',
+  },
+  {
     label: 'Toolbar: Sorting',
     defaultValue: true,
     type: ESetting.CHECKBOX,
@@ -185,6 +191,12 @@ const dataAccessSettings: TSetting[] = [
     defaultValue: false,
     type: ESetting.CHECKBOX,
     key: 'showToolbarCalculatedSearch',
+  },
+  {
+    label: 'Toolbar: Sequence programming',
+    defaultValue: true,
+    type: ESetting.CHECKBOX,
+    key: 'showToolbarSequence',
   },
   {
     label: 'Toolbar: Save view',
@@ -277,6 +289,24 @@ const calculatedSearchSettings: TSetting[] = [
   {
     key: 'relationTree',
     label: 'Relation tree (available fields)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+];
+
+const sequenceSettings: TSetting[] = [
+  {
+    key: 'sequence',
+    label: 'Current sequence (object)',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'sequences',
+    label: 'Saved sequences list',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
+  {
+    key: 'sequenceTranspositions',
+    label: 'Sequence transpositions (object)',
     type: ESetting.DS_AUTO_SUGGEST,
   },
 ];
@@ -643,6 +673,12 @@ const Settings: TSetting[] = [
     components: calculatedSearchSettings,
   },
   {
+    key: 'sequence',
+    label: 'Sequence programming',
+    type: ESetting.GROUP,
+    components: sequenceSettings,
+  },
+  {
     key: 'general',
     label: 'General',
     type: ESetting.GROUP,
@@ -680,6 +716,7 @@ export const BasicSettings: TSetting[] = [
   ...filterSettings,
   ...sortSettings,
   ...calculatedSearchSettings,
+  ...sequenceSettings,
   ...commonSettings,
   ...basicSettings,
 ];
