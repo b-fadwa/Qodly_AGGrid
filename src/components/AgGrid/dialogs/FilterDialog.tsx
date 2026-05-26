@@ -7,10 +7,23 @@ import type { Translation } from '../state/sorts';
 import { isHiddenIdColumn, findSavedRecord, savedRecordKey } from '../state/gridState';
 import { QueryBuilder, type QueryBuilderHandle } from './QueryBuilder';
 
+type FilterSearchScopeKind = 'global' | 'selection';
+type FilterSearchTypeKind = 'replace' | 'add' | 'remove';
+
+interface FilterApplyOptions {
+  scope: {
+    option: FilterSearchScopeKind;
+  };
+  searchType: {
+    option: FilterSearchTypeKind;
+  };
+}
+
 interface FilterDialogProps {
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  dateSaisieLibreTranslation?: (key: string) => string;
   i18n?: any;
   lang?: string;
   columns: IColumn[];
@@ -20,10 +33,12 @@ interface FilterDialogProps {
   showFilterInactiveRecordsToggle: boolean;
   filterInactiveRecordsEnabled: boolean;
   onFilterInactiveRecordsEnabledChange: (enabled: boolean) => void;
+  initialScopeOption?: FilterSearchScopeKind;
+  initialSearchTypeOption?: FilterSearchTypeKind;
   /** AG Grid `getFilterModel()` snapshot — kept in sync with the header filter via `onFilterChanged`. */
   filterModel: any;
   /** Push a new filterModel back to AG Grid (typically `gridApi.setFilterModel`). */
-  setFilterModel: (next: any) => void;
+  setFilterModel: (next: any, options: FilterApplyOptions) => void;
   savedFilters: SavedFilter[];
   savedSorts: SavedSort[];
   saveFilter: (
@@ -45,6 +60,7 @@ interface FilterDialogProps {
     },
   ) => void;
   deleteFilter: (key: string) => void;
+  showSavedFilterManagement: boolean;
   applyLinkedSortForFilter?: (record: SavedFilter) => void;
   /** Currently selected saved filter — owned by the parent for toolbar + dialog dropdowns. */
   selectedFilter: string;
@@ -55,6 +71,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   open,
   onClose,
   translation,
+  dateSaisieLibreTranslation,
   i18n,
   lang,
   columns,
@@ -64,6 +81,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   showFilterInactiveRecordsToggle,
   filterInactiveRecordsEnabled,
   onFilterInactiveRecordsEnabledChange,
+  initialScopeOption = 'global',
+  initialSearchTypeOption = 'replace',
   filterModel,
   setFilterModel,
   savedFilters,
@@ -71,6 +90,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   saveFilter,
   updateFilter,
   deleteFilter,
+  showSavedFilterManagement,
   applyLinkedSortForFilter,
   selectedFilter,
   setSelectedFilter,
@@ -84,6 +104,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   const [draftFilterInactiveRecordsEnabled, setDraftFilterInactiveRecordsEnabled] = useState(
     filterInactiveRecordsEnabled,
   );
+  const [scopeOption, setScopeOption] = useState<FilterSearchScopeKind>('global');
+  const [searchTypeOption, setSearchTypeOption] = useState<FilterSearchTypeKind>('replace');
   const queryBuilderRef = useRef<QueryBuilderHandle>(null);
 
   useEffect(() => {
@@ -91,7 +113,16 @@ export const FilterDialog: FC<FilterDialogProps> = ({
     setDraftFilterModel(filterModel);
     setDraftDateFinancialFilterEnabled(dateFinancialFilterEnabled);
     setDraftFilterInactiveRecordsEnabled(filterInactiveRecordsEnabled);
-  }, [open, filterModel, dateFinancialFilterEnabled, filterInactiveRecordsEnabled]);
+    setScopeOption(initialScopeOption);
+    setSearchTypeOption(initialSearchTypeOption);
+  }, [
+    open,
+    filterModel,
+    dateFinancialFilterEnabled,
+    filterInactiveRecordsEnabled,
+    initialScopeOption,
+    initialSearchTypeOption,
+  ]);
 
   useEffect(() => {
     if (!selectedFilter) {
@@ -202,6 +233,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             ref={queryBuilderRef}
             deferEmit
             translation={translation}
+            dateSaisieLibreTranslation={dateSaisieLibreTranslation}
             columns={visibleColumns}
             i18n={i18n}
             lang={lang}
@@ -236,109 +268,188 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               </label>
             ) : null}
           </div>
-        </div>
-
-        <div className="px-5 py-3 flex flex-col gap-3" style={{ borderTop: '1px solid #E5E7EB' }}>
-          <span style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}>
-            {translation('Saved filters')}
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              placeholder={translation('Filter name')}
-              value={filterName}
-              onChange={(e) => setFilterName(e.target.value)}
-              className="rounded-lg border border-gray-300 px-2 py-1"
-              style={{
-                height: '31px',
-                borderRadius: '6px',
-                borderColor: '#0000001A',
-                color: '#44444C',
-                fontSize: '12px',
-              }}
-            />
-            <select
-              value={selectedFilter}
-              onChange={(e) => {
-                const next = e.target.value;
-                setSelectedFilter(next);
-              }}
-              className="rounded-lg border border-gray-300 px-2 py-1"
-              style={{
-                height: '31px',
-                borderRadius: '6px',
-                borderColor: '#0000001A',
-                color: '#44444C',
-                fontSize: '12px',
-              }}
-            >
-              <option value="">{translation('Select filter')}</option>
-              {savedFilters.map((record) => (
-                <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
-                  {record.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={linkedSort}
-              onChange={(e) => setLinkedSort(e.target.value)}
-              className="filter-input rounded-lg border border-gray-300 px-2 py-1"
-              style={{
-                height: '31px',
-                borderRadius: '6px',
-                borderColor: '#0000001A',
-                color: '#44444C',
-                fontSize: '12px',
-              }}
-              title={translation('Linked sort')}
-            >
-              <option value="">{translation('No linked sort')}</option>
-              {linkedSort && !findSavedRecord(savedSorts, linkedSort) ? (
-                <option value={linkedSort}>{linkedSort}</option>
-              ) : null}
-              {savedSorts.map((record) => (
-                <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
-                  {record.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-lg border"
-              style={{
-                width: '31px',
-                height: '31px',
-                borderRadius: '8px',
-                color: '#EC7B80',
-                borderColor: '#EC7B80',
-                backgroundColor: '#EC7B8033',
-              }}
-              onClick={() => {
-                if (!selectedFilter) return;
-                deleteFilter(selectedFilter);
-              }}
-              title={translation('Delete')}
-            >
-              <GoTrash size={14} />
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-gray-300 bg-white px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                height: '31px',
-                borderRadius: '6px',
-                borderColor: '#0000001A',
-                color: '#44444C',
-                fontSize: '12px',
-                fontWeight: 500,
-              }}
-              disabled={saveButtonDisabled}
-              onClick={handleSavePressed}
-            >
-              {willUpdateExisting ? translation('Update') : translation('Save')}
-            </button>
+          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-200 pt-3">
+            <section className="flex flex-col gap-1.5">
+              <h3
+                style={{
+                  margin: 0,
+                  color: '#111827',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  lineHeight: 1.25,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {translation('Search scope')}
+              </h3>
+              <div className="flex flex-col gap-1 text-slate-800" style={{ fontSize: '12px' }}>
+                {[
+                  ['global', 'Global search'],
+                  ['selection', 'Search in selection'],
+                ].map(([value, label]) => (
+                  <label key={value} className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="filter-dialog-scope"
+                      checked={scopeOption === value}
+                      onChange={() => setScopeOption(value as FilterSearchScopeKind)}
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        flexShrink: 0,
+                        accentColor: '#2B5797',
+                      }}
+                    />
+                    <span>{translation(label)}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+            <section className="flex flex-col gap-1.5">
+              <h3
+                style={{
+                  margin: 0,
+                  color: '#111827',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  lineHeight: 1.25,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {translation('Search type')}
+              </h3>
+              <div className="flex flex-col gap-1 text-slate-800" style={{ fontSize: '12px' }}>
+                {[
+                  ['replace', 'Replace selection'],
+                  ['add', 'Add to selection'],
+                  ['remove', 'Remove from selection'],
+                ].map(([value, label]) => (
+                  <label key={value} className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="filter-dialog-search-type"
+                      checked={searchTypeOption === value}
+                      onChange={() => setSearchTypeOption(value as FilterSearchTypeKind)}
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        flexShrink: 0,
+                        accentColor: '#2B5797',
+                      }}
+                    />
+                    <span>{translation(label)}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
           </div>
         </div>
+
+        {showSavedFilterManagement && (
+          <div className="px-5 py-3 flex flex-col gap-3" style={{ borderTop: '1px solid #E5E7EB' }}>
+            <span style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}>
+              {translation('Saved filters')}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                placeholder={translation('Filter name')}
+                value={filterName}
+                onChange={(e) => setFilterName(e.target.value)}
+                className="rounded-lg border border-gray-300 px-2 py-1"
+                style={{
+                  height: '31px',
+                  borderRadius: '6px',
+                  borderColor: '#0000001A',
+                  color: '#44444C',
+                  fontSize: '12px',
+                }}
+              />
+              <select
+                value={selectedFilter}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setSelectedFilter(next);
+                }}
+                className="rounded-lg border border-gray-300 px-2 py-1"
+                style={{
+                  height: '31px',
+                  borderRadius: '6px',
+                  borderColor: '#0000001A',
+                  color: '#44444C',
+                  fontSize: '12px',
+                }}
+              >
+                <option value="">{translation('Select filter')}</option>
+                {savedFilters.map((record) => (
+                  <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
+                    {record.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={linkedSort}
+                onChange={(e) => setLinkedSort(e.target.value)}
+                className="filter-input rounded-lg border border-gray-300 px-2 py-1"
+                style={{
+                  height: '31px',
+                  borderRadius: '6px',
+                  borderColor: '#0000001A',
+                  color: '#44444C',
+                  fontSize: '12px',
+                }}
+                title={translation('Linked sort')}
+              >
+                <option value="">{translation('No linked sort')}</option>
+                {linkedSort && !findSavedRecord(savedSorts, linkedSort) ? (
+                  <option value={linkedSort}>{linkedSort}</option>
+                ) : null}
+                {savedSorts.map((record) => (
+                  <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
+                    {record.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-lg border"
+                style={{
+                  width: '31px',
+                  height: '31px',
+                  borderRadius: '8px',
+                  color: '#EC7B80',
+                  borderColor: '#EC7B80',
+                  backgroundColor: '#EC7B8033',
+                }}
+                onClick={() => {
+                  if (!selectedFilter) return;
+                  deleteFilter(selectedFilter);
+                }}
+                title={translation('Delete')}
+              >
+                <GoTrash size={14} />
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-gray-300 bg-white px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
+                style={{
+                  height: '31px',
+                  borderRadius: '6px',
+                  borderColor: '#0000001A',
+                  color: '#44444C',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                }}
+                disabled={saveButtonDisabled}
+                onClick={handleSavePressed}
+              >
+                {willUpdateExisting ? translation('Update') : translation('Save')}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div
           className="flex justify-end items-center gap-2 w-full p-4"
@@ -354,9 +465,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               color: '#44444C',
               fontSize: '12px',
             }}
-            onClick={() => setDraftFilterModel(null)}
+            onClick={onClose}
           >
-            {translation('Clear')}
+            {translation('Cancel')}
           </button>
           <button
             type="button"
@@ -369,7 +480,10 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               if (showFilterInactiveRecordsToggle) {
                 onFilterInactiveRecordsEnabledChange(draftFilterInactiveRecordsEnabled);
               }
-              setFilterModel(nextModel ?? {});
+              setFilterModel(nextModel ?? {}, {
+                scope: { option: scopeOption },
+                searchType: { option: searchTypeOption },
+              });
               const selectedRecord = selectedFilter
                 ? findSavedRecord(savedFilters, selectedFilter)
                 : undefined;

@@ -14,6 +14,13 @@ import {
 
 import type { SavedSort } from '../state/types';
 import { getColumnAgGridFilterType, getColumnFilterOperators } from '../AgGrid.filtering';
+import {
+  DateSaisieLibreSelect,
+  dateSaisieLibreDisplayLabel,
+  getDateSaisieLibreOptionByValue,
+  makeDateSaisieLibreConditionMeta,
+  type DateEntryMode,
+} from './DateSaisieLibre';
 
 type Translation = (key: string) => string;
 
@@ -141,6 +148,7 @@ function sortSelectValueForPayload(
 }
 
 const ACCENT = '#2B5797';
+const ACCENT_SELECTED_BG = '#2B579733'; // 20% opacity
 
 const styleSectionHeading: CSSProperties = {
   fontSize: '12px',
@@ -230,7 +238,6 @@ function TreeNodeRow({
 }) {
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const expanded = expandedKeys.has(node.key);
-  const isAttribute = node.type === 'attribute';
   const isSelected = selectedKey === node.key;
   return (
     <div className="select-none">
@@ -238,7 +245,7 @@ function TreeNodeRow({
         className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-50"
         style={{
           paddingLeft: `${6 + depth * 12}px`,
-          background: isSelected ? 'rgba(43, 87, 151, 0.10)' : undefined,
+          background: isSelected ? ACCENT_SELECTED_BG : undefined,
         }}
       >
         <button
@@ -248,7 +255,7 @@ function TreeNodeRow({
             width: '12px',
             height: '18px',
             cursor: hasChildren ? 'pointer' : 'default',
-            color: '#64748B',
+            color: isSelected ? ACCENT : '#64748B',
           }}
           aria-label={expanded ? 'Collapse' : 'Expand'}
           aria-expanded={hasChildren ? expanded : undefined}
@@ -267,8 +274,15 @@ function TreeNodeRow({
           onClick={() => onSelect(node)}
           title={String(node.label ?? node.name ?? node.link ?? node.key)}
         >
-          {isAttribute ? <AttributeTypeIcon dataType={(node as any).dataType} /> : null}
-          <span className="truncate" style={{ fontSize: '12px' }}>
+          {'dataType' in node ? <AttributeTypeIcon dataType={node.dataType} /> : null}
+          <span
+            className="truncate"
+            style={{
+              color: isSelected ? ACCENT : undefined,
+              fontSize: '12px',
+              fontWeight: isSelected ? 600 : undefined,
+            }}
+          >
             {String(node.label ?? node.name ?? node.link ?? node.key)}
           </span>
         </button>
@@ -297,23 +311,35 @@ type ExpressionLogicKind = 'and' | 'or' | 'except';
 export type CalculatedSearchExpressionCondition = {
   /** Logical operator connecting this row with the previous row (omitted for the first row). */
   logic?: ExpressionLogicKind;
-  /** Selected node key from `relationTree`. */
-  relationKey: string;
-  /** Best-effort label (stored for display/debugging; backend should rely on `relationKey`). */
+  /** Legacy selected node key from older saved calculated-search payloads. */
+  relationKey?: string;
+  /** Relation/attribute metadata sent to the calculated-search handler. */
+  link?: string;
+  name?: string;
+  tableId?: number;
+  type?: string;
+  /** Best-effort label stored for display/debugging. */
   label: string;
   /** Whether the selection is an attribute leaf. */
   isAttribute: boolean;
+  /** For `toOne` relations: true means relation # null, false means relation = null. */
+  hasOne?: boolean;
   constraint: {
     type: ConstraintTypeKind;
     from: number;
     to: number;
-  };
+  } | null;
   comparison?: {
     operator: string;
     /** Serialized as strings because inputs are string-based in the UI (including dates). */
     value?: string;
     value2?: string;
-    entryMode?: 'free' | 'list';
+    entryMode?: DateEntryMode;
+    dateSaisieLibre?: boolean;
+    dateSaisieLibreValue?: number;
+    dateSaisieLibreValueTo?: number;
+    dateSaisieLibreKey?: string;
+    dateSaisieLibreKeyTo?: string;
   };
 };
 
@@ -392,10 +418,64 @@ function findTreePathByKey(tree: RelationTreeNode[], key: string): RelationTreeN
   return walk(tree, []);
 }
 
+function findTreePathForCondition(
+  tree: RelationTreeNode[],
+  condition: CalculatedSearchExpressionCondition,
+): RelationTreeNode[] | null {
+  if (condition.relationKey) {
+    const legacyPath = findTreePathByKey(tree, condition.relationKey);
+    if (legacyPath) return legacyPath;
+  }
+
+  const link = String(condition.link ?? '').trim();
+  const name = String(condition.name ?? '').trim();
+  const type = String(condition.type ?? '').trim();
+  const tableId = condition.tableId;
+
+  const walk = (nodes: RelationTreeNode[], acc: RelationTreeNode[]): RelationTreeNode[] | null => {
+    for (const node of nodes) {
+      const nextAcc = acc.concat(node);
+      const nodeLink = String(node.link ?? '').trim();
+      const nodeName = String(node.name ?? '').trim();
+      const nodeType = String(node.type ?? '').trim();
+      const nodeTableId = node.tableId;
+      const matches =
+        (!link || nodeLink === link) &&
+        (!name || nodeName === name) &&
+        (!type || nodeType === type) &&
+        (tableId == null || nodeTableId === tableId);
+      if (matches) return nextAcc;
+      if (Array.isArray(node.children) && node.children.length) {
+        const hit = walk(node.children, nextAcc);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  };
+
+  if (!Array.isArray(tree) || !tree.length) return null;
+  return walk(tree, []);
+}
+
+function conditionStableKey(condition: CalculatedSearchExpressionCondition, index: number): string {
+  return [
+    condition.link,
+    condition.name,
+    condition.tableId,
+    condition.type,
+    condition.hasOne,
+    condition.relationKey,
+    index,
+  ]
+    .filter((v) => v !== undefined && v !== null && String(v) !== '')
+    .join('-');
+}
+
 export const CalculatedSearchDialog: FC<{
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  dateSaisieLibreTranslation?: (key: string) => string;
   relationTree: RelationTreeNode[];
   savedSorts: SavedSort[];
   /** Toolbar / grid selected saved sort name; synced when the dialog opens. */
@@ -417,6 +497,7 @@ export const CalculatedSearchDialog: FC<{
   open,
   onClose,
   translation,
+  dateSaisieLibreTranslation,
   relationTree,
   savedSorts,
   selectedSortKey: _selectedSortKey,
@@ -440,11 +521,13 @@ export const CalculatedSearchDialog: FC<{
   const [selectedRelationNode, setSelectedRelationNode] = useState<RelationTreeNode | null>(null);
   const [constraintType, setConstraintType] = useState<ConstraintTypeKind>('count');
   const [constraintFrom, setConstraintFrom] = useState<number>(0);
-  const [constraintTo, setConstraintTo] = useState<number>(0);
+  const [constraintFromDraft, setConstraintFromDraft] = useState('0');
+  const [constraintToDraft, setConstraintToDraft] = useState('0');
+  const [toOneHasOne, setToOneHasOne] = useState(true);
   const [targetOperator, setTargetOperator] = useState<string>('');
   const [targetValue, setTargetValue] = useState<string>('');
   const [targetValue2, setTargetValue2] = useState<string>('');
-  const [entryMode, setEntryMode] = useState<'free' | 'list'>('free');
+  const [entryMode, setEntryMode] = useState<DateEntryMode>('free');
   const [logicForNewCondition, setLogicForNewCondition] = useState<ExpressionLogicKind>('and');
   const [expression, setExpression] = useState<CalculatedSearchExpression>(() => ({
     conditions: [],
@@ -464,7 +547,9 @@ export const CalculatedSearchDialog: FC<{
       setSelectedRelationNode(null);
       setConstraintType('count');
       setConstraintFrom(0);
-      setConstraintTo(0);
+      setConstraintFromDraft('0');
+      setConstraintToDraft('0');
+      setToOneHasOne(true);
       setTargetOperator('');
       setTargetValue('');
       setTargetValue2('');
@@ -477,6 +562,7 @@ export const CalculatedSearchDialog: FC<{
   }, [open, filterOnFiscalYearsInitial, setSelectedCalculatedSearch]);
 
   const selectedIsAttribute = selectedRelationNode?.type === 'attribute';
+  const selectedIsToOne = selectedRelationNode?.type === 'toOne';
   const selectedDataType = selectedIsAttribute
     ? String((selectedRelationNode as any)?.dataType ?? '')
     : '';
@@ -490,29 +576,31 @@ export const CalculatedSearchDialog: FC<{
     }
   }, [selectedIsReel]);
 
-  // Clamp numeric constraint inputs:
-  // - max To is 999
-  // - To min is From (and can be equal)
-  // - From cannot exceed To after edits
-  useEffect(() => {
-    setConstraintFrom((prev) => {
-      const n = Number.isFinite(prev) ? prev : 0;
-      const clamped = Math.min(Math.max(0, n), 999);
-      return clamped;
-    });
-    setConstraintTo((prev) => {
-      const n = Number.isFinite(prev) ? prev : 0;
-      const clamped = Math.min(Math.max(0, n), 999);
-      return clamped;
-    });
-  }, []);
+  const normalizeConstraintDrafts = useCallback(() => {
+    const rawFrom = Number(constraintFromDraft);
+    const rawTo = Number(constraintToDraft);
+    const nextFrom = Number.isFinite(rawFrom) ? Math.min(Math.max(0, rawFrom), 999) : 0;
+    const parsedTo = Number.isFinite(rawTo) ? rawTo : nextFrom;
+    const nextTo = Math.min(Math.max(nextFrom, parsedTo), 999);
+    setConstraintFrom(nextFrom);
+    setConstraintFromDraft(String(nextFrom));
+    setConstraintToDraft(String(nextTo));
+    return { from: nextFrom, to: nextTo };
+  }, [constraintFromDraft, constraintToDraft]);
 
   useEffect(() => {
-    setConstraintTo((prev) => {
-      const next = Math.min(Math.max(prev, constraintFrom), 999);
-      return next;
-    });
-  }, [constraintFrom]);
+    const handle = window.setTimeout(() => {
+      const rawFrom = Number(constraintFromDraft);
+      const rawTo = Number(constraintToDraft);
+      if (constraintFromDraft !== '' && Number.isFinite(rawFrom)) {
+        setConstraintFrom(Math.min(Math.max(0, rawFrom), 999));
+      }
+      if (constraintToDraft !== '' && Number.isFinite(rawTo)) {
+        setConstraintToDraft(String(Math.min(Math.max(0, rawTo), 999)));
+      }
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [constraintFromDraft, constraintToDraft]);
 
   const targetColumn = useMemo<any | null>(() => {
     if (!selectedRelationNode || !selectedIsAttribute) return null;
@@ -613,6 +701,28 @@ export const CalculatedSearchDialog: FC<{
     });
   }, []);
 
+  const serializeExpressionForPayload = useCallback(
+    (draft: CalculatedSearchExpression): CalculatedSearchExpression => ({
+      conditions: draft.conditions.map((condition) => {
+        const rest = { ...condition };
+        delete rest.relationKey;
+        const path = findTreePathForCondition(relationTree, condition);
+        const node = path?.[path.length - 1];
+        const type = rest.type ?? node?.type;
+        return {
+          ...rest,
+          link: rest.link ?? node?.link,
+          name: rest.name ?? node?.name,
+          tableId: rest.tableId ?? node?.tableId,
+          type,
+          constraint: type === 'toOne' ? null : rest.constraint,
+          ...(type === 'toOne' ? { hasOne: rest.hasOne ?? true } : {}),
+        };
+      }),
+    }),
+    [relationTree],
+  );
+
   const buildDraftPayload = useCallback((): CalculatedSearchEmitPayload => {
     const linkedSort =
       sortSelectValue === CALCULATED_SEARCH_SORT_NONE ? undefined : sortSelectValue;
@@ -622,9 +732,17 @@ export const CalculatedSearchDialog: FC<{
       sort: sortModelForSelectValue(savedSorts, sortSelectValue),
       ...(linkedSort !== undefined ? { linkedSortId: linkedSort, linkedSort } : {}),
       filterOnFiscalYears,
-      expression,
+      expression: serializeExpressionForPayload(expression),
     };
-  }, [scopeOption, searchTypeOption, savedSorts, sortSelectValue, filterOnFiscalYears, expression]);
+  }, [
+    scopeOption,
+    searchTypeOption,
+    savedSorts,
+    sortSelectValue,
+    filterOnFiscalYears,
+    expression,
+    serializeExpressionForPayload,
+  ]);
 
   const isEditingSelectedCondition = useMemo(
     () => selectedConditionIndex !== null,
@@ -636,23 +754,55 @@ export const CalculatedSearchDialog: FC<{
     // We allow table nodes too (comparison will be omitted).
     if (selectedRelationNode.type !== 'attribute') return true;
     // Attribute requires an operator if operators exist and isn't the boolean sentinel.
+    if (selectedIsDate && entryMode === 'list') {
+      return (
+        Boolean(targetOperator || targetOperators.length === 0) &&
+        Boolean(targetValue) &&
+        (targetInputs < 2 || Boolean(targetValue2))
+      );
+    }
+    if (selectedIsDate) {
+      return (
+        Boolean(targetOperator || targetOperators.length === 0) &&
+        Boolean(targetValue) &&
+        (targetInputs < 2 || Boolean(targetValue2))
+      );
+    }
     if (targetIsBooleanOperators) return Boolean(targetOperator);
     return Boolean(targetOperator || targetOperators.length === 0);
-  }, [selectedRelationNode, targetIsBooleanOperators, targetOperator, targetOperators.length]);
+  }, [
+    entryMode,
+    selectedIsDate,
+    selectedRelationNode,
+    targetIsBooleanOperators,
+    targetOperator,
+    targetOperators.length,
+    targetInputs,
+    targetValue,
+    targetValue2,
+  ]);
 
   const buildConditionFromInputs = useCallback((): CalculatedSearchExpressionCondition | null => {
     if (!selectedRelationNode) return null;
     const isAttribute = selectedRelationNode.type === 'attribute';
     const label =
       selectedLabel || String(selectedRelationNode.label ?? selectedRelationNode.name ?? '');
+    const isToOne = selectedRelationNode.type === 'toOne';
+    const constraintRange = isToOne ? null : normalizeConstraintDrafts();
 
     const base: CalculatedSearchExpressionCondition = {
       // first row doesn't need logic; insert will fix logic later
       logic: expression.conditions.length ? logicForNewCondition : undefined,
-      relationKey: String(selectedRelationNode.key),
+      link: selectedRelationNode.link,
+      name: selectedRelationNode.name,
+      tableId: selectedRelationNode.tableId,
+      type: selectedRelationNode.type,
       label,
       isAttribute,
-      constraint: { type: constraintType, from: constraintFrom, to: constraintTo },
+      ...(isToOne ? { hasOne: toOneHasOne } : {}),
+      constraint: constraintRange
+        ? { type: constraintType, from: constraintRange.from, to: constraintRange.to }
+        : null,
     };
 
     if (!isAttribute) return base;
@@ -660,28 +810,36 @@ export const CalculatedSearchDialog: FC<{
     const op = String(targetOperator ?? '').trim();
     const v1 = String(targetValue ?? '');
     const v2 = String(targetValue2 ?? '');
+    const dateSaisieLibreMeta =
+      selectedIsDate && entryMode === 'list'
+        ? makeDateSaisieLibreConditionMeta(v1, op === 'inRange' ? v2 : undefined)
+        : null;
+    if (selectedIsDate && entryMode === 'list' && !dateSaisieLibreMeta) return null;
 
     return {
       ...base,
       comparison: {
         operator: op,
         value: v1,
-        value2: v2,
+        value2: op === 'inRange' ? v2 : '',
         entryMode,
+        ...(selectedIsDate && entryMode === 'free' ? { dateSaisieLibre: false } : {}),
+        ...(dateSaisieLibreMeta ?? {}),
       },
     };
   }, [
-    constraintFrom,
-    constraintTo,
     constraintType,
     entryMode,
     expression.conditions.length,
     logicForNewCondition,
+    normalizeConstraintDrafts,
+    selectedIsDate,
     selectedLabel,
     selectedRelationNode,
     targetOperator,
     targetValue,
     targetValue2,
+    toOneHasOne,
   ]);
 
   const normalizeExpressionAfterEdit = useCallback(
@@ -711,7 +869,9 @@ export const CalculatedSearchDialog: FC<{
         setSelectedRelationNode(null);
         setConstraintType('count');
         setConstraintFrom(0);
-        setConstraintTo(0);
+        setConstraintFromDraft('0');
+        setConstraintToDraft('0');
+        setToOneHasOne(true);
         setTargetOperator('');
         setTargetValue('');
         setTargetValue2('');
@@ -726,7 +886,7 @@ export const CalculatedSearchDialog: FC<{
           : { conditions: [] };
       const expandedKeys = new Set<string>();
       nextExpression.conditions.forEach((condition) => {
-        const path = findTreePathByKey(relationTree, condition.relationKey);
+        const path = findTreePathForCondition(relationTree, condition);
         if (!path) return;
         path.slice(0, -1).forEach((node) => expandedKeys.add(node.key));
       });
@@ -741,7 +901,9 @@ export const CalculatedSearchDialog: FC<{
       setSelectedRelationNode(null);
       setConstraintType('count');
       setConstraintFrom(0);
-      setConstraintTo(0);
+      setConstraintFromDraft('0');
+      setConstraintToDraft('0');
+      setToOneHasOne(true);
       setTargetOperator('');
       setTargetValue('');
       setTargetValue2('');
@@ -804,13 +966,20 @@ export const CalculatedSearchDialog: FC<{
           ? prev.conditions.length
           : Math.min(Math.max(0, selectedConditionIndex), prev.conditions.length);
       const next = prev.conditions.slice();
-      next.splice(idx, 0, cond);
+      next.splice(idx, 0, {
+        ...cond,
+        logic: idx === 0 ? undefined : logicForNewCondition,
+      });
+      if (idx === 0 && next.length > 1 && !next[1].logic) {
+        next[1] = { ...next[1], logic: logicForNewCondition };
+      }
       return normalizeExpressionAfterEdit({ conditions: next });
     });
     setSelectedConditionIndex((prev) => (prev === null ? 0 : prev));
   }, [
     buildConditionFromInputs,
     canCreateCondition,
+    logicForNewCondition,
     normalizeExpressionAfterEdit,
     selectedConditionIndex,
   ]);
@@ -880,13 +1049,15 @@ export const CalculatedSearchDialog: FC<{
 
       setSelectedConditionIndex(idx);
       setLogicForNewCondition((idx === 0 ? 'and' : (row.logic ?? 'and')) as ExpressionLogicKind);
-      setConstraintType(row.constraint.type);
-      setConstraintFrom(row.constraint.from);
-      setConstraintTo(row.constraint.to);
+      setConstraintType(row.constraint?.type ?? 'count');
+      setConstraintFrom(row.constraint?.from ?? 0);
+      setConstraintFromDraft(String(row.constraint?.from ?? 0));
+      setConstraintToDraft(String(row.constraint?.to ?? 0));
+      setToOneHasOne(row.hasOne ?? true);
       setEntryMode(row.comparison?.entryMode ?? 'free');
 
       // Select the underlying node in the relation tree.
-      const path = findTreePathByKey(relationTree, row.relationKey);
+      const path = findTreePathForCondition(relationTree, row);
       if (path && path.length) {
         const nextExpanded = new Set<string>();
         // Expand all non-leaf nodes in the path so the leaf is visible.
@@ -900,7 +1071,9 @@ export const CalculatedSearchDialog: FC<{
       // Comparison inputs (only for attribute rows)
       setTargetOperator(String(row.comparison?.operator ?? ''));
       setTargetValue(String(row.comparison?.value ?? ''));
-      setTargetValue2(String(row.comparison?.value2 ?? ''));
+      setTargetValue2(
+        String(row.comparison?.value2 ?? row.comparison?.dateSaisieLibreValueTo ?? ''),
+      );
     },
     [expression.conditions, relationTree],
   );
@@ -938,6 +1111,7 @@ export const CalculatedSearchDialog: FC<{
 
   const handleApply = useCallback(async () => {
     if (applyBusy) return;
+    if (expression.conditions.length === 0) return;
     const payload = buildDraftPayload();
     setApplyBusy(true);
     try {
@@ -945,7 +1119,7 @@ export const CalculatedSearchDialog: FC<{
     } finally {
       setApplyBusy(false);
     }
-  }, [applyBusy, onApply, buildDraftPayload]);
+  }, [applyBusy, expression.conditions.length, onApply, buildDraftPayload]);
 
   if (!open) return null;
 
@@ -987,7 +1161,7 @@ export const CalculatedSearchDialog: FC<{
               {/* Column 1 — Available fields */}
               <div
                 className="flex min-h-0 min-w-0 flex-1 basis-0 flex-col overflow-hidden rounded border border-slate-200 bg-white"
-                style={{ minHeight: '200px', maxHeight: '300px' }}
+                style={{ minHeight: '200px', maxHeight: '330px' }}
               >
                 <div
                   className="border-b border-slate-200 bg-slate-50 px-2 py-1.5"
@@ -1013,7 +1187,9 @@ export const CalculatedSearchDialog: FC<{
                             setSelectedRelationNode(picked);
                             // Reset constraint range inputs whenever the user picks a different tree item.
                             setConstraintFrom(0);
-                            setConstraintTo(0);
+                            setConstraintFromDraft('0');
+                            setConstraintToDraft('0');
+                            setToOneHasOne(true);
                             if (picked.type !== 'attribute') {
                               // Table selection does not support target-value filtering.
                               setTargetOperator('');
@@ -1035,76 +1211,115 @@ export const CalculatedSearchDialog: FC<{
                 <section className="flex flex-col gap-2 rounded border border-slate-200 bg-slate-50 p-2 sm:p-3">
                   <h3 style={styleSectionHeading}>{translation('Constraint')}</h3>
                   <div className="flex flex-col gap-2">
-                    <label className="flex w-full flex-col gap-1 text-left">
-                      <span style={styleLabel11}>{translation('Constraint type')}</span>
-                      <select
-                        className="h-7 w-full rounded border px-2 text-xs outline-none"
-                        value={constraintType}
-                        onChange={(e) => setConstraintType(e.target.value as ConstraintTypeKind)}
-                        disabled={!selectedRelationNode || !selectedIsAttribute || !selectedIsReel}
-                        title={
-                          !selectedRelationNode
-                            ? translation('Select a table or attribute first')
-                            : !selectedIsAttribute
-                              ? translation('Only Number (count) is available for tables')
-                              : selectedIsReel
-                                ? translation('Choose how to calculate the numeric constraint')
-                                : translation('Only Number (count) is available for this type')
-                        }
-                      >
-                        <option value="count">{translation('Number (count)')}</option>
-                        {selectedIsReel ? <option value="sum">{translation('Sum')}</option> : null}
-                        {selectedIsReel ? (
-                          <option value="avg">{translation('Average')}</option>
-                        ) : null}
-                      </select>
-                    </label>
-                    <div>
-                      <span
-                        className="mb-1 block font-medium text-slate-600"
-                        style={{ fontSize: '11px' }}
-                      >
-                        {translation('Number of related records')}
-                      </span>
-                      <div className="flex flex-wrap items-end">
-                        <label className="flex flex-row items-center gap-1 text-left w-1/2 px-1">
-                          <span style={styleLabel11}>{translation('From')}</span>
+                    {selectedIsToOne ? (
+                      <div className="flex flex-col gap-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-slate-700">
+                        <label className="flex cursor-pointer items-center gap-1.5">
                           <input
-                            type="number"
-                            className="h-7 rounded border px-1 text-xs leading-tight w-full"
-                            min={0}
-                            max={999}
-                            value={String(constraintFrom)}
-                            disabled={!selectedRelationNode}
-                            onChange={(e) => {
-                              const next = Number(e.target.value);
-                              const clamped = Number.isFinite(next)
-                                ? Math.min(Math.max(0, next), 999)
-                                : 0;
-                              setConstraintFrom(clamped);
-                            }}
+                            type="radio"
+                            name="calcsearch-toone-state"
+                            checked={toOneHasOne}
+                            onChange={() => setToOneHasOne(true)}
+                            style={styleControl14}
                           />
+                          <span style={styleBody11}>{translation('Have one')}</span>
                         </label>
-                        <label className="flex flex-row items-center gap-1 text-left w-1/2 px-1">
-                          <span style={styleLabel11}>{translation('To')}</span>
+                        <label className="flex cursor-pointer items-center gap-1.5">
                           <input
-                            type="number"
-                            className="h-7 rounded border px-1 text-xs leading-tight w-full"
-                            min={constraintFrom}
-                            max={999}
-                            value={String(constraintTo)}
-                            disabled={!selectedRelationNode}
-                            onChange={(e) => {
-                              const next = Number(e.target.value);
-                              const clamped = Number.isFinite(next)
-                                ? Math.min(Math.max(constraintFrom, next), 999)
-                                : constraintFrom;
-                              setConstraintTo(clamped);
-                            }}
+                            type="radio"
+                            name="calcsearch-toone-state"
+                            checked={!toOneHasOne}
+                            onChange={() => setToOneHasOne(false)}
+                            style={styleControl14}
                           />
+                          <span style={styleBody11}>{translation('Dont have one')}</span>
                         </label>
                       </div>
-                    </div>
+                    ) : (
+                      <>
+                        <label className="flex w-full flex-col gap-1 text-left">
+                          <span style={styleLabel11}>{translation('Constraint type')}</span>
+                          <select
+                            className="h-7 w-full rounded border px-2 text-xs outline-none"
+                            value={constraintType}
+                            onChange={(e) =>
+                              setConstraintType(e.target.value as ConstraintTypeKind)
+                            }
+                            disabled={
+                              !selectedRelationNode || !selectedIsAttribute || !selectedIsReel
+                            }
+                            title={
+                              !selectedRelationNode
+                                ? translation('Select a table or attribute first')
+                                : !selectedIsAttribute
+                                  ? translation('Only Number (count) is available for tables')
+                                  : selectedIsReel
+                                    ? translation('Choose how to calculate the numeric constraint')
+                                    : translation('Only Number (count) is available for this type')
+                            }
+                          >
+                            <option value="count">{translation('Number (count)')}</option>
+                            {selectedIsReel ? (
+                              <option value="sum">{translation('Sum')}</option>
+                            ) : null}
+                            {selectedIsReel ? (
+                              <option value="avg">{translation('Average')}</option>
+                            ) : null}
+                          </select>
+                        </label>
+                        <div>
+                          <span
+                            className="mb-1 block font-medium text-slate-600"
+                            style={{ fontSize: '11px' }}
+                          >
+                            {translation('Number of related records')}
+                          </span>
+                          <div className="flex flex-wrap items-end">
+                            <label className="flex flex-row items-center gap-1 text-left w-1/2 px-1">
+                              <span style={styleLabel11}>{translation('From')}</span>
+                              <input
+                                type="number"
+                                className="h-7 rounded border px-1 text-xs leading-tight w-full"
+                                min={0}
+                                max={999}
+                                value={constraintFromDraft}
+                                disabled={!selectedRelationNode}
+                                onBlur={normalizeConstraintDrafts}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setConstraintFromDraft(next);
+                                  const parsed = Number(next);
+                                  if (next !== '' && Number.isFinite(parsed)) {
+                                    setConstraintFrom(Math.min(Math.max(0, parsed), 999));
+                                  }
+                                }}
+                              />
+                            </label>
+                            <label className="flex flex-row items-center gap-1 text-left w-1/2 px-1">
+                              <span style={styleLabel11}>{translation('To')}</span>
+                              <input
+                                type="number"
+                                className="h-7 rounded border px-1 text-xs leading-tight w-full"
+                                min={constraintFrom}
+                                max={999}
+                                value={constraintToDraft}
+                                disabled={!selectedRelationNode}
+                                onBlur={normalizeConstraintDrafts}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setConstraintToDraft(next);
+                                  const parsed = Number(next);
+                                  if (next !== '' && Number.isFinite(parsed)) {
+                                    setConstraintToDraft(
+                                      String(Math.min(Math.max(0, parsed), 999)),
+                                    );
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </section>
 
@@ -1143,10 +1358,10 @@ export const CalculatedSearchDialog: FC<{
                             ))}
                           </select>
 
-                          {targetInputs >= 1 ? (
+                          {targetInputs >= 1 && !selectedIsDate ? (
                             targetFilterType === 'qodlyRefSelect' ? (
                               <select
-                                className="h-8 w-full rounded border px-3 text-sm outline-none"
+                                className="h-8 w-full rounded border px-3 text-xs outline-none"
                                 value={targetValue}
                                 onChange={(e) => setTargetValue(e.target.value)}
                               >
@@ -1160,7 +1375,7 @@ export const CalculatedSearchDialog: FC<{
                             ) : (
                               <input
                                 type={targetHtmlInputType}
-                                className="h-8 w-full rounded border px-3 text-sm outline-none"
+                                className="h-8 w-full rounded border px-3 text-xs outline-none"
                                 placeholder={translation('Filter...')}
                                 value={targetValue}
                                 onChange={(e) => setTargetValue(e.target.value)}
@@ -1169,31 +1384,87 @@ export const CalculatedSearchDialog: FC<{
                           ) : null}
                         </div>
 
-                        {targetInputs === 2 ? (
+                        {selectedIsDate && targetInputs >= 1 ? (
+                          <div className="flex flex-col gap-2 rounded border border-slate-200 bg-white p-2">
+                            <div className="flex flex-wrap items-center gap-3" style={styleBody11}>
+                              {(['free', 'list'] as DateEntryMode[]).map((mode) => (
+                                <label
+                                  key={mode}
+                                  className="inline-flex cursor-pointer items-center gap-1.5 text-slate-700"
+                                >
+                                  <input
+                                    type="radio"
+                                    name="calcsearch-date-entry-mode"
+                                    checked={entryMode === mode}
+                                    onChange={() => {
+                                      setEntryMode(mode);
+                                      setTargetValue('');
+                                      setTargetValue2('');
+                                    }}
+                                    style={styleControl14}
+                                  />
+                                  <span>
+                                    {translation(mode === 'free' ? 'Free entry' : 'From List')}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                            {entryMode === 'list' ? (
+                              <div className="flex flex-col gap-2">
+                                <DateSaisieLibreSelect
+                                  className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                  value={targetValue}
+                                  translation={translation}
+                                  translateDateKey={dateSaisieLibreTranslation}
+                                  onChange={(value) => {
+                                    setTargetValue(value);
+                                  }}
+                                />
+                                {targetInputs === 2 ? (
+                                  <DateSaisieLibreSelect
+                                    className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                    value={targetValue2}
+                                    translation={translation}
+                                    translateDateKey={dateSaisieLibreTranslation}
+                                    onChange={(value) => {
+                                      setTargetValue2(value);
+                                    }}
+                                  />
+                                ) : null}
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                <input
+                                  type="date"
+                                  className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                  placeholder={translation('Filter...')}
+                                  value={targetValue}
+                                  onChange={(e) => setTargetValue(e.target.value)}
+                                />
+                                {targetInputs === 2 ? (
+                                  <input
+                                    type="date"
+                                    className="h-8 w-full rounded border px-3 text-xs outline-none"
+                                    placeholder={translation('Filter...')}
+                                    value={targetValue2}
+                                    onChange={(e) => setTargetValue2(e.target.value)}
+                                  />
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+
+                        {targetInputs === 2 && !selectedIsDate ? (
                           <input
                             type={targetHtmlInputType}
-                            className="h-8 w-full rounded border px-3 text-sm outline-none"
+                            className="h-8 w-full rounded border px-3 text-xs outline-none"
                             placeholder={translation('Filter...')}
                             value={targetValue2}
                             onChange={(e) => setTargetValue2(e.target.value)}
                           />
                         ) : null}
                       </div>
-                      {selectedIsDate ? (
-                        <div className="mt-2">
-                          <label className="flex w-full flex-col gap-1 text-left">
-                            <span style={styleLabel11}>{translation('Entry mode')}</span>
-                            <select
-                              className="h-7 w-full rounded border px-2 text-xs outline-none"
-                              value={entryMode}
-                              onChange={(e) => setEntryMode(e.target.value as 'free' | 'list')}
-                            >
-                              <option value="free">{translation('Free entry')}</option>
-                              <option value="list">{translation('From list')}</option>
-                            </select>
-                          </label>
-                        </div>
-                      ) : null}
                     </>
                   )}
                 </section>
@@ -1279,7 +1550,14 @@ export const CalculatedSearchDialog: FC<{
                         idx === 0
                           ? '—'
                           : logicLabel(translation, (row.logic ?? 'and') as ExpressionLogicKind);
-                      const constraintText = `${row.constraint.from} … ${row.constraint.to}`;
+                      const constraintText =
+                        row.type === 'toOne'
+                          ? row.hasOne === false
+                            ? translation('Dont have one')
+                            : translation('Have one')
+                          : row.constraint
+                            ? `${row.constraint.from} … ${row.constraint.to}`
+                            : '—';
                       const opLabel = row.comparison?.operator
                         ? translation(
                             targetOperators.find((o) => o.key === row.comparison!.operator)
@@ -1288,13 +1566,39 @@ export const CalculatedSearchDialog: FC<{
                         : '—';
                       const targetText =
                         row.isAttribute && row.comparison
-                          ? row.comparison.value2
-                            ? `${row.comparison.value ?? ''} ; ${row.comparison.value2 ?? ''}`
-                            : (row.comparison.value ?? '—')
+                          ? row.comparison.entryMode === 'list'
+                            ? (() => {
+                                const rawValue2 =
+                                  row.comparison?.value2 ??
+                                  (row.comparison?.dateSaisieLibreValueTo != null
+                                    ? String(row.comparison.dateSaisieLibreValueTo)
+                                    : '');
+                                const optionFrom = getDateSaisieLibreOptionByValue(
+                                  row.comparison?.value,
+                                );
+                                const fromText = optionFrom
+                                  ? dateSaisieLibreDisplayLabel(
+                                      optionFrom,
+                                      dateSaisieLibreTranslation,
+                                    )
+                                  : (row.comparison?.value ?? '—');
+                                if (!rawValue2) return fromText;
+                                const optionTo = getDateSaisieLibreOptionByValue(rawValue2);
+                                const toText = optionTo
+                                  ? dateSaisieLibreDisplayLabel(
+                                      optionTo,
+                                      dateSaisieLibreTranslation,
+                                    )
+                                  : rawValue2;
+                                return `${fromText} ; ${toText}`;
+                              })()
+                            : row.comparison.value2
+                              ? `${row.comparison.value ?? ''} ; ${row.comparison.value2 ?? ''}`
+                              : (row.comparison.value ?? '—')
                           : '—';
                       return (
                         <button
-                          key={`${row.relationKey}-${idx}`}
+                          key={conditionStableKey(row, idx)}
                           type="button"
                           className={`flex w-full flex-row border-b border-slate-200 text-left ${bg}`}
                           role="row"
@@ -1657,13 +1961,13 @@ export const CalculatedSearchDialog: FC<{
             }}
             onClick={onClose}
           >
-            {translation('Clear')}
+            {translation('Cancel')}
           </button>
           <button
             type="button"
             className="flex items-center justify-center rounded-md border px-3 py-2 text-center text-sm text-white disabled:opacity-50"
             onClick={() => void handleApply()}
-            disabled={applyBusy}
+            disabled={applyBusy || expression.conditions.length === 0}
             style={{
               background: '#2B5797',
               height: '31px',
