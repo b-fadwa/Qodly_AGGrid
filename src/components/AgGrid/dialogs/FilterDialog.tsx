@@ -7,6 +7,18 @@ import type { Translation } from '../state/sorts';
 import { isHiddenIdColumn, findSavedRecord, savedRecordKey } from '../state/gridState';
 import { QueryBuilder, type QueryBuilderHandle } from './QueryBuilder';
 
+type FilterSearchScopeKind = 'global' | 'selection';
+type FilterSearchTypeKind = 'replace' | 'add' | 'remove';
+
+interface FilterApplyOptions {
+  scope: {
+    option: FilterSearchScopeKind;
+  };
+  searchType: {
+    option: FilterSearchTypeKind;
+  };
+}
+
 interface FilterDialogProps {
   open: boolean;
   onClose: () => void;
@@ -21,10 +33,12 @@ interface FilterDialogProps {
   showFilterInactiveRecordsToggle: boolean;
   filterInactiveRecordsEnabled: boolean;
   onFilterInactiveRecordsEnabledChange: (enabled: boolean) => void;
+  initialScopeOption?: FilterSearchScopeKind;
+  initialSearchTypeOption?: FilterSearchTypeKind;
   /** AG Grid `getFilterModel()` snapshot — kept in sync with the header filter via `onFilterChanged`. */
   filterModel: any;
   /** Push a new filterModel back to AG Grid (typically `gridApi.setFilterModel`). */
-  setFilterModel: (next: any) => void;
+  setFilterModel: (next: any, options: FilterApplyOptions) => void;
   savedFilters: SavedFilter[];
   savedSorts: SavedSort[];
   saveFilter: (
@@ -67,6 +81,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   showFilterInactiveRecordsToggle,
   filterInactiveRecordsEnabled,
   onFilterInactiveRecordsEnabledChange,
+  initialScopeOption = 'global',
+  initialSearchTypeOption = 'replace',
   filterModel,
   setFilterModel,
   savedFilters,
@@ -88,6 +104,8 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   const [draftFilterInactiveRecordsEnabled, setDraftFilterInactiveRecordsEnabled] = useState(
     filterInactiveRecordsEnabled,
   );
+  const [scopeOption, setScopeOption] = useState<FilterSearchScopeKind>('global');
+  const [searchTypeOption, setSearchTypeOption] = useState<FilterSearchTypeKind>('replace');
   const queryBuilderRef = useRef<QueryBuilderHandle>(null);
 
   useEffect(() => {
@@ -95,7 +113,16 @@ export const FilterDialog: FC<FilterDialogProps> = ({
     setDraftFilterModel(filterModel);
     setDraftDateFinancialFilterEnabled(dateFinancialFilterEnabled);
     setDraftFilterInactiveRecordsEnabled(filterInactiveRecordsEnabled);
-  }, [open, filterModel, dateFinancialFilterEnabled, filterInactiveRecordsEnabled]);
+    setScopeOption(initialScopeOption);
+    setSearchTypeOption(initialSearchTypeOption);
+  }, [
+    open,
+    filterModel,
+    dateFinancialFilterEnabled,
+    filterInactiveRecordsEnabled,
+    initialScopeOption,
+    initialSearchTypeOption,
+  ]);
 
   useEffect(() => {
     if (!selectedFilter) {
@@ -241,13 +268,87 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               </label>
             ) : null}
           </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-slate-200 pt-3">
+            <section className="flex flex-col gap-1.5">
+              <h3
+                style={{
+                  margin: 0,
+                  color: '#111827',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  lineHeight: 1.25,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {translation('Search scope')}
+              </h3>
+              <div className="flex flex-col gap-1 text-slate-800" style={{ fontSize: '12px' }}>
+                {[
+                  ['global', 'Global search'],
+                  ['selection', 'Search in selection'],
+                ].map(([value, label]) => (
+                  <label key={value} className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="filter-dialog-scope"
+                      checked={scopeOption === value}
+                      onChange={() => setScopeOption(value as FilterSearchScopeKind)}
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        flexShrink: 0,
+                        accentColor: '#2B5797',
+                      }}
+                    />
+                    <span>{translation(label)}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+            <section className="flex flex-col gap-1.5">
+              <h3
+                style={{
+                  margin: 0,
+                  color: '#111827',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  lineHeight: 1.25,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {translation('Search type')}
+              </h3>
+              <div className="flex flex-col gap-1 text-slate-800" style={{ fontSize: '12px' }}>
+                {[
+                  ['replace', 'Replace selection'],
+                  ['add', 'Add to selection'],
+                  ['remove', 'Remove from selection'],
+                ].map(([value, label]) => (
+                  <label key={value} className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="filter-dialog-search-type"
+                      checked={searchTypeOption === value}
+                      onChange={() => setSearchTypeOption(value as FilterSearchTypeKind)}
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        flexShrink: 0,
+                        accentColor: '#2B5797',
+                      }}
+                    />
+                    <span>{translation(label)}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          </div>
         </div>
 
         {showSavedFilterManagement && (
-          <div
-            className="px-5 py-3 flex flex-col gap-3"
-            style={{ borderTop: '1px solid #E5E7EB' }}
-          >
+          <div className="px-5 py-3 flex flex-col gap-3" style={{ borderTop: '1px solid #E5E7EB' }}>
             <span style={{ color: '#717182', fontWeight: 500, fontSize: '11px' }}>
               {translation('Saved filters')}
             </span>
@@ -379,7 +480,10 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               if (showFilterInactiveRecordsToggle) {
                 onFilterInactiveRecordsEnabledChange(draftFilterInactiveRecordsEnabled);
               }
-              setFilterModel(nextModel ?? {});
+              setFilterModel(nextModel ?? {}, {
+                scope: { option: scopeOption },
+                searchType: { option: searchTypeOption },
+              });
               const selectedRecord = selectedFilter
                 ? findSavedRecord(savedFilters, selectedFilter)
                 : undefined;

@@ -238,7 +238,6 @@ function TreeNodeRow({
 }) {
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const expanded = expandedKeys.has(node.key);
-  const isAttribute = node.type === 'attribute';
   const isSelected = selectedKey === node.key;
   return (
     <div className="select-none">
@@ -275,7 +274,7 @@ function TreeNodeRow({
           onClick={() => onSelect(node)}
           title={String(node.label ?? node.name ?? node.link ?? node.key)}
         >
-          {isAttribute ? <AttributeTypeIcon dataType={node.dataType} /> : null}
+          {'dataType' in node ? <AttributeTypeIcon dataType={node.dataType} /> : null}
           <span
             className="truncate"
             style={{

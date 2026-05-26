@@ -29,6 +29,18 @@ interface ConditionDraft {
   entryMode?: DateEntryMode;
 }
 
+type FilterSearchScopeKind = 'global' | 'selection';
+type FilterSearchTypeKind = 'replace' | 'add' | 'remove';
+
+export interface FilterApplyOptions {
+  scope: {
+    option: FilterSearchScopeKind;
+  };
+  searchType: {
+    option: FilterSearchTypeKind;
+  };
+}
+
 const COLLECTION_OPERATOR_KEY = 'inCollection';
 
 const parseCollectionTokens = (raw: string): string[] =>
@@ -55,9 +67,11 @@ interface HeaderFilterPopupProps {
   showFilterInactiveRecordsToggle: boolean;
   filterInactiveRecordsEnabled: boolean;
   onFilterInactiveRecordsEnabledChange: (enabled: boolean) => void;
+  initialScopeOption?: FilterSearchScopeKind;
+  initialSearchTypeOption?: FilterSearchTypeKind;
   translation: (key: string) => string;
   dateSaisieLibreTranslation?: (key: string) => string;
-  onApply: (nextModel: any | null) => void;
+  onApply: (nextModel: any | null, options: FilterApplyOptions) => void;
   onClose: () => void;
 }
 
@@ -273,6 +287,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   showFilterInactiveRecordsToggle,
   filterInactiveRecordsEnabled,
   onFilterInactiveRecordsEnabledChange,
+  initialScopeOption = 'global',
+  initialSearchTypeOption = 'replace',
   translation,
   dateSaisieLibreTranslation,
   onApply,
@@ -295,6 +311,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   const [columnCombinator, setColumnCombinator] = useState<QodlyFilterCombinator>('AND');
   const [dateFinancialFilterDraft, setDateFinancialFilterDraft] = useState<boolean>(false);
   const [filterInactiveRecordsDraft, setFilterInactiveRecordsDraft] = useState<boolean>(false);
+  const [scopeOption, setScopeOption] = useState<FilterSearchScopeKind>('global');
+  const [searchTypeOption, setSearchTypeOption] = useState<FilterSearchTypeKind>('replace');
   const hasOtherColumns = useMemo(() => {
     if (!colId) return false;
     if (activeRules.some((r) => r.field !== colId)) return true;
@@ -310,6 +328,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     if (!open || !colId) return;
     setDateFinancialFilterDraft(Boolean(dateFinancialFilterEnabled));
     setFilterInactiveRecordsDraft(Boolean(filterInactiveRecordsEnabled));
+    setScopeOption(initialScopeOption);
+    setSearchTypeOption(initialSearchTypeOption);
     const forCol = activeRules.filter((r) => r.field === colId);
     if (forCol.length) {
       const parsed = forCol.map((r) => parseEntry(r.condition, operators)[0]);
@@ -336,6 +356,8 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
     activeRules,
     dateFinancialFilterEnabled,
     filterInactiveRecordsEnabled,
+    initialScopeOption,
+    initialSearchTypeOption,
   ]);
 
   const refSelectOptions = useMemo(() => {
@@ -414,7 +436,10 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   ) => {
     const agMirror = buildAgGridFilterModelFromAdvancedRules(nextRules);
     const nextModel = withAdvancedRulesOnFilterModel(agMirror, nextRules);
-    onApply(nextModel);
+    onApply(nextModel, {
+      scope: { option: scopeOption },
+      searchType: { option: searchTypeOption },
+    });
   };
 
   const getBaseRules = () =>
@@ -793,6 +818,73 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
           </div>
         ) : null}
       </>
+      <div className="grid grid-cols-1 gap-3 border-t border-[#D1D5DB] bg-white p-2 sm:grid-cols-2">
+        <section className="flex flex-col gap-1.5">
+          <h3
+            style={{
+              margin: 0,
+              color: '#111827',
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              lineHeight: 1.25,
+              textTransform: 'uppercase',
+            }}
+          >
+            {translation('Search scope')}
+          </h3>
+          <div className="flex flex-col gap-1" style={{ color: '#334155', fontSize: '12px' }}>
+            {[
+              ['global', 'Global search'],
+              ['selection', 'Search in selection'],
+            ].map(([value, label]) => (
+              <label key={value} className="inline-flex cursor-pointer items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="header-filter-scope"
+                  checked={scopeOption === value}
+                  onChange={() => setScopeOption(value as FilterSearchScopeKind)}
+                  style={{ width: '14px', height: '14px', flexShrink: 0, accentColor: '#2B5797' }}
+                />
+                <span>{translation(label)}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+        <section className="flex flex-col gap-1.5">
+          <h3
+            style={{
+              margin: 0,
+              color: '#111827',
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              lineHeight: 1.25,
+              textTransform: 'uppercase',
+            }}
+          >
+            {translation('Search type')}
+          </h3>
+          <div className="flex flex-col gap-1" style={{ color: '#334155', fontSize: '12px' }}>
+            {[
+              ['replace', 'Replace selection'],
+              ['add', 'Add to selection'],
+              ['remove', 'Remove from selection'],
+            ].map(([value, label]) => (
+              <label key={value} className="inline-flex cursor-pointer items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="header-filter-search-type"
+                  checked={searchTypeOption === value}
+                  onChange={() => setSearchTypeOption(value as FilterSearchTypeKind)}
+                  style={{ width: '14px', height: '14px', flexShrink: 0, accentColor: '#2B5797' }}
+                />
+                <span>{translation(label)}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+      </div>
       <div className="flex items-center justify-center gap-2 border-t border-[#D1D5DB] bg-[#ECECEC] p-2">
         <button
           type="button"

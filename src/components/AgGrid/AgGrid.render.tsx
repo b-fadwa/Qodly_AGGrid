@@ -121,6 +121,17 @@ type SavedCalculatedSearch = {
   [key: string]: unknown;
 };
 
+type FilterSearchScopeKind = 'global' | 'selection';
+type FilterSearchTypeKind = 'replace' | 'add' | 'remove';
+type FilterApplyOptions = {
+  scope: {
+    option: FilterSearchScopeKind;
+  };
+  searchType: {
+    option: FilterSearchTypeKind;
+  };
+};
+
 type AppliedViewColumn = {
   field: string;
   isHidden: boolean;
@@ -663,6 +674,10 @@ const AgGrid: FC<IAgGridProps> = ({
   const filterInactiveRecordsEnabledRef = useRef<boolean>(false);
   const [dateFinancialFilterEnabled, setDateFinancialFilterEnabled] = useState(false);
   const [filterInactiveRecordsEnabled, setFilterInactiveRecordsEnabled] = useState(false);
+  const filterApplyOptionsRef = useRef<FilterApplyOptions>({
+    scope: { option: 'global' },
+    searchType: { option: 'replace' },
+  });
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1908,10 +1923,29 @@ const AgGrid: FC<IAgGridProps> = ({
     [commitLiveFilterModel, filtersManager],
   );
 
+  const applyFilterRuntimeOptions = useCallback((options?: FilterApplyOptions) => {
+    if (!options) return false;
+    const next: FilterApplyOptions = {
+      scope: {
+        option: options.scope?.option === 'selection' ? 'selection' : 'global',
+      },
+      searchType: {
+        option:
+          options.searchType?.option === 'add' || options.searchType?.option === 'remove'
+            ? options.searchType.option
+            : 'replace',
+      },
+    };
+    const changed = !isEqual(filterApplyOptionsRef.current, next);
+    filterApplyOptionsRef.current = next;
+    return changed;
+  }, []);
+
   const applyHeaderFilterModel = useCallback(
-    (nextModel: any) => {
+    (nextModel: any, options?: FilterApplyOptions) => {
       const api = gridRef.current?.api;
       if (!api || api.isDestroyed()) return;
+      const runtimeOptionsChanged = applyFilterRuntimeOptions(options);
       const prevLiveModel = liveFilterModelRef.current ?? {};
       const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
       const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
@@ -1927,9 +1961,11 @@ const AgGrid: FC<IAgGridProps> = ({
         persistFilterDsNow(nextAg);
         filtersManager.persistCurrent(nextAg);
         api.refreshInfiniteCache();
+      } else if (!agChanged && !liveChanged && runtimeOptionsChanged) {
+        api.refreshInfiniteCache();
       }
     },
-    [commitLiveFilterModel, filtersManager, persistFilterDsNow],
+    [applyFilterRuntimeOptions, commitLiveFilterModel, filtersManager, persistFilterDsNow],
   );
 
   const getState = useCallback(
@@ -2337,6 +2373,8 @@ const AgGrid: FC<IAgGridProps> = ({
         filterInactiveRecords: Boolean(
           filterInactiveRecords && filterInactiveRecordsEnabledRef.current,
         ),
+        scope: filterApplyOptionsRef.current.scope,
+        searchType: filterApplyOptionsRef.current.searchType,
         filterQuery,
       };
 
@@ -3078,6 +3116,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       }}
                       onApply={async (payload: CalculatedSearchEmitPayload) => {
                         const linkedSort = payload.linkedSortId ?? payload.linkedSort;
+                        let sortForPayload = payload.sort;
                         if (
                           linkedSort !== null &&
                           linkedSort !== undefined &&
@@ -3092,8 +3131,36 @@ const AgGrid: FC<IAgGridProps> = ({
                             setSelectedSortName(sortKey);
                             skipAutoSortDefaultRef.current = true;
                           }
+                          sortForPayload = normalizeSortModel(
+                            sortRecord?.sortModel ?? payload.sort,
+                            columnsRef.current,
+                            sortableColIdsRef.current,
+                          );
+                        } else {
+                          const api = gridRef.current?.api;
+                          sortForPayload = api
+                            ? normalizeSortModel(
+                                buildSortModelFromColumnState(api.getColumnState()),
+                                columnsRef.current,
+                                sortableColIdsRef.current,
+                              )
+                            : [];
                         }
-                        await emit('oncalculatedsearch', payload);
+
+                        if (payload.scope?.option === 'global') {
+                          const api = gridRef.current?.api;
+                          if (api && !api.isDestroyed()) {
+                            api.setFilterModel(null);
+                          }
+                          commitLiveFilterModel({});
+                          persistFilterDsNow({});
+                          setSelectedFilterName('');
+                        }
+
+                        await emit('oncalculatedsearch', {
+                          ...payload,
+                          sort: sortForPayload,
+                        });
                         setShowCalculatedSearchDialog(false);
                       }}
                     />
@@ -3264,10 +3331,13 @@ const AgGrid: FC<IAgGridProps> = ({
                       showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
                       filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
                       onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
+                      initialScopeOption={filterApplyOptionsRef.current.scope.option}
+                      initialSearchTypeOption={filterApplyOptionsRef.current.searchType.option}
                       filterModel={liveFilterModel}
-                      setFilterModel={(next) => {
+                      setFilterModel={(next, options) => {
                         const api = gridRef.current?.api;
                         if (!api || api.isDestroyed()) return;
+                        const runtimeOptionsChanged = applyFilterRuntimeOptions(options);
                         const prevLiveModel = liveFilterModelRef.current ?? {};
                         const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
                         const currentAg = stripAdvancedRulesFromFilterModel(
@@ -3284,6 +3354,8 @@ const AgGrid: FC<IAgGridProps> = ({
                         if (!agChanged && liveChanged) {
                           persistFilterDsNow(nextAg);
                           filtersManager.persistCurrent(nextAg);
+                          api.refreshInfiniteCache();
+                        } else if (!agChanged && !liveChanged && runtimeOptionsChanged) {
                           api.refreshInfiniteCache();
                         }
                       }}
@@ -3417,10 +3489,12 @@ const AgGrid: FC<IAgGridProps> = ({
               showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
               filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
               onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
+              initialScopeOption={filterApplyOptionsRef.current.scope.option}
+              initialSearchTypeOption={filterApplyOptionsRef.current.searchType.option}
               translation={translation}
               dateSaisieLibreTranslation={dateSaisieLibreTranslation}
-              onApply={(nextModel) => {
-                applyHeaderFilterModel(nextModel ?? {});
+              onApply={(nextModel, options) => {
+                applyHeaderFilterModel(nextModel ?? {}, options);
               }}
               onClose={() => setHeaderFilterPopupState(null)}
             />
