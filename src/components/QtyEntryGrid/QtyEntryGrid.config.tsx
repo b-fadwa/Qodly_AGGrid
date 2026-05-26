@@ -50,7 +50,10 @@ export default {
   info: {
     settings: QtyEntryGridSettings,
     sanityCheck: {
-      keys: [{ name: 'datasource', require: true, isDatasource: true }],
+      keys: [
+        { name: 'datasource', require: true, isDatasource: true },
+        { name: 'currentElement', require: false, isDatasource: false },
+      ],
     },
     displayName: 'QtyEntryGrid',
     exposed: true,
@@ -71,20 +74,38 @@ export default {
     ],
     datasources: {
       declarations: (props) => {
-        const { columns, datasource = '' } = props;
-        const declarations: T4DComponentDatasourceDeclaration[] = [{ path: datasource, iterable: true }];
+        const { columns, currentElement = '', datasource = '' } = props;
+        const declarations: T4DComponentDatasourceDeclaration[] = [
+          { path: datasource, iterable: true },
+        ];
+
+        if (currentElement) {
+          declarations.push({ path: currentElement });
+        }
 
         if (columns) {
           const { id: ds, namespace } = splitDatasourceID(datasource?.trim()) || {};
-          if (!ds) return declarations;
+          const { id: currentDs, namespace: currentDsNamespace } =
+            splitDatasourceID(currentElement) || {};
+
+          if (!ds && !currentDs) return declarations;
 
           columns.forEach((col: any) => {
-            const colSrcID = `${ds}.[].${col.source.trim()}`;
-            const iterable = ds.startsWith('$');
-            declarations.push({
-              path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
-              iterable,
-            });
+            if (currentDs && currentDsNamespace === namespace) {
+              const colSrcID = `${currentDs}.${col.source.trim()}`;
+              declarations.push({
+                path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
+              });
+            }
+
+            if (ds) {
+              const colSrcID = `${ds}.[].${col.source.trim()}`;
+              const iterable = ds.startsWith('$');
+              declarations.push({
+                path: namespace ? `${namespace}:${colSrcID}` : colSrcID,
+                iterable,
+              });
+            }
           });
         }
 
@@ -102,6 +123,12 @@ export default {
             ) {
               new_props.datasource = getDataTransferSourceID(item);
             }
+            if (
+              item.source.type === 'entity' ||
+              (item.source.type === 'scalar' && item.source.dataType === 'object')
+            ) {
+              new_props.currentElement = getDataTransferSourceID(item);
+            }
           } else if (isAttributePayload(item)) {
             if (
               item.attribute.kind === 'relatedEntities' ||
@@ -114,7 +141,7 @@ export default {
               item.attribute.behavior === 'relatedEntity' ||
               !types.includes(item.attribute.type)
             ) {
-              // ignore: this component is meant for collections only
+              new_props.currentElement = getDataTransferSourceID(item);
             } else {
               if (findIndex(new_props.columns, { source: item.attribute.name }) === -1) {
                 new_props.columns = [
@@ -165,6 +192,7 @@ export default {
 
 export interface IQtyEntryGridProps extends webforms.ComponentProps {
   datasource?: string;
+  currentElement?: string;
   columns: IQtyEntryColumn[];
   spacing: string;
   accentColor: string;

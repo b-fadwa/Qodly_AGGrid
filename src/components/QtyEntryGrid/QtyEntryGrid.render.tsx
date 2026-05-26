@@ -1,4 +1,12 @@
-import { useDataLoader, useRenderer, useSources } from '@ws-ui/webform-editor';
+import {
+  EntityActions,
+  entitySubject,
+  useDataLoader,
+  useDsChangeHandler,
+  useEnhancedNode,
+  useRenderer,
+  useSources,
+} from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { CSSProperties, FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
@@ -21,10 +29,7 @@ import { IQtyEntryGridProps, IQtyEntryColumn } from './QtyEntryGrid.config';
 
 const DURATION_INPUT_RE = /^-?\d{1,3}:[0-5]?\d(?::[0-5]?\d)?$/;
 
-const parseDurationInput = (
-  input: unknown,
-  fallback: unknown
-): unknown => {
+const parseDurationInput = (input: unknown, fallback: unknown): unknown => {
   if (input == null || input === '') return null;
 
   if (typeof input === 'number') {
@@ -49,9 +54,7 @@ const parseDurationInput = (
 
   const milliseconds = Number(value);
 
-  return Number.isFinite(milliseconds)
-    ? milliseconds
-    : fallback;
+  return Number.isFinite(milliseconds) ? milliseconds : fallback;
 };
 
 const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
@@ -79,10 +82,11 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   });
 
   const {
-    sources: { datasource: ds },
+    sources: { datasource: ds, currentElement },
   } = useSources({ acceptIteratorSel: true });
 
-  const { fetchPage } = useDataLoader({ source: ds });
+  const { id: nodeID } = useEnhancedNode();
+  const { fetchIndex, fetchPage } = useDataLoader({ source: ds });
   const gridRef = useRef<AgGridReact>(null);
 
   const columnsRef = useRef<IQtyEntryColumn[]>(columns);
@@ -93,6 +97,10 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   dsRef.current = ds;
 
   const [rowData, setRowData] = useState<any[]>([]);
+  const [selected, setSelected] = useState(-1);
+  const [scrollIndex, setScrollIndex] = useState(0);
+  const [, setCount] = useState(0);
+  const isSelectingRef = useRef(false);
   const hasEntitySel = !!(ds as any)?.entitysel;
 
   const loadScalarData = useCallback(async () => {
@@ -124,6 +132,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     if (!ds) return;
     if (!hasEntitySel) void loadScalarData();
     const handler = async () => {
+      if (isSelectingRef.current) return;
       if (hasEntitySel) {
         gridRef.current?.api?.refreshInfiniteCache();
       } else {
@@ -134,52 +143,88 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     return () => ds.removeListener?.('changed', handler);
   }, [ds, hasEntitySel, loadScalarData]);
 
-  const onGridReady = useCallback((params: GridReadyEvent) => {
-    if (!hasEntitySel) return;
-    params.api.setGridOption('datasource', {
-      getRows: async (rowParams: IGetRowsParams) => {
-        const currentDs = dsRef.current;
-        if (!currentDs || !(currentDs as any).entitysel) {
-          rowParams.successCallback([], 0);
-          return;
-        }
-        const count = rowParams.endRow - rowParams.startRow;
-        if (count <= 0) {
-          rowParams.successCallback([], 0);
-          return;
-        }
-        try {
-          const entities = await fetchPageRef.current(rowParams.startRow, count);
-          const cols = columnsRef.current;
-          const selLengthRaw = (currentDs as any).entitysel?._private?.selLength;
-          const dsLengthRaw = (currentDs as any)?.length;
-          const total =
-            typeof selLengthRaw === 'number' && Number.isFinite(selLengthRaw) && selLengthRaw >= 0
-              ? selLengthRaw
-              : typeof dsLengthRaw === 'number' && Number.isFinite(dsLengthRaw) && dsLengthRaw >= 0
-                ? dsLengthRaw
-                : undefined;
-          const rows = (Array.isArray(entities) ? entities : []).map((data: any, index: number) => {
-            const row: any = { __entity: data, __rowIndex: rowParams.startRow + index };
-            cols.forEach((col) => {
-              const source = typeof col?.source === 'string' ? col.source.trim() : '';
-              row[col.title] = source ? get(data, source) : undefined;
-            });
-            return row;
-          });
-          const lastRow =
-            total != null
-              ? total
-              : Array.isArray(entities) && entities.length < count
-                ? rowParams.startRow + entities.length
-                : undefined;
-          rowParams.successCallback(rows, lastRow as any);
-        } catch {
-          rowParams.failCallback();
-        }
-      },
-    });
-  }, [hasEntitySel]);
+  const onGridReady = useCallback(
+    (params: GridReadyEvent) => {
+      if (!hasEntitySel) return;
+      params.api.setGridOption('datasource', {
+        getRows: async (rowParams: IGetRowsParams) => {
+          const currentDs = dsRef.current;
+          if (!currentDs || !(currentDs as any).entitysel) {
+            rowParams.successCallback([], 0);
+            return;
+          }
+          const count = rowParams.endRow - rowParams.startRow;
+          if (count <= 0) {
+            rowParams.successCallback([], 0);
+            return;
+          }
+          try {
+            const entities = await fetchPageRef.current(rowParams.startRow, count);
+            const cols = columnsRef.current;
+            const selLengthRaw = (currentDs as any).entitysel?._private?.selLength;
+            const dsLengthRaw = (currentDs as any)?.length;
+            const total =
+              typeof selLengthRaw === 'number' && Number.isFinite(selLengthRaw) && selLengthRaw >= 0
+                ? selLengthRaw
+                : typeof dsLengthRaw === 'number' &&
+                    Number.isFinite(dsLengthRaw) &&
+                    dsLengthRaw >= 0
+                  ? dsLengthRaw
+                  : undefined;
+            const rows = (Array.isArray(entities) ? entities : []).map(
+              (data: any, index: number) => {
+                const row: any = { __entity: data, __rowIndex: rowParams.startRow + index };
+                cols.forEach((col) => {
+                  const source = typeof col?.source === 'string' ? col.source.trim() : '';
+                  row[col.title] = source ? get(data, source) : undefined;
+                });
+                return row;
+              },
+            );
+            const lastRow =
+              total != null
+                ? total
+                : Array.isArray(entities) && entities.length < count
+                  ? rowParams.startRow + entities.length
+                  : undefined;
+            rowParams.successCallback(rows, lastRow as any);
+          } catch {
+            rowParams.failCallback();
+          }
+        },
+      });
+    },
+    [hasEntitySel],
+  );
+
+  const { updateCurrentDsValue } = useDsChangeHandler({
+    source: ds,
+    currentDs: currentElement,
+    selected,
+    setSelected,
+    scrollIndex,
+    setScrollIndex,
+    setCount,
+    fetchIndex,
+    onDsChange: async () => {
+      if (isSelectingRef.current) return;
+      if (hasEntitySel) {
+        gridRef.current?.api?.refreshInfiniteCache();
+      } else {
+        await loadScalarData();
+      }
+    },
+    onCurrentDsChange: (sel) => {
+      if (!gridRef.current) return;
+      const rowNode = gridRef.current.api?.getRowNode(sel.toString());
+      gridRef.current.api?.ensureIndexVisible(sel);
+      rowNode?.setSelected(true);
+      entitySubject.next({
+        action: EntityActions.UPDATE,
+        payload: { nodeID, rowIndex: sel },
+      });
+    },
+  });
 
   const colDefs: ColDef[] = useMemo(
     () =>
@@ -292,8 +337,24 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     [emit, buildPayloadFromRow],
   );
 
+  const onRowClicked = useCallback(
+    async (event: any) => {
+      if (!dsRef.current || !event.data) return;
+      const rowIndex = event.rowIndex ?? event.data?.__rowIndex;
+      if (typeof rowIndex !== 'number') return;
+      event.node?.setSelected(true, false);
+      isSelectingRef.current = true;
+      try {
+        await updateCurrentDsValue({ index: rowIndex });
+      } finally {
+        isSelectingRef.current = false;
+      }
+    },
+    [updateCurrentDsValue],
+  );
+
   const onRowDoubleClicked = useCallback(
-    (event: RowDoubleClickedEvent) => {
+    async (event: RowDoubleClickedEvent) => {
       const rowIndex = event.node?.rowIndex ?? (event.data as any)?.__rowIndex ?? -1;
       const payload = buildPayloadFromRow(event.data);
 
@@ -302,8 +363,31 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
         rowData: payload,
         entity: (event.data as any)?.__entity,
       });
+
+      if (dsRef.current && event.data) {
+        if (rowIndex < 0) return;
+        event.node?.setSelected(true, false);
+        isSelectingRef.current = true;
+        try {
+          await updateCurrentDsValue({
+            index: rowIndex,
+            forceUpdate: true,
+          });
+        } finally {
+          isSelectingRef.current = false;
+        }
+      }
     },
-    [emit, buildPayloadFromRow],
+    [emit, buildPayloadFromRow, updateCurrentDsValue],
+  );
+
+  const rowSelection = useMemo(
+    () => ({
+      mode: 'singleRow' as const,
+      enableClickSelection: true,
+      checkboxes: false,
+    }),
+    [],
   );
 
   return (
@@ -320,7 +404,9 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
           onGridReady={onGridReady}
           onCellValueChanged={onCellValueChanged}
           onCellDoubleClicked={onCellDoubleClicked}
+          onRowClicked={onRowClicked}
           onRowDoubleClicked={onRowDoubleClicked}
+          rowSelection={rowSelection}
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
           theme={theme}
@@ -336,4 +422,3 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
 };
 
 export default QtyEntryGrid;
-
