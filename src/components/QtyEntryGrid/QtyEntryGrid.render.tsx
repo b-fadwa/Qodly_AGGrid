@@ -1,4 +1,4 @@
-import { useDataLoader, useRenderer, useSources } from '@ws-ui/webform-editor';
+import { formatValue, useDataLoader, useRenderer, useSources } from '@ws-ui/webform-editor';
 import cn from 'classnames';
 import { CSSProperties, FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
@@ -9,6 +9,7 @@ import {
   GridReadyEvent,
   IGetRowsParams,
   RowDoubleClickedEvent,
+  ValueFormatterParams,
   ValueParserParams,
   themeQuartz,
 } from 'ag-grid-community';
@@ -52,6 +53,13 @@ const parseDurationInput = (
   return Number.isFinite(milliseconds)
     ? milliseconds
     : fallback;
+};
+
+const formatDurationForEdit = (value: unknown, format?: string): string => {
+  if (value == null || value === '') return '';
+  if (format) return String(formatValue(value as any, 'duration', format));
+  if (typeof value === 'string') return value;
+  return String(value);
 };
 
 const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
@@ -200,6 +208,9 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
         } as ColDef;
 
         if (col.dataType === 'duration') {
+          def.valueFormatter = (params: ValueFormatterParams) =>
+            formatDurationForEdit(params.value, col.format);
+          def.cellEditorParams = { useFormatter: true };
           def.valueParser = (params: ValueParserParams) =>
             parseDurationInput(params.newValue, params.oldValue);
         }
