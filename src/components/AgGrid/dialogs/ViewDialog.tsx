@@ -1,6 +1,7 @@
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { IoMdClose } from 'react-icons/io';
 import { GoTrash } from 'react-icons/go';
+import { MdDragIndicator } from 'react-icons/md';
 import type { ViewsManager } from '../state/views';
 import type { SavedFilter } from '../state/types';
 import type { Translation } from '../state/sorts';
@@ -10,7 +11,20 @@ interface ViewDialogColumn {
   field: string;
   isHidden: boolean;
   pinned: 'left' | 'right' | null;
+  width?: number | null;
+  flex?: number | null;
+  i18n?: string | null;
 }
+
+interface ViewDialogColumnState {
+  colId?: string | number | null;
+  hide?: boolean | null;
+  pinned?: 'left' | 'right' | null;
+  width?: number | null;
+  flex?: number | null;
+}
+
+const END_DROP_TARGET = '__qodly_view_dialog_drop_end__';
 
 interface ViewDialogProps {
   open: boolean;
@@ -65,6 +79,9 @@ export const ViewDialog: FC<ViewDialogProps> = ({
 }) => {
   const [draftColumns, setDraftColumns] = useState<ViewDialogColumn[]>([]);
   const [draftSelectedView, setDraftSelectedView] = useState('');
+  const [draggingField, setDraggingField] = useState<string | null>(null);
+  const [dragOverField, setDragOverField] = useState<string | null>(null);
+  const [dragOverPlacement, setDragOverPlacement] = useState<'before' | 'after'>('before');
   const wasOpenRef = useRef(false);
 
   useEffect(() => {
@@ -83,34 +100,23 @@ export const ViewDialog: FC<ViewDialogProps> = ({
     const rawSearch = propertySearch.trim().toLowerCase();
     const compactSearch = rawSearch.replace(/[_\s]+/g, '');
 
-    return [...draftColumns]
-      .sort((a, b) => {
-        const aVisible = !a.isHidden;
-        const bVisible = !b.isHidden;
-        if (aVisible !== bVisible) return aVisible ? -1 : 1;
-        const aLabel = String(columnLabelByStableField.get(a.field) ?? a.field);
-        const bLabel = String(columnLabelByStableField.get(b.field) ?? b.field);
-        const labelCompare = aLabel.localeCompare(bLabel, undefined, { sensitivity: 'base' });
-        if (labelCompare !== 0) return labelCompare;
-        return a.field.localeCompare(b.field);
-      })
-      .filter((column) => {
-        const isVisible = !column.isHidden;
-        if (showVisibleOnly && !isVisible) return false;
-        if (!rawSearch) return true;
+    return draftColumns.filter((column) => {
+      const isVisible = !column.isHidden;
+      if (showVisibleOnly && !isVisible) return false;
+      if (!rawSearch) return true;
 
-        const displayLabel = columnLabelByStableField.get(column.field) ?? column.field;
-        const field = column.field.toLowerCase();
-        const label = String(displayLabel).toLowerCase();
-        const compactField = field.replace(/[_\s]+/g, '');
-        const compactLabel = label.replace(/[_\s]+/g, '');
-        return (
-          field.includes(rawSearch) ||
-          compactField.includes(compactSearch) ||
-          label.includes(rawSearch) ||
-          compactLabel.includes(compactSearch)
-        );
-      });
+      const displayLabel = columnLabelByStableField.get(column.field) ?? column.field;
+      const field = column.field.toLowerCase();
+      const label = String(displayLabel).toLowerCase();
+      const compactField = field.replace(/[_\s]+/g, '');
+      const compactLabel = label.replace(/[_\s]+/g, '');
+      return (
+        field.includes(rawSearch) ||
+        compactField.includes(compactSearch) ||
+        label.includes(rawSearch) ||
+        compactLabel.includes(compactSearch)
+      );
+    });
   }, [columnLabelByStableField, draftColumns, propertySearch, showVisibleOnly]);
 
   const setFilteredColumnsVisible = (visible: boolean) => {
@@ -137,25 +143,67 @@ export const ViewDialog: FC<ViewDialogProps> = ({
     );
   };
 
+  const moveDraftColumn = (
+    sourceField: string,
+    targetField: string,
+    placement: 'before' | 'after' = 'before',
+  ) => {
+    if (sourceField === targetField) return;
+    setDragOverField(null);
+    setDragOverPlacement('before');
+    setDraftColumns((prev) => {
+      const sourceIndex = prev.findIndex((column) => column.field === sourceField);
+      const targetIndex = prev.findIndex((column) => column.field === targetField);
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+      let insertionIndex = placement === 'after' ? targetIndex + 1 : targetIndex;
+      if (sourceIndex < insertionIndex) insertionIndex -= 1;
+      if (sourceIndex === insertionIndex) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(insertionIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const moveDraftColumnToFilteredEnd = (sourceField: string) => {
+    const lastVisibleTarget = filteredColumns[filteredColumns.length - 1];
+    if (!lastVisibleTarget) return;
+    moveDraftColumn(sourceField, lastVisibleTarget.field, 'after');
+  };
+
+  const applySavedColumnStateToDraft = (columnState: ViewDialogColumnState[]) => {
+    setDraftColumns((prev) => {
+      const stateByField = new Map<string, ViewDialogColumnState>();
+      columnState.forEach((entry) => {
+        if (entry?.colId != null) stateByField.set(String(entry.colId), entry);
+      });
+      const known = prev.map((column) => {
+        const state = stateByField.get(column.field);
+        if (!state) return column;
+        return {
+          ...column,
+          isHidden: Boolean(state.hide),
+          pinned: state.pinned || null,
+          width: state.width ?? column.width ?? null,
+          flex: state.flex ?? column.flex ?? null,
+        };
+      });
+      const byField = new Map(known.map((column) => [column.field, column]));
+      const ordered = columnState
+        .map((entry) => (entry?.colId != null ? byField.get(String(entry.colId)) : null))
+        .filter((column): column is ViewDialogColumn => Boolean(column));
+      const orderedFields = new Set(ordered.map((column) => column.field));
+      return [...ordered, ...known.filter((column) => !orderedFields.has(column.field))];
+    });
+  };
+
   const handleSavedViewDraftSelection = (next: string) => {
     setDraftSelectedView(next);
     setSelectedView(next);
     if (!next) return;
     const record = viewsManager.savedViews.find((view) => savedRecordKey(view) === next);
     if (!record || !Array.isArray(record.columnState)) return;
-    setDraftColumns((prev) =>
-      prev.map((column) => {
-        const state = record.columnState.find((entry: any) => entry?.colId === column.field);
-        if (!state) return column;
-        return {
-          ...column,
-          isHidden: Boolean(state.hide),
-          pinned: state.pinned || null,
-          width: state.width ?? (column as any).width ?? null,
-          flex: state.flex ?? (column as any).flex ?? null,
-        };
-      }),
-    );
+    applySavedColumnStateToDraft(record.columnState);
   };
 
   const handleApply = () => {
@@ -173,6 +221,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
       linkedFilter:
         viewLinkedFilterId.trim() === '' ? null : (viewLinkedFilterId.trim() as string | number),
     };
+    applyColumns(draftColumns);
     if (trimmed) {
       const existing = viewsManager.savedViews.find(
         (v) => v.name === trimmed || v.title === trimmed,
@@ -314,44 +363,133 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                 {translation('No fields match your filter')}.
               </div>
             ) : (
-              filteredColumns.map((column) => {
-                const isVisible = !column.isHidden;
-                return (
-                  <div
-                    key={column.field}
-                    className="flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
-                  >
-                    <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={isVisible}
-                        onChange={() => handleColumnToggle(column.field)}
-                        style={{
-                          height: '12px',
-                          width: '12px',
-                          backgroundColor: '#2b5797',
-                          borderRadius: '4px',
-                        }}
-                      />
-                      <span
-                        className={`truncate ${isVisible ? 'text-gray-700' : 'text-slate-400'}`}
-                      >
-                        {columnLabelByStableField.get(column.field) ?? column.field}
-                      </span>
-                    </label>
-                    <select
-                      value={column.pinned || 'unpinned'}
-                      className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
-                      style={{ height: '31px' }}
-                      onChange={(e) => handlePinChange(column.field, e.target.value)}
+              <>
+                {filteredColumns.map((column) => {
+                  const isVisible = !column.isHidden;
+                  return (
+                    <div
+                      key={column.field}
+                      draggable
+                      className="relative flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
+                      style={{
+                        opacity: draggingField === column.field ? 0.55 : 1,
+                        cursor: 'grab',
+                      }}
+                      onDragStart={(e) => {
+                        setDraggingField(column.field);
+                        setDragOverField(null);
+                        setDragOverPlacement('before');
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', column.field);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (draggingField !== column.field) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const placement =
+                            e.clientY > rect.top + rect.height / 2 ? 'after' : 'before';
+                          setDragOverField(column.field);
+                          setDragOverPlacement(placement);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        setDragOverField((current) => (current === column.field ? null : current));
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const sourceField =
+                          draggingField || e.dataTransfer.getData('text/plain') || '';
+                        moveDraftColumn(sourceField, column.field, dragOverPlacement);
+                        setDraggingField(null);
+                        setDragOverField(null);
+                        setDragOverPlacement('before');
+                      }}
+                      onDragEnd={() => {
+                        setDraggingField(null);
+                        setDragOverField(null);
+                        setDragOverPlacement('before');
+                      }}
                     >
-                      <option value="unpinned">{translation('No pin')}</option>
-                      <option value="left">{translation('Pin left')}</option>
-                      <option value="right">{translation('Pin right')}</option>
-                    </select>
-                  </div>
-                );
-              })
+                      {dragOverField === column.field && draggingField !== column.field ? (
+                        <span
+                          aria-hidden="true"
+                          className={`absolute left-0 right-0 block ${
+                            dragOverPlacement === 'after' ? 'bottom-0' : 'top-0'
+                          }`}
+                          style={{ height: '2px', backgroundColor: '#2b5797' }}
+                        />
+                      ) : null}
+                      <span
+                        className="inline-flex shrink-0 items-center justify-center text-slate-400"
+                        title={translation('Drag to reorder')}
+                        aria-hidden="true"
+                      >
+                        <MdDragIndicator size={16} />
+                      </span>
+                      <label className="inline-flex min-w-0 flex-1 items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={isVisible}
+                          onChange={() => handleColumnToggle(column.field)}
+                          style={{
+                            height: '12px',
+                            width: '12px',
+                            backgroundColor: '#2b5797',
+                            borderRadius: '4px',
+                          }}
+                        />
+                        <span
+                          className={`truncate ${isVisible ? 'text-gray-700' : 'text-slate-400'}`}
+                        >
+                          {columnLabelByStableField.get(column.field) ?? column.field}
+                        </span>
+                      </label>
+                      <select
+                        value={column.pinned || 'unpinned'}
+                        className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                        style={{ height: '31px' }}
+                        onChange={(e) => handlePinChange(column.field, e.target.value)}
+                      >
+                        <option value="unpinned">{translation('No pin')}</option>
+                        <option value="left">{translation('Pin left')}</option>
+                        <option value="right">{translation('Pin right')}</option>
+                      </select>
+                    </div>
+                  );
+                })}
+                <div
+                  className="relative h-4"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (draggingField !== filteredColumns[filteredColumns.length - 1]?.field) {
+                      setDragOverField(END_DROP_TARGET);
+                      setDragOverPlacement('after');
+                    }
+                  }}
+                  onDragLeave={() => {
+                    setDragOverField((current) => (current === END_DROP_TARGET ? null : current));
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const sourceField = draggingField || e.dataTransfer.getData('text/plain') || '';
+                    moveDraftColumnToFilteredEnd(sourceField);
+                    setDraggingField(null);
+                    setDragOverField(null);
+                    setDragOverPlacement('before');
+                  }}
+                >
+                  {dragOverField === END_DROP_TARGET &&
+                  draggingField !== filteredColumns[filteredColumns.length - 1]?.field ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute left-0 right-0 top-0 block"
+                      style={{ height: '2px', backgroundColor: '#2b5797' }}
+                    />
+                  ) : null}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -373,7 +511,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                   placeholder={translation('View name')}
                   className="view-input rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
                   value={viewName}
-                  onChange={(e: any) => {
+                  onChange={(e) => {
                     setViewName(e.target.value);
                   }}
                   style={{
@@ -432,7 +570,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                   <select
                     value={draftSelectedView}
                     className="rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-800"
-                    onChange={(e: any) => {
+                    onChange={(e) => {
                       handleSavedViewDraftSelection(e.target.value);
                     }}
                     style={{
