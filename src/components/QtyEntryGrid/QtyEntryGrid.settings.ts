@@ -68,6 +68,11 @@ const dataAccessSettings: TSetting[] = [
     label: 'Qodly Source (Collection)',
     type: ESetting.DS_AUTO_SUGGEST,
   },
+  {
+    key: 'currentElement',
+    label: 'Selected Element',
+    type: ESetting.DS_AUTO_SUGGEST,
+  },
 ];
 
 const generalSettings: TSetting[] = [
@@ -75,6 +80,12 @@ const generalSettings: TSetting[] = [
     key: 'disabled',
     label: 'Disabled',
     type: ESetting.CHECKBOX,
+  },
+  {
+    key: 'enableCopySelectedValue',
+    label: 'Copy selected row',
+    type: ESetting.CHECKBOX,
+    defaultValue: false,
   },
   {
     key: 'classNames',
@@ -201,7 +212,10 @@ const Settings: TSetting[] = [
   },
 ];
 
-export const BasicSettings: TSetting[] = [...dataAccessSettings, ...columnSettings, ...generalSettings];
+export const BasicSettings: TSetting[] = [
+  ...dataAccessSettings,
+  ...columnSettings,
+  ...generalSettings,
+];
 
 export default Settings;
-
