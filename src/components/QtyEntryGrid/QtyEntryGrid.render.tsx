@@ -1,6 +1,7 @@
 import {
   EntityActions,
   entitySubject,
+  formatValue,
   useDataLoader,
   useDsChangeHandler,
   useEnhancedNode,
@@ -27,6 +28,7 @@ import {
   GridReadyEvent,
   IGetRowsParams,
   RowDoubleClickedEvent,
+  ValueFormatterParams,
   ValueParserParams,
   themeQuartz,
 } from 'ag-grid-community';
@@ -112,6 +114,13 @@ const buildRowClipboardText = (api: GridApi, rowIndex: number): string => {
     .join('\t');
 
   return [headers, values].filter(Boolean).join('\n');
+};
+
+const formatDurationForEdit = (value: unknown, format?: string): string => {
+  if (value == null || value === '') return '';
+  if (format) return String(formatValue(value as any, 'duration', format));
+  if (typeof value === 'string') return value;
+  return String(value);
 };
 
 const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
@@ -308,6 +317,9 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
         } as ColDef;
 
         if (col.dataType === 'duration') {
+          def.valueFormatter = (params: ValueFormatterParams) =>
+            formatDurationForEdit(params.value, col.format);
+          def.cellEditorParams = { useFormatter: true };
           def.valueParser = (params: ValueParserParams) =>
             parseDurationInput(params.newValue, params.oldValue);
         }
