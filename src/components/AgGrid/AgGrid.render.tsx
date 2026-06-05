@@ -3331,8 +3331,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
                       filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
                       onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
-                      initialScopeOption={filterApplyOptionsRef.current.scope.option}
-                      initialSearchTypeOption={filterApplyOptionsRef.current.searchType.option}
+                      initialScopeOption="global"
+                      initialSearchTypeOption="replace"
                       filterModel={liveFilterModel}
                       setFilterModel={(next, options) => {
                         const api = gridRef.current?.api;
@@ -3489,8 +3489,8 @@ const AgGrid: FC<IAgGridProps> = ({
               showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
               filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
               onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
-              initialScopeOption={filterApplyOptionsRef.current.scope.option}
-              initialSearchTypeOption={filterApplyOptionsRef.current.searchType.option}
+              initialScopeOption="global"
+              initialSearchTypeOption="replace"
               translation={translation}
               dateSaisieLibreTranslation={dateSaisieLibreTranslation}
               onApply={(nextModel, options) => {
