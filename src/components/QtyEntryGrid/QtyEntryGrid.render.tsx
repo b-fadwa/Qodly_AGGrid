@@ -8,12 +8,22 @@ import {
   useSources,
 } from '@ws-ui/webform-editor';
 import cn from 'classnames';
-import { CSSProperties, FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CSSProperties,
+  FC,
+  KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import {
   CellDoubleClickedEvent,
   CellValueChangedEvent,
   ColDef,
+  GridApi,
   GridReadyEvent,
   IGetRowsParams,
   RowDoubleClickedEvent,
@@ -23,6 +33,12 @@ import {
 import get from 'lodash/get';
 import { parseDuration } from '@ws-ui/formatter';
 import CustomCell from '../AgGrid/CustomCell';
+import {
+  buildSelectedRowsClipboardText,
+  isCopyShortcut,
+  isEditableTarget,
+  writeTextToClipboard,
+} from '../AgGrid/AgGrid.clipboard';
 import { IQtyEntryGridProps, IQtyEntryColumn } from './QtyEntryGrid.config';
 
 // Matches "H:mm", "HH:mm" or "HH:mm:ss" (optionally negative).
@@ -57,6 +73,47 @@ const parseDurationInput = (input: unknown, fallback: unknown): unknown => {
   return Number.isFinite(milliseconds) ? milliseconds : fallback;
 };
 
+const stringifyClipboardValue = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return value.toISOString();
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const buildRowClipboardText = (api: GridApi, rowIndex: number): string => {
+  const rowNode = api.getDisplayedRowAtIndex(rowIndex);
+  if (!rowNode?.data) return '';
+
+  const columns = api
+    .getAllDisplayedColumns()
+    .filter((column: any) => !!column.getColDef?.()?.field);
+  if (!columns.length) return '';
+
+  const headers = columns
+    .map((column: any) =>
+      String(
+        column.getColDef?.()?.headerName ??
+          column.getColDef?.()?.field ??
+          column.getColId?.() ??
+          '',
+      ),
+    )
+    .join('\t');
+  const values = columns
+    .map((column: any) => {
+      const field = column.getColDef?.()?.field;
+      return stringifyClipboardValue(field ? rowNode.data[field] : '');
+    })
+    .join('\t');
+
+  return [headers, values].filter(Boolean).join('\n');
+};
+
 const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   datasource,
   columns,
@@ -73,6 +130,8 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   headerTextColor,
   style,
   disabled = false,
+  enableCopySelectedValue = false,
+  enableCopySelectedRow = false,
   className,
   classNames = [],
 }) => {
@@ -95,6 +154,9 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   fetchPageRef.current = fetchPage;
   const dsRef = useRef(ds);
   dsRef.current = ds;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const isGridActiveRef = useRef(false);
+  const lastSelectedRowIndexRef = useRef<number | null>(null);
 
   const [rowData, setRowData] = useState<any[]>([]);
   const [selected, setSelected] = useState(-1);
@@ -102,6 +164,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   const [, setCount] = useState(0);
   const isSelectingRef = useRef(false);
   const hasEntitySel = !!(ds as any)?.entitysel;
+  const isRowCopyEnabled = enableCopySelectedValue || enableCopySelectedRow;
 
   const loadScalarData = useCallback(async () => {
     const currentDs = dsRef.current;
@@ -337,12 +400,64 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     [emit, buildPayloadFromRow],
   );
 
+  const copySelectedRow = useCallback(
+    (event: KeyboardEvent | ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!isRowCopyEnabled || disabled || isEditableTarget(event.target)) return;
+      const keyboardEvent = 'nativeEvent' in event ? event.nativeEvent : event;
+      if (!isCopyShortcut(keyboardEvent)) return;
+
+      const api = gridRef.current?.api;
+      if (!api) return;
+
+      const text =
+        buildSelectedRowsClipboardText(api) ||
+        (typeof lastSelectedRowIndexRef.current === 'number'
+          ? buildRowClipboardText(api, lastSelectedRowIndexRef.current)
+          : '');
+      if (!text) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      void writeTextToClipboard(text);
+    },
+    [disabled, enableCopySelectedRow, enableCopySelectedValue, isRowCopyEnabled],
+  );
+
+  const handleCopySelectedRow = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      copySelectedRow(event);
+    },
+    [copySelectedRow],
+  );
+
+  useEffect(() => {
+    if (!isRowCopyEnabled || disabled) return;
+
+    const onDocumentMouseDown = (event: MouseEvent) => {
+      isGridActiveRef.current = !!containerRef.current?.contains(event.target as Node);
+    };
+
+    const onDocumentKeyDown = (event: KeyboardEvent) => {
+      if (!isGridActiveRef.current) return;
+      copySelectedRow(event);
+    };
+
+    document.addEventListener('mousedown', onDocumentMouseDown, true);
+    document.addEventListener('keydown', onDocumentKeyDown, true);
+    return () => {
+      document.removeEventListener('mousedown', onDocumentMouseDown, true);
+      document.removeEventListener('keydown', onDocumentKeyDown, true);
+    };
+  }, [copySelectedRow, disabled, isRowCopyEnabled]);
+
   const onRowClicked = useCallback(
     async (event: any) => {
-      if (!dsRef.current || !event.data) return;
+      if (!event.data) return;
       const rowIndex = event.rowIndex ?? event.data?.__rowIndex;
       if (typeof rowIndex !== 'number') return;
+      lastSelectedRowIndexRef.current = rowIndex;
       event.node?.setSelected(true, false);
+      if (!dsRef.current) return;
       isSelectingRef.current = true;
       try {
         await updateCurrentDsValue({ index: rowIndex });
@@ -357,6 +472,10 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     async (event: RowDoubleClickedEvent) => {
       const rowIndex = event.node?.rowIndex ?? (event.data as any)?.__rowIndex ?? -1;
       const payload = buildPayloadFromRow(event.data);
+      if (rowIndex >= 0) {
+        lastSelectedRowIndexRef.current = rowIndex;
+        event.node?.setSelected(true, false);
+      }
 
       emit('onrowdblclick', {
         rowIndex,
@@ -366,7 +485,6 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
 
       if (dsRef.current && event.data) {
         if (rowIndex < 0) return;
-        event.node?.setSelected(true, false);
         isSelectingRef.current = true;
         try {
           await updateCurrentDsValue({
@@ -391,7 +509,34 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   );
 
   return (
-    <div ref={connect} style={resolvedStyle} className={cn(className, classNames)}>
+    <div
+      ref={(element) => {
+        containerRef.current = element;
+        connect(element);
+      }}
+      style={resolvedStyle}
+      className={cn(className, classNames)}
+      tabIndex={isRowCopyEnabled && !disabled ? 0 : undefined}
+      onKeyDown={handleCopySelectedRow}
+      onFocus={() => {
+        if (isRowCopyEnabled && !disabled) {
+          isGridActiveRef.current = true;
+        }
+      }}
+      onBlur={() => {
+        window.setTimeout(() => {
+          if (!containerRef.current?.contains(document.activeElement)) {
+            isGridActiveRef.current = false;
+          }
+        }, 0);
+      }}
+      onMouseDown={() => {
+        if (isRowCopyEnabled && !disabled) {
+          isGridActiveRef.current = true;
+          containerRef.current?.focus();
+        }
+      }}
+    >
       {ds || datasource ? (
         <AgGridReact
           key={hasEntitySel ? 'qty-entry-entitysel' : 'qty-entry-scalar'}

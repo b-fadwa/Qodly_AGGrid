@@ -187,6 +187,7 @@ export default {
     headerTextColor: '',
     rowBorder: true,
     columnBorder: false,
+    enableCopySelectedValue: false,
   },
 } as T4DComponentConfig<IQtyEntryGridProps>;
 
@@ -206,6 +207,9 @@ export interface IQtyEntryGridProps extends webforms.ComponentProps {
   headerBackgroundColor: string;
   headerTextColor: string;
   disabled?: boolean;
+  /** Enables Ctrl/Cmd+C row copy. Kept as "Value" for backward compatibility with existing pages. */
+  enableCopySelectedValue?: boolean;
+  enableCopySelectedRow?: boolean;
 }
 
 export interface IQtyEntryColumn {

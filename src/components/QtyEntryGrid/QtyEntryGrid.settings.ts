@@ -82,6 +82,12 @@ const generalSettings: TSetting[] = [
     type: ESetting.CHECKBOX,
   },
   {
+    key: 'enableCopySelectedValue',
+    label: 'Copy selected row',
+    type: ESetting.CHECKBOX,
+    defaultValue: false,
+  },
+  {
     key: 'classNames',
     label: 'Class',
     type: ESetting.CSSCLASS_SELECTOR,
