@@ -2561,17 +2561,19 @@ const AgGrid: FC<IAgGridProps> = ({
   const applyViewDialogColumns = useCallback(
     (nextColumns: AppliedViewColumn[]) => {
       setColumnVisibility(nextColumns);
-      viewsManager.persistCurrent(
-        nextColumns.map((column) => ({
-          colId: column.field,
-          hide: Boolean(column.isHidden),
-          pinned: column.pinned ?? null,
-          width: column.width ?? null,
-          flex: column.flex ?? null,
-          i18n: column.i18n ?? null,
-        })),
-        { force: true },
-      );
+      const columnState = nextColumns.map((column) => ({
+        colId: column.field,
+        hide: Boolean(column.isHidden),
+        pinned: column.pinned ?? null,
+        width: column.width ?? null,
+        flex: column.flex ?? null,
+        i18n: column.i18n ?? null,
+      }));
+      const api = gridRef.current?.api;
+      if (api && !api.isDestroyed?.()) {
+        api.applyColumnState({ state: columnState, applyOrder: true });
+      }
+      viewsManager.persistCurrent(columnState, { force: true });
     },
     [viewsManager],
   );
@@ -3331,8 +3333,8 @@ const AgGrid: FC<IAgGridProps> = ({
                       showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
                       filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
                       onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
-                      initialScopeOption={filterApplyOptionsRef.current.scope.option}
-                      initialSearchTypeOption={filterApplyOptionsRef.current.searchType.option}
+                      initialScopeOption="global"
+                      initialSearchTypeOption="replace"
                       filterModel={liveFilterModel}
                       setFilterModel={(next, options) => {
                         const api = gridRef.current?.api;
@@ -3489,8 +3491,8 @@ const AgGrid: FC<IAgGridProps> = ({
               showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
               filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
               onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
-              initialScopeOption={filterApplyOptionsRef.current.scope.option}
-              initialSearchTypeOption={filterApplyOptionsRef.current.searchType.option}
+              initialScopeOption="global"
+              initialSearchTypeOption="replace"
               translation={translation}
               dateSaisieLibreTranslation={dateSaisieLibreTranslation}
               onApply={(nextModel, options) => {
