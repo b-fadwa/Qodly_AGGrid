@@ -64,12 +64,28 @@ export default {
         value: 'oncellvaluechanged',
       },
       {
+        label: 'On Cell Click',
+        value: 'oncellclick',
+      },
+      {
+        label: 'On Cell Ctrl+Click',
+        value: 'oncellctrlclick',
+      },
+      {
         label: 'On Cell Double Click',
         value: 'oncelldblclick',
       },
       {
         label: 'On Row Double Click',
         value: 'onrowdblclick',
+      },
+      {
+        label: 'On Header Click',
+        value: 'onheaderclick',
+      },
+      {
+        label: 'On Header Ctrl+Click',
+        value: 'onheaderctrlclick',
       },
     ],
     datasources: {
