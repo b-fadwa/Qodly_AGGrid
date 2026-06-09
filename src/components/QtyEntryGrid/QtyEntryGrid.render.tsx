@@ -21,12 +21,14 @@ import {
 } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import {
+  CellClickedEvent,
   CellDoubleClickedEvent,
   CellValueChangedEvent,
   ColDef,
   GridApi,
   GridReadyEvent,
   IGetRowsParams,
+  IHeaderParams,
   RowDoubleClickedEvent,
   ValueFormatterParams,
   ValueParserParams,
@@ -123,6 +125,51 @@ const formatDurationForEdit = (value: unknown, format?: string): string => {
   return String(value);
 };
 
+// -- Boolean checkbox cell renderer --
+// Always interactive; only the grid-level `disabled` prop (via context) locks it.
+const BoolCheckboxCell = (params: any) => {
+  const { value, node, colDef, context } = params;
+  const gridDisabled = !!context?.gridDisabled;
+
+  return (
+    <div className="flex items-center justify-center h-full">
+      <input
+        type="checkbox"
+        checked={!!value}
+        disabled={gridDisabled}
+        onChange={(e) => {
+          if (!gridDisabled) {
+            // node.setDataValue goes through AG Grid's value pipeline and triggers onCellValueChanged
+            node.setDataValue(colDef.field, e.target.checked);
+          }
+        }}
+        style={{ width: 14, height: 14, cursor: gridDisabled ? 'default' : 'pointer' }}
+      />
+    </div>
+  );
+};
+
+// -- Clickable column header --
+const ClickableHeader = (
+  params: IHeaderParams & { onHeaderClick?: (info: { column: string; ctrlKey: boolean }) => void },
+) => {
+  const { displayName, column, onHeaderClick } = params;
+  return (
+    <div
+      className="flex items-center h-full w-full select-none"
+      style={{ cursor: 'pointer' }}
+      onClick={(e) => {
+        onHeaderClick?.({
+          column: (column as any)?.getColDef()?.field ?? '',
+          ctrlKey: e.ctrlKey || e.metaKey,
+        });
+      }}
+    >
+      {displayName}
+    </div>
+  );
+};
+
 const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   datasource,
   columns,
@@ -163,6 +210,9 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   fetchPageRef.current = fetchPage;
   const dsRef = useRef(ds);
   dsRef.current = ds;
+  // Keep emit in a ref so stable callbacks (empty dep arrays) always call the latest emit
+  const emitRef = useRef(emit);
+  emitRef.current = emit;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isGridActiveRef = useRef(false);
   const lastSelectedRowIndexRef = useRef<number | null>(null);
@@ -174,6 +224,18 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   const isSelectingRef = useRef(false);
   const hasEntitySel = !!(ds as any)?.entitysel;
   const isRowCopyEnabled = enableCopySelectedValue || enableCopySelectedRow;
+
+  // Stable header-click handler — uses refs so colDefs memo never has to re-run because of it
+  const handleHeaderClick = useCallback(
+    ({ column, ctrlKey }: { column: string; ctrlKey: boolean }) => {
+      const cols = columnsRef.current;
+      const col = cols.find((c) => c.title === column);
+      emitRef.current(ctrlKey ? 'onheaderctrlclick' : 'onheaderclick', {
+        column: col?.source ?? column,
+      });
+    },
+    [],
+  );
 
   const loadScalarData = useCallback(async () => {
     const currentDs = dsRef.current;
@@ -301,32 +363,45 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   const colDefs: ColDef[] = useMemo(
     () =>
       columns.map((col) => {
+        const isBool = col.dataType === 'bool' || col.format === 'checkbox';
+
         const def: ColDef = {
           field: col.title,
           source: col.source,
           hide: !!col.hidden,
-          editable: !disabled && col.editable === true,
+          // Bool columns handle their own value changes via node.setDataValue in the checkbox renderer;
+          // setting editable:false prevents AG Grid from opening a text editor on click.
+          editable: isBool ? false : !disabled && col.editable === true,
           headerClass: col.editable === true ? 'editable-cell' : '',
           sortable: !!col.sorting,
           width: col.width,
           flex: col.flex,
-          cellRendererParams: {
-            format: col.format ?? '',
-            dataType: col.dataType ?? 'string',
-          },
+          // Clickable header on every column
+          headerComponent: ClickableHeader,
+          headerComponentParams: { onHeaderClick: handleHeaderClick },
         } as ColDef;
 
-        if (col.dataType === 'duration') {
-          def.valueFormatter = (params: ValueFormatterParams) =>
-            formatDurationForEdit(params.value, col.format);
-          def.cellEditorParams = { useFormatter: true };
-          def.valueParser = (params: ValueParserParams) =>
-            parseDurationInput(params.newValue, params.oldValue);
+        if (isBool) {
+          // Interactive checkbox renderer — no cellRendererParams needed
+          def.cellRenderer = BoolCheckboxCell;
+        } else {
+          def.cellRendererParams = {
+            format: col.format ?? '',
+            dataType: col.dataType ?? 'string',
+          };
+
+          if (col.dataType === 'duration') {
+            def.valueFormatter = (params: ValueFormatterParams) =>
+              formatDurationForEdit(params.value, col.format);
+            def.cellEditorParams = { useFormatter: true };
+            def.valueParser = (params: ValueParserParams) =>
+              parseDurationInput(params.newValue, params.oldValue);
+          }
         }
 
         return def;
       }),
-    [columns, disabled],
+    [columns, disabled, handleHeaderClick],
   );
 
   const defaultColDef = useMemo<ColDef>(
@@ -371,6 +446,26 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     });
     return payload;
   }, []);
+
+  const onCellClicked = useCallback(
+    (event: CellClickedEvent) => {
+      const nativeEvent = event.event as MouseEvent | undefined;
+      const ctrlKey = nativeEvent?.ctrlKey || nativeEvent?.metaKey;
+      const cols = columnsRef.current;
+      const col = cols.find((c) => c.title === event.colDef.field);
+      const rowIndex = event.node?.rowIndex ?? (event.data as any)?.__rowIndex ?? -1;
+      const payload = buildPayloadFromRow(event.data);
+
+      emit(ctrlKey ? 'oncellctrlclick' : 'oncellclick', {
+        column: col?.source ?? event.colDef.field,
+        value: event.value,
+        rowIndex,
+        rowData: payload,
+        entity: (event.data as any)?.__entity,
+      });
+    },
+    [emit, buildPayloadFromRow],
+  );
 
   const onCellValueChanged = useCallback(
     (event: CellValueChangedEvent) => {
@@ -559,6 +654,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
           rowModelType={hasEntitySel ? 'infinite' : undefined}
           suppressCellFocus={true}
           onGridReady={onGridReady}
+          onCellClicked={onCellClicked}
           onCellValueChanged={onCellValueChanged}
           onCellDoubleClicked={onCellDoubleClicked}
           onRowClicked={onRowClicked}
@@ -566,6 +662,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
           rowSelection={rowSelection}
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
+          context={{ gridDisabled: disabled }}
           theme={theme}
           className={cn({ 'pointer-events-none opacity-40': disabled })}
         />
