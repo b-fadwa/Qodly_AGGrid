@@ -53,16 +53,20 @@ export function enrichColumnStateWithSource(
     byKey.set(agGridColumnField(c), c);
   });
   return columnState.map((cs: any) => {
+    const normalizedState =
+      typeof cs?.width === 'number' && Number.isFinite(cs.width)
+        ? { ...cs, width: Math.round(cs.width), flex: null }
+        : { ...cs };
     const col = cs?.colId != null ? byKey.get(cs.colId) : undefined;
-    if (!col) return { ...cs };
+    if (!col) return normalizedState;
     const stableColId = agGridColumnField(col);
     const i18n =
       cs && typeof cs === 'object' && 'i18n' in cs && (cs as any).i18n != null
         ? (cs as any).i18n
         : col.title;
     return col.source != null
-      ? { ...cs, colId: stableColId, source: col.source, i18n }
-      : { ...cs, colId: stableColId, i18n };
+      ? { ...normalizedState, colId: stableColId, source: col.source, i18n }
+      : { ...normalizedState, colId: stableColId, i18n };
   });
 }
 
@@ -70,10 +74,16 @@ export function enrichColumnStateWithSource(
 export function columnStateForAgGridApply(columnState: any[] | undefined | null): any[] {
   if (!Array.isArray(columnState)) return [];
   return columnState.map((s: any) => {
-    if (s && typeof s === 'object' && ('source' in s || 'i18n' in s)) {
+    if (s && typeof s === 'object') {
       const next = { ...s };
       delete next.source;
       delete next.i18n;
+      // AG Grid flex sizing overrides pixel width. A saved width is explicit
+      // view state, so disable flex when loading it.
+      if (typeof next.width === 'number' && Number.isFinite(next.width) && next.width > 0) {
+        next.width = Math.round(next.width);
+        next.flex = null;
+      }
       return next;
     }
     return s;

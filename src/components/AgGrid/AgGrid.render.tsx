@@ -1463,7 +1463,25 @@ const AgGrid: FC<IAgGridProps> = ({
     if (!key) return null;
     loadViewWithLinkedFilter(key);
     if (Array.isArray(defaultView.columnState)) {
-      viewsManager.persistCurrent(defaultView.columnState, { force: true });
+      const appliedColumnState = withoutSyntheticRowColumnState(
+        gridRef.current?.api?.getColumnState() ?? defaultView.columnState,
+      );
+      setColumnVisibility((prev) =>
+        appliedColumnState.map((column: any) => {
+          const previous = prev.find((entry) => entry.field === column.colId);
+          const hasWidth =
+            typeof column.width === 'number' && Number.isFinite(column.width);
+          return {
+            field: column.colId,
+            isHidden: Boolean(column.hide),
+            pinned: column.pinned ?? null,
+            i18n: column.i18n ?? previous?.i18n ?? null,
+            width: hasWidth ? Math.round(column.width) : (previous?.width ?? null),
+            flex: hasWidth ? null : (column.flex ?? previous?.flex ?? null),
+          };
+        }),
+      );
+      viewsManager.persistCurrent(appliedColumnState, { force: true });
     }
     return key;
   }, [viewsManager, loadViewWithLinkedFilter]);
@@ -1504,6 +1522,7 @@ const AgGrid: FC<IAgGridProps> = ({
           setColumnVisibility((prev) => {
             const next = withoutSyntheticRowColumnState(data.columnState).map((col: any) => {
               const previous = prev.find((p) => p.field === col.colId);
+              const hasWidth = typeof col.width === 'number' && Number.isFinite(col.width);
               return {
                 field: col.colId,
                 isHidden: col.hide || false,
@@ -1512,8 +1531,8 @@ const AgGrid: FC<IAgGridProps> = ({
                 // Preserve the user's manual resize: if the persisted state
                 // doesn't carry an explicit width/flex (older saved views),
                 // fall back to whatever we already have in memory.
-                width: col.width ?? previous?.width ?? null,
-                flex: col.flex ?? previous?.flex ?? null,
+                width: hasWidth ? Math.round(col.width) : (previous?.width ?? null),
+                flex: hasWidth ? null : (col.flex ?? previous?.flex ?? null),
               };
             });
             return next;
@@ -1986,13 +2005,14 @@ const AgGrid: FC<IAgGridProps> = ({
               setColumnVisibility((prev) =>
                 withoutSyntheticRowColumnState(value.columnState).map((col: any) => {
                   const previous = prev.find((p) => p.field === col.colId);
+                  const hasWidth = typeof col.width === 'number' && Number.isFinite(col.width);
                   return {
                     field: col.colId,
                     isHidden: col.hide || false,
                     pinned: col.pinned || null,
                     i18n: col.i18n ?? previous?.i18n ?? null,
-                    width: col.width ?? previous?.width ?? null,
-                    flex: col.flex ?? previous?.flex ?? null,
+                    width: hasWidth ? Math.round(col.width) : (previous?.width ?? null),
+                    flex: hasWidth ? null : (col.flex ?? previous?.flex ?? null),
                   };
                 }),
               );
@@ -2544,13 +2564,14 @@ const AgGrid: FC<IAgGridProps> = ({
       setColumnVisibility((prev) =>
         currentState.map((col: any) => {
           const previous = prev.find((p) => p.field === col.colId);
+          const hasWidth = typeof col.width === 'number' && Number.isFinite(col.width);
           return {
             field: col.colId,
             isHidden: col.hide || false,
             pinned: col.pinned || null,
             i18n: previous?.i18n ?? null,
-            width: col.width ?? previous?.width ?? null,
-            flex: col.flex ?? previous?.flex ?? null,
+            width: hasWidth ? Math.round(col.width) : (previous?.width ?? null),
+            flex: hasWidth ? null : (col.flex ?? previous?.flex ?? null),
           };
         }),
       );

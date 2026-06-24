@@ -25,6 +25,18 @@ interface ViewDialogColumnState {
 }
 
 const END_DROP_TARGET = '__qodly_view_dialog_drop_end__';
+const MIN_COLUMN_WIDTH = 20;
+
+type ViewDialogDraftColumn = Omit<ViewDialogColumn, 'width'> & {
+  width?: number | string | null;
+};
+
+function normalizeColumnWidth(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(MIN_COLUMN_WIDTH, Math.round(parsed));
+}
 
 interface ViewDialogProps {
   open: boolean;
@@ -77,7 +89,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
   viewLinkedFilterId,
   setViewLinkedFilterId,
 }) => {
-  const [draftColumns, setDraftColumns] = useState<ViewDialogColumn[]>([]);
+  const [draftColumns, setDraftColumns] = useState<ViewDialogDraftColumn[]>([]);
   const [draftSelectedView, setDraftSelectedView] = useState('');
   const [draggingField, setDraggingField] = useState<string | null>(null);
   const [dragOverField, setDragOverField] = useState<string | null>(null);
@@ -86,7 +98,12 @@ export const ViewDialog: FC<ViewDialogProps> = ({
 
   useEffect(() => {
     if (open && !wasOpenRef.current) {
-      setDraftColumns(columns.map((column) => ({ ...column })));
+      setDraftColumns(
+        columns.map((column) => ({
+          ...column,
+          width: normalizeColumnWidth(column.width),
+        })),
+      );
       setDraftSelectedView(selectedView);
     }
     wasOpenRef.current = open;
@@ -143,6 +160,33 @@ export const ViewDialog: FC<ViewDialogProps> = ({
     );
   };
 
+  const handleWidthChange = (field: string, width: string) => {
+    const roundedWidth = width === '' ? '' : Math.round(Number(width));
+    if (roundedWidth !== '' && !Number.isFinite(roundedWidth)) return;
+    setDraftColumns((prev) =>
+      prev.map((column) =>
+        column.field === field
+          ? {
+              ...column,
+              width: roundedWidth,
+              // An explicit pixel width and flex sizing are mutually exclusive.
+              flex: roundedWidth === '' ? column.flex : null,
+            }
+          : column,
+      ),
+    );
+  };
+
+  const finalizedDraftColumns = (): ViewDialogColumn[] =>
+    draftColumns.map((column) => {
+      const width = normalizeColumnWidth(column.width);
+      return {
+        ...column,
+        width,
+        flex: width === null ? column.flex : null,
+      };
+    });
+
   const moveDraftColumn = (
     sourceField: string,
     targetField: string,
@@ -184,14 +228,14 @@ export const ViewDialog: FC<ViewDialogProps> = ({
           ...column,
           isHidden: Boolean(state.hide),
           pinned: state.pinned || null,
-          width: state.width ?? column.width ?? null,
+          width: normalizeColumnWidth(state.width ?? column.width),
           flex: state.flex ?? column.flex ?? null,
         };
       });
       const byField = new Map(known.map((column) => [column.field, column]));
       const ordered = columnState
         .map((entry) => (entry?.colId != null ? byField.get(String(entry.colId)) : null))
-        .filter((column): column is ViewDialogColumn => Boolean(column));
+        .filter((column): column is ViewDialogDraftColumn => Boolean(column));
       const orderedFields = new Set(ordered.map((column) => column.field));
       return [...ordered, ...known.filter((column) => !orderedFields.has(column.field))];
     });
@@ -210,7 +254,9 @@ export const ViewDialog: FC<ViewDialogProps> = ({
     if (draftSelectedView) {
       onLoadView(draftSelectedView);
     }
-    applyColumns(draftColumns);
+    const finalized = finalizedDraftColumns();
+    setDraftColumns(finalized);
+    applyColumns(finalized);
     onClose();
   };
 
@@ -221,7 +267,9 @@ export const ViewDialog: FC<ViewDialogProps> = ({
       linkedFilter:
         viewLinkedFilterId.trim() === '' ? null : (viewLinkedFilterId.trim() as string | number),
     };
-    applyColumns(draftColumns);
+    const finalized = finalizedDraftColumns();
+    setDraftColumns(finalized);
+    applyColumns(finalized);
     if (trimmed) {
       const existing = viewsManager.savedViews.find(
         (v) => v.name === trimmed || v.title === trimmed,
@@ -369,18 +417,9 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                   return (
                     <div
                       key={column.field}
-                      draggable
                       className="relative flex flex-row items-center gap-2 rounded-md px-2 py-1 hover:bg-slate-100"
                       style={{
                         opacity: draggingField === column.field ? 0.55 : 1,
-                        cursor: 'grab',
-                      }}
-                      onDragStart={(e) => {
-                        setDraggingField(column.field);
-                        setDragOverField(null);
-                        setDragOverPlacement('before');
-                        e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', column.field);
                       }}
                       onDragOver={(e) => {
                         e.preventDefault();
@@ -405,11 +444,6 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                         setDragOverField(null);
                         setDragOverPlacement('before');
                       }}
-                      onDragEnd={() => {
-                        setDraggingField(null);
-                        setDragOverField(null);
-                        setDragOverPlacement('before');
-                      }}
                     >
                       {dragOverField === column.field && draggingField !== column.field ? (
                         <span
@@ -421,9 +455,22 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                         />
                       ) : null}
                       <span
-                        className="inline-flex shrink-0 items-center justify-center text-slate-400"
+                        draggable
+                        className="inline-flex shrink-0 cursor-grab items-center justify-center text-slate-400"
                         title={translation('Drag to reorder')}
                         aria-hidden="true"
+                        onDragStart={(e) => {
+                          setDraggingField(column.field);
+                          setDragOverField(null);
+                          setDragOverPlacement('before');
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', column.field);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingField(null);
+                          setDragOverField(null);
+                          setDragOverPlacement('before');
+                        }}
                       >
                         <MdDragIndicator size={16} />
                       </span>
@@ -444,6 +491,29 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                         >
                           {columnLabelByStableField.get(column.field) ?? column.field}
                         </span>
+                      </label>
+                      <label
+                        className="inline-flex shrink-0 items-center gap-1 text-xs text-slate-600"
+                      >
+                        <span>{translation('Width')}</span>
+                        <input
+                          type="number"
+                          min={MIN_COLUMN_WIDTH}
+                          step={1}
+                          value={column.width ?? ''}
+                          className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                          style={{ height: '31px' }}
+                          aria-label={`${translation('Width')} ${columnLabelByStableField.get(column.field) ?? column.field}`}
+                          onChange={(e) => handleWidthChange(column.field, e.target.value)}
+                          onBlur={(e) => {
+                            const width = normalizeColumnWidth(e.target.value);
+                            handleWidthChange(column.field, width === null ? '' : String(width));
+                          }}
+                          onDragStart={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        />
                       </label>
                       <select
                         value={column.pinned || 'unpinned'}
