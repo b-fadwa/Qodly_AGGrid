@@ -40,7 +40,7 @@ export function hasMeaningfulColumnState(columnState: unknown): boolean {
   return Array.isArray(columnState) && columnState.length > 0;
 }
 
-/** Merge Qodly attribute path onto AG Grid column state (resolve colId → stable field, attach source). */
+/** Merge Qodly column metadata onto AG Grid column state for downstream consumers like PrintSettings. */
 export function enrichColumnStateWithSource(
   columnState: any[] | undefined | null,
   columns: IColumn[],
@@ -64,9 +64,15 @@ export function enrichColumnStateWithSource(
       cs && typeof cs === 'object' && 'i18n' in cs && (cs as any).i18n != null
         ? (cs as any).i18n
         : col.title;
-    return col.source != null
-      ? { ...normalizedState, colId: stableColId, source: col.source, i18n }
-      : { ...normalizedState, colId: stableColId, i18n };
+    const enriched = {
+      ...normalizedState,
+      colId: stableColId,
+      i18n,
+      title: col.title,
+      dataType: col.dataType,
+      format: col.format,
+    };
+    return col.source != null ? { ...enriched, source: col.source } : enriched;
   });
 }
 
@@ -78,6 +84,9 @@ export function columnStateForAgGridApply(columnState: any[] | undefined | null)
       const next = { ...s };
       delete next.source;
       delete next.i18n;
+      delete next.title;
+      delete next.dataType;
+      delete next.format;
       // AG Grid flex sizing overrides pixel width. A saved width is explicit
       // view state, so disable flex when loading it.
       if (typeof next.width === 'number' && Number.isFinite(next.width) && next.width > 0) {
