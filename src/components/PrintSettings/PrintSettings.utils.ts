@@ -7,12 +7,13 @@ import {
 } from './PrintSettings.types';
 
 export const DATE_FORMATS = [
-  'DD/MM/YYYY',
   'DD-MM-YYYY',
-  'YYYY-MM-DD',
-  'MM/DD/YYYY',
-  'DD/MM/YYYY HH:mm',
-  'dddd D MMMM YYYY',
+  'YYYY-WW',
+  'YYYY-MM',
+  'YYYY-TT',
+  'YYYY-SS',
+  'YYYY',
+  'DD-MM-YYYY dddd',
 ];
 
 export const SUBTOTAL_FUNCTIONS: Array<{ value: SubtotalFunction; label: string }> = [

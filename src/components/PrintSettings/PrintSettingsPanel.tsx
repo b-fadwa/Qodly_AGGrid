@@ -35,6 +35,8 @@ interface ResolvedColumn extends PrintSettingsColumn {
 type PrintSettingsI18n = { keys?: Record<string, Record<string, unknown>> } | null | undefined;
 type AgGridTranslation = (key: string) => string;
 
+const SKIPPED_PRINT_COLUMN_IDS = new Set(['ag-Grid-SelectionColumn']);
+
 interface PrintSettingsPanelProps {
   columns: PrintSettingsColumn[];
   value: PrintFormatValue;
@@ -120,7 +122,10 @@ const trashButtonStyle = {
   backgroundColor: '#EC7B8033',
 } as const;
 
-function pickI18nString(entry: Record<string, unknown> | undefined, lang?: string): string | undefined {
+function pickI18nString(
+  entry: Record<string, unknown> | undefined,
+  lang?: string,
+): string | undefined {
   if (!entry) return undefined;
   const localized = lang ? entry[lang] : undefined;
   if (typeof localized === 'string' && localized.trim()) return localized;
@@ -128,7 +133,11 @@ function pickI18nString(entry: Record<string, unknown> | undefined, lang?: strin
   return typeof fallback === 'string' && fallback.trim() ? fallback : undefined;
 }
 
-function translateAgGridKey(i18n: PrintSettingsI18n, lang: string | undefined, key: string): string {
+function translateAgGridKey(
+  i18n: PrintSettingsI18n,
+  lang: string | undefined,
+  key: string,
+): string {
   const formattedKey = key.replace(/\s+/g, '_');
   return pickI18nString(i18n?.keys?.[`aggrid_${formattedKey}`], lang) ?? key;
 }
@@ -144,18 +153,41 @@ function translateAgGridAlias(
 
 function getDateFormatTranslationKey(format: string) {
   switch (format) {
-    case 'DD/MM/YYYY':
-      return 'Date format DD MM YYYY';
     case 'DD-MM-YYYY':
-      return 'Date format DD-MM-YYYY';
-    case 'YYYY-MM-DD':
-      return 'Date format YYYY-MM-DD';
-    case 'MM/DD/YYYY':
-      return 'Date format MM DD YYYY';
-    case 'DD/MM/YYYY HH:mm':
-      return 'Date format DD MM YYYY HH mm';
-    case 'dddd D MMMM YYYY':
-      return 'Date format weekday D month YYYY';
+      return 'Date format standard DD-MM-YYYY';
+    case 'YYYY-WW':
+      return 'Date format year week YYYY-WW';
+    case 'YYYY-MM':
+      return 'Date format year month YYYY-MM';
+    case 'YYYY-TT':
+      return 'Date format year quarter YYYY-TT';
+    case 'YYYY-SS':
+      return 'Date format year semester YYYY-SS';
+    case 'YYYY':
+      return 'Date format year YYYY';
+    case 'DD-MM-YYYY dddd':
+      return 'Date format DD-MM-YYYY with weekday';
+    default:
+      return format;
+  }
+}
+
+function getDateFormatDefaultLabel(format: string) {
+  switch (format) {
+    case 'DD-MM-YYYY':
+      return 'format Standard : DD-MM-YYYY';
+    case 'YYYY-WW':
+      return 'année semaine YYYY-WW';
+    case 'YYYY-MM':
+      return 'année mois YYYY-MM';
+    case 'YYYY-TT':
+      return 'année trimestre YYYY-TT';
+    case 'YYYY-SS':
+      return 'année semestre YYYY-SS';
+    case 'YYYY':
+      return 'année YYYY';
+    case 'DD-MM-YYYY dddd':
+      return 'DD-MM-YYYY + Days of the week';
     default:
       return format;
   }
@@ -254,15 +286,20 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
       })),
     [columns, i18n, lang],
   );
+  const printableColumns = resolvedColumns.filter(
+    (column) => !SKIPPED_PRINT_COLUMN_IDS.has(column.colId),
+  );
   const columnById = useMemo(
-    () => new Map(resolvedColumns.map((column) => [column.colId, column])),
-    [resolvedColumns],
+    () => new Map(printableColumns.map((column) => [column.colId, column])),
+    [printableColumns],
   );
   const orderedColumns = value.columnState
     .map((state) => columnById.get(state.colId))
     .filter((column): column is ResolvedColumn => Boolean(column));
   const visibleIds = new Set(
-    value.columnState.filter((state) => !state.hidden).map((state) => state.colId),
+    value.columnState
+      .filter((state) => !state.hidden && columnById.has(state.colId))
+      .map((state) => state.colId),
   );
   const filteredColumns = orderedColumns.filter((column) =>
     `${column.label} ${column.source}`.toLowerCase().includes(search.trim().toLowerCase()),
@@ -403,7 +440,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                   className="whitespace-nowrap rounded-full border px-2 py-1"
                   style={badgeStyle}
                 >
-                  {visibleIds.size} / {columns.length}
+                  {visibleIds.size} / {printableColumns.length}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 border-b bg-white p-2" style={borderStyle}>
@@ -477,7 +514,9 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                           moveColumn(
                             dragging,
                             column.colId,
-                            dropIndicator?.targetId === column.colId ? dropIndicator.edge : 'before',
+                            dropIndicator?.targetId === column.colId
+                              ? dropIndicator.edge
+                              : 'before',
                           );
                         }
                         setDragging(null);
@@ -594,7 +633,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                 </div>
               </article>
 
-              <article className={cardClass} style={borderStyle}>
+              <article className={cardClass + ' h-full'} style={borderStyle}>
                 <div className={cardHeadingClass} style={{ ...borderStyle, minHeight: '46px' }}>
                   <div>
                     <h2 className={headingTitleClass} style={titleStyle}>
@@ -606,7 +645,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                   </div>
                   <MdOutlineCalendarMonth className="text-xl" style={{ color: '#6A7282' }} />
                 </div>
-                <div className="overflow-y-auto px-2.5 pb-2 pt-1.5" style={{ maxHeight: '126px' }}>
+                <div className="overflow-y-auto px-2.5 pb-2 pt-1.5" style={{ maxHeight: '195px' }}>
                   {visibleDateColumns.map((column) => (
                     <label
                       className="grid grid-cols-2 items-center gap-2 border-b border-slate-100 text-xs last:border-b-0"
@@ -631,7 +670,10 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                       >
                         {DATE_FORMATS.map((format) => (
                           <option value={format} key={format}>
-                            {ta(getDateFormatTranslationKey(format), format)}
+                            {ta(
+                              getDateFormatTranslationKey(format),
+                              getDateFormatDefaultLabel(format),
+                            )}
                           </option>
                         ))}
                       </select>
@@ -677,113 +719,117 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                   {t('No subtotal rules. Add one when the report needs grouped calculations.')}
                 </div>
               ) : (
-                <div className="flex flex-col gap-1.5 p-2">
-                  {value.subtotals.map((rule, index) => (
-                    <div
-                      className="flex flex-wrap items-end gap-2 rounded-lg border px-2 py-1.5"
-                      style={{ borderColor: '#D1D5DC', backgroundColor: '#FAFAFA' }}
-                      key={rule.id}
-                    >
-                      <div
-                        className="mb-0.5 grid shrink-0 place-items-center rounded-md border font-bold"
-                        style={{ ...badgeStyle, width: '22px', height: '22px' }}
-                      >
-                        {index + 1}
-                      </div>
-                      <label className="min-w-0" style={{ flex: '1 1 190px' }}>
-                        <span className={labelCaptionClass} style={labelStyle}>
-                          {t('At each change in')}
-                        </span>
-                        <select
-                          className={selectClass}
-                          style={inputStyle}
-                          value={rule.breakColumn}
-                          disabled={disabled}
-                          onChange={(event) =>
-                            updateSubtotal(rule.id, { breakColumn: event.target.value })
-                          }
+                <div className="p-2">
+                  <div
+                    className="flex flex-col gap-1.5 rounded-lg border px-2 py-1.5"
+                    style={{ borderColor: '#D1D5DC', backgroundColor: '#FAFAFA' }}
+                  >
+                    {value.subtotals.map((rule, index) => (
+                      <div className="flex flex-wrap items-end gap-2" key={rule.id}>
+                        <div
+                          className="mb-0.5 grid shrink-0 place-items-center rounded-md border font-bold"
+                          style={{ ...badgeStyle, width: '22px', height: '22px' }}
                         >
-                          {orderedColumns
-                            .filter((column) => visibleIds.has(column.colId))
-                            .map((column) => (
-                              <option key={column.colId} value={column.colId}>
-                                {column.label}
+                          {index + 1}
+                        </div>
+                        <label className="min-w-0" style={{ flex: '1 1 190px' }}>
+                          <span className={labelCaptionClass} style={labelStyle}>
+                            {t('At each change in')}
+                          </span>
+                          <select
+                            className={selectClass}
+                            style={inputStyle}
+                            value={rule.breakColumn}
+                            disabled={disabled}
+                            onChange={(event) =>
+                              updateSubtotal(rule.id, { breakColumn: event.target.value })
+                            }
+                          >
+                            {orderedColumns
+                              .filter((column) => visibleIds.has(column.colId))
+                              .map((column) => (
+                                <option key={column.colId} value={column.colId}>
+                                  {column.label}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                        <label className="min-w-0" style={{ flex: '0 1 160px' }}>
+                          <span className={labelCaptionClass} style={labelStyle}>
+                            {t('Function')}
+                          </span>
+                          <select
+                            className={selectClass}
+                            style={inputStyle}
+                            value={rule.function}
+                            disabled={disabled}
+                            onChange={(event) =>
+                              updateSubtotal(rule.id, {
+                                function: event.target.value as SubtotalFunction,
+                              })
+                            }
+                          >
+                            {SUBTOTAL_FUNCTIONS.map((entry) => (
+                              <option key={entry.value} value={entry.value}>
+                                {translateSubtotalFunction(entry)}
                               </option>
                             ))}
-                        </select>
-                      </label>
-                      <label className="min-w-0" style={{ flex: '0 1 160px' }}>
-                        <span className={labelCaptionClass} style={labelStyle}>
-                          {t('Function')}
-                        </span>
-                        <select
-                          className={selectClass}
-                          style={inputStyle}
-                          value={rule.function}
+                          </select>
+                        </label>
+                        <fieldset
+                          className="m-0 min-w-0 border-0 p-0"
+                          style={{ flex: '2 1 260px' }}
+                        >
+                          <legend className={labelCaptionClass} style={labelStyle}>
+                            {t('Apply to real-number columns')}
+                          </legend>
+                          <div
+                            className="flex min-h-[31px] flex-wrap items-center gap-x-2 gap-y-1 overflow-y-auto rounded-md border bg-white px-1.5 py-1"
+                            style={{ maxHeight: '58px', borderColor: '#0000001A' }}
+                          >
+                            {visibleNumberColumns.map((column) => (
+                              <label
+                                className="flex min-w-0 cursor-pointer items-center gap-1"
+                                style={{ color: '#364153', fontSize: '11px' }}
+                                key={column.colId}
+                              >
+                                <input
+                                  className="h-3 w-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                  style={{ accentColor: '#2B5797' }}
+                                  type="checkbox"
+                                  checked={rule.targetColumns.includes(column.colId)}
+                                  disabled={disabled}
+                                  onChange={(event) =>
+                                    updateSubtotal(rule.id, {
+                                      targetColumns: event.target.checked
+                                        ? [...rule.targetColumns, column.colId]
+                                        : rule.targetColumns.filter((id) => id !== column.colId),
+                                    })
+                                  }
+                                />
+                                <span className="truncate">{column.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                        <button
+                          type="button"
+                          className="grid shrink-0 place-items-center rounded-lg border p-0 text-base disabled:cursor-not-allowed disabled:opacity-50"
+                          style={trashButtonStyle}
+                          aria-label={ta('Remove', 'Remove subtotal')}
                           disabled={disabled}
-                          onChange={(event) =>
-                            updateSubtotal(rule.id, {
-                              function: event.target.value as SubtotalFunction,
+                          onClick={() =>
+                            onChange({
+                              ...value,
+                              subtotals: value.subtotals.filter((item) => item.id !== rule.id),
                             })
                           }
                         >
-                          {SUBTOTAL_FUNCTIONS.map((entry) => (
-                            <option key={entry.value} value={entry.value}>
-                              {translateSubtotalFunction(entry)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <fieldset className="m-0 min-w-0 border-0 p-0" style={{ flex: '2 1 260px' }}>
-                        <legend className={labelCaptionClass} style={labelStyle}>
-                          {t('Apply to real-number columns')}
-                        </legend>
-                        <div
-                          className="flex min-h-[31px] flex-wrap items-center gap-x-2 gap-y-1 overflow-y-auto rounded-md border bg-white px-1.5 py-1"
-                          style={{ maxHeight: '58px', borderColor: '#0000001A' }}
-                        >
-                          {visibleNumberColumns.map((column) => (
-                            <label
-                              className="flex min-w-0 cursor-pointer items-center gap-1"
-                              style={{ color: '#364153', fontSize: '11px' }}
-                              key={column.colId}
-                            >
-                              <input
-                                className="h-3 w-3 disabled:cursor-not-allowed disabled:opacity-50"
-                                style={{ accentColor: '#2B5797' }}
-                                type="checkbox"
-                                checked={rule.targetColumns.includes(column.colId)}
-                                disabled={disabled}
-                                onChange={(event) =>
-                                  updateSubtotal(rule.id, {
-                                    targetColumns: event.target.checked
-                                      ? [...rule.targetColumns, column.colId]
-                                      : rule.targetColumns.filter((id) => id !== column.colId),
-                                  })
-                                }
-                              />
-                              <span className="truncate">{column.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </fieldset>
-                      <button
-                        type="button"
-                        className="grid shrink-0 place-items-center rounded-lg border p-0 text-base disabled:cursor-not-allowed disabled:opacity-50"
-                        style={trashButtonStyle}
-                        aria-label={ta('Remove', 'Remove subtotal')}
-                        disabled={disabled}
-                        onClick={() =>
-                          onChange({
-                            ...value,
-                            subtotals: value.subtotals.filter((item) => item.id !== rule.id),
-                          })
-                        }
-                      >
-                        <MdClose />
-                      </button>
-                    </div>
-                  ))}
+                          <MdClose />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </article>
