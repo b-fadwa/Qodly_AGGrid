@@ -42,6 +42,7 @@ export default {
     icon: MdOutlinePrint,
     events: [
       { label: 'On Load', value: 'onload' },
+      { label: 'On Help', value: 'onhelp' },
       { label: 'On Validate', value: 'onvalidate' },
       { label: 'On Cancel', value: 'oncancel' },
       { label: 'On Save Format', value: 'onsaveformat' },

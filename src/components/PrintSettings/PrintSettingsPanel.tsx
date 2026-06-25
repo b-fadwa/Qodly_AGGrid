@@ -52,6 +52,7 @@ interface PrintSettingsPanelProps {
   onSaveFormat: (name: string, isDefault: boolean) => void;
   onUpdateFormat: (key: string, isDefault: boolean) => void;
   onDeleteFormat: (key: string) => void;
+  onHelp: () => void;
   onValidate: () => void;
   onCancel: () => void;
 }
@@ -262,6 +263,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
   onSaveFormat,
   onUpdateFormat,
   onDeleteFormat,
+  onHelp,
   onValidate,
   onCancel,
 }) => {
@@ -403,13 +405,13 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
 
   return (
     <section
-      className={`flex h-full min-h-full w-full flex-col overflow-auto rounded-xl border bg-white font-sans ${className || ''}`}
-      style={{ ...style, borderColor: '#D1D5DC', color: '#0A0A0A' }}
+      className={`flex h-full min-h-full w-full flex-col overflow-auto bg-white gap-2 ${className || ''}`}
+      style={{ ...style, color: '#0A0A0A' }}
       aria-disabled={disabled}
     >
       {columns.length === 0 ? (
         <div
-          className="flex flex-1 flex-col items-center justify-center gap-2 text-slate-400"
+          className="flex flex-1 flex-col items-center justify-center gap-1 text-slate-400"
           style={{ minHeight: '390px' }}
         >
           <MdOutlinePrint className="mb-1" style={{ color: '#2B5797', fontSize: '38px' }} />
@@ -421,7 +423,10 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
           </span>
         </div>
       ) : (
-        <div className="flex flex-col gap-2.5 p-2.5">
+        <div
+          className="flex flex-col gap-2.5 p-2.5 rounded-xl border m-2"
+          style={{ borderColor: '#D1D5DC' }}
+        >
           <div className="flex flex-row gap-2.5">
             <article
               className={cardClass}
@@ -581,7 +586,6 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                   <label
                     className="relative flex cursor-pointer items-center gap-2 rounded-lg border p-2"
                     style={{
-                      minHeight: '58px',
                       ...(value.representation === 'list'
                         ? selectedOptionStyle
                         : unselectedOptionStyle),
@@ -606,7 +610,6 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                   <label
                     className="relative flex cursor-pointer items-center gap-2 rounded-lg border p-2"
                     style={{
-                      minHeight: '58px',
                       ...(value.representation === 'table'
                         ? selectedOptionStyle
                         : unselectedOptionStyle),
@@ -900,13 +903,34 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
       )}
 
       <footer
-        className="flex w-full shrink-0 items-center justify-end gap-2 border-t bg-white p-4"
-        style={borderStyle}
+        className="flex w-full shrink-0 items-center justify-end gap-2 p-4"
+        style={{ backgroundColor: '#F9FAFB' }}
       >
         <button
           type="button"
-          className="flex items-center justify-center rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
-          style={buttonStyle}
+          className="flex items-center justify-center gap-2 px-3 py-2 text-center text-sm disabled:cursor-not-allowed disabled:opacity-50"
+          style={{
+            ...primaryButtonStyle,
+            borderRadius: '6px',
+            border: '1px solid var(--info-font-color)',
+            color: 'var(--info-font-color)',
+            backgroundColor: 'transparent',
+          }}
+          onClick={onHelp}
+          disabled={disabled || columns.length === 0 || visibleIds.size === 0}
+        >
+          <MdHelpOutline size={16} aria-hidden="true" />
+          {t('Informations')}
+        </button>
+        <button
+          type="button"
+          className="flex items-center justify-center px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          style={{
+            ...buttonStyle,
+            color: '#EC7B80',
+            borderRadius: '6px',
+            border: '1px solid #EC7B80',
+          }}
           onClick={onCancel}
           disabled={disabled}
         >
@@ -914,8 +938,8 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
         </button>
         <button
           type="button"
-          className="flex items-center justify-center rounded-md border px-3 py-2 text-center text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ ...primaryButtonStyle, borderColor: '#2B5797' }}
+          className="flex items-center justify-center px-3 py-2 text-center text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ ...primaryButtonStyle, borderRadius: '6px', border: '1px solid #2B5797' }}
           onClick={onValidate}
           disabled={disabled || columns.length === 0 || visibleIds.size === 0}
         >

@@ -64,6 +64,7 @@ const PrintSettingsBuild: FC<IPrintSettingsProps> = ({
         onSaveFormat={save}
         onUpdateFormat={update}
         onDeleteFormat={(key) => setFormats((current) => current.filter((record) => String(record.id ?? record.name ?? record.title ?? '') !== key))}
+        onHelp={() => undefined}
         onValidate={() => undefined}
         onCancel={() => undefined}
       />

@@ -42,6 +42,7 @@ const PrintSettingsRender: FC<IPrintSettingsProps> = ({
     autoBindEvents: !disabled,
     omittedEvents: [
       'onload',
+      'onhelp',
       'onvalidate',
       'oncancel',
       'onsaveformat',
@@ -267,6 +268,7 @@ const PrintSettingsRender: FC<IPrintSettingsProps> = ({
         onSaveFormat={saveFormat}
         onUpdateFormat={updateFormat}
         onDeleteFormat={deleteFormat}
+        onHelp={() => emit('onhelp', { columns: columnsRef.current, format: valueRef.current })}
         onValidate={() => emit('onvalidate', { columns: columnsRef.current, format: valueRef.current })}
         onCancel={() => emit('oncancel', { columns: columnsRef.current, format: valueRef.current })}
       />
