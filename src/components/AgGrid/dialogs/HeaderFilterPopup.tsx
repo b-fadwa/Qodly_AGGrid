@@ -178,14 +178,6 @@ const toCondition = (
   };
 };
 
-const filled = (row: ConditionDraft, ops: FilterOperatorDescriptor[]) => {
-  const op = ops.find((o) => o.key === row.operator);
-  const inputs = op?.inputs ?? 1;
-  if (inputs === 0) return true;
-  if (inputs === 1) return String(row.value ?? '').trim().length > 0;
-  return String(row.value ?? '').trim().length > 0 && String(row.value2 ?? '').trim().length > 0;
-};
-
 const normalize = (rows: ConditionDraft[], ops: FilterOperatorDescriptor[]): ConditionDraft[] => {
   const fallback = defaultOp(ops);
   const safe = rows.length ? rows : [{ id: mk(), operator: fallback, value: '', value2: '' }];
@@ -194,13 +186,7 @@ const normalize = (rows: ConditionDraft[], ops: FilterOperatorDescriptor[]): Con
       safe.find((row) => row.operator === 'isFalse' || row.operator === 'isTrue') ?? safe[0];
     return [{ ...selected, operator: selected.operator || fallback, value: '', value2: '' }];
   }
-  const lastFilled = [...safe]
-    .map((row, idx) => (filled(row, ops) ? idx : -1))
-    .reduce((acc, idx) => Math.max(acc, idx), -1);
-  const desired = Math.max(1, lastFilled + 2);
-  const next = safe.slice(0, desired);
-  while (next.length < desired) next.push({ id: mk(), operator: fallback, value: '', value2: '' });
-  return next;
+  return safe.map((row) => ({ ...row, operator: row.operator || fallback }));
 };
 
 const normalizeCombinator = (value: any): QodlyFilterCombinator =>
@@ -785,6 +771,32 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
             </div>
           );
         })}
+        {!boolOps(operators) ? (
+          <button
+            type="button"
+            style={{
+              ...styles.control,
+              alignSelf: 'flex-start',
+              width: 'auto',
+              marginTop: '4px',
+              color: '#2B5797',
+              borderColor: '#2B5797',
+            }}
+            onClick={() => {
+              setRows((prev) => [
+                ...normalize(prev, operators),
+                {
+                  id: mk(),
+                  operator: defaultOp(operators),
+                  value: '',
+                  value2: '',
+                },
+              ]);
+            }}
+          >
+            {translation('Add')}
+          </button>
+        ) : null}
       </div>
       <>
         {showDateFinancialToggle || showFilterInactiveRecordsToggle ? (
