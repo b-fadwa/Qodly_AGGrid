@@ -138,6 +138,34 @@ type FilterApplyOptions = {
   };
 };
 
+type MonoCriteriaFilter = {
+  colId: string;
+  condition: any;
+  scope: FilterSearchScopeKind;
+  searchType: FilterSearchTypeKind;
+};
+
+const buildMonoFilterModel = (mono: MonoCriteriaFilter): Record<string, any> => ({
+  [mono.colId]: {
+    ...mono.condition,
+    qodlyCombinator: 'AND',
+  },
+});
+
+const isFilterDsValueEmpty = (data: unknown): boolean => {
+  if (data == null) return true;
+  if (typeof data !== 'object' || Array.isArray(data)) return false;
+  const record = data as Record<string, unknown>;
+  if (Object.keys(record).length === 0) return true;
+  if (!('filterModel' in record)) return false;
+  const filterModel = record.filterModel;
+  if (filterModel == null) return true;
+  if (typeof filterModel === 'object' && !Array.isArray(filterModel)) {
+    return Object.keys(filterModel as object).length === 0;
+  }
+  return false;
+};
+
 type AppliedViewColumn = {
   field: string;
   isHidden: boolean;
@@ -665,6 +693,12 @@ const AgGrid: FC<IAgGridProps> = ({
   columnsRef.current = columns;
   /** Skip `refreshInfiniteCache` from `useDsChangeHandler` while `getRows` runs emit + page fetch. */
   const suppressDsChangeRefreshRef = useRef(false);
+  /** While applying mono criteria, block `getRows` from emitting `onfilter` (explicit apply handles it once). */
+  const suppressFilterEmitInGetRowsRef = useRef(false);
+  /** Bumped when filter mode changes so in-flight `getRows` cannot emit a superseded filter. */
+  const filterEmitGenerationRef = useRef(0);
+  /** Last `filterDs` payload — used to detect a real transition to empty (not a stale `{}`). */
+  const lastFilterDsSnapshotRef = useRef<unknown>(undefined);
   /**
    * Last fingerprints successfully synced via `onfilter` / `onsort`. Dedupes infinite-cache blocks.
    * Filter fingerprint excludes sort so sort-only changes do not fire `onfilter`.
@@ -690,6 +724,14 @@ const AgGrid: FC<IAgGridProps> = ({
     scope: { option: 'global' },
     searchType: { option: 'replace' },
   });
+  const monoFilterApplyOptionsRef = useRef<FilterApplyOptions>({
+    scope: { option: 'global' },
+    searchType: { option: 'replace' },
+  });
+  const [monoCriteriaFilter, setMonoCriteriaFilter] = useState<MonoCriteriaFilter | null>(null);
+  const monoCriteriaFilterRef = useRef<MonoCriteriaFilter | null>(null);
+  const applyingMonoFilterRef = useRef(false);
+  const [filterActiveRevision, setFilterActiveRevision] = useState(0);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -895,6 +937,16 @@ const AgGrid: FC<IAgGridProps> = ({
     const normalized = nextModel ?? {};
     liveFilterModelRef.current = normalized;
     setLiveFilterModel(normalized);
+  }, []);
+
+  const clearMonoCriteriaFilter = useCallback(() => {
+    monoCriteriaFilterRef.current = null;
+    setMonoCriteriaFilter(null);
+    setFilterActiveRevision((v) => v + 1);
+  }, []);
+
+  const bumpFilterActiveIndicators = useCallback(() => {
+    setFilterActiveRevision((v) => v + 1);
   }, []);
 
   // calculated-search formats: list datasource -> local dropdown list
@@ -1187,11 +1239,38 @@ const AgGrid: FC<IAgGridProps> = ({
     [],
   );
 
-  const isColumnFilterActive = useCallback((colId: string): boolean => {
+  const readActiveFilterColIds = useCallback((): Set<string> => {
+    const ids = new Set<string>();
+    const mono = monoCriteriaFilterRef.current;
+    if (mono?.condition) {
+      ids.add(mono.colId);
+      return ids;
+    }
     const model = liveFilterModelRef.current ?? {};
-    if (model != null && Object.prototype.hasOwnProperty.call(model, colId)) return true;
-    const advancedRules = getAdvancedRulesFromFilterModel(model);
-    return advancedRules.some((rule) => rule.field === colId);
+    Object.keys(stripAdvancedRulesFromFilterModel(model)).forEach((field) => {
+      if (field) ids.add(field);
+    });
+    getAdvancedRulesFromFilterModel(model).forEach((rule) => {
+      if (rule.field) ids.add(rule.field);
+    });
+    return ids;
+  }, []);
+
+  const activeFilterColIdsKey = useMemo(() => {
+    void filterActiveRevision;
+    void monoCriteriaFilter;
+    void liveFilterModel;
+    return Array.from(readActiveFilterColIds()).sort().join('|');
+  }, [filterActiveRevision, monoCriteriaFilter, liveFilterModel, readActiveFilterColIds]);
+
+  const isColumnFilterActive = useCallback(
+    (colId: string): boolean => readActiveFilterColIds().has(colId),
+    [readActiveFilterColIds],
+  );
+
+  const refreshColumnFilterHeaders = useCallback((api: GridApi | null | undefined) => {
+    if (!api || api.isDestroyed?.()) return;
+    api.refreshHeader();
   }, []);
 
   const colDefs: ColDef[] = useMemo(() => {
@@ -1229,6 +1308,7 @@ const AgGrid: FC<IAgGridProps> = ({
               // Ref-backed columns (`*_R_*`) use a custom AG Grid filter component; they are still filterable.
               filterable: !!getColumnFilterType(col, isBooleanColumn),
               isColumnFilterActive,
+              activeFilterColIdsKey,
               onOpenFilter: ({ colId, anchorEl }: { colId: string; anchorEl: HTMLElement }) => {
                 const api = gridRef.current?.api as any;
                 if (!api || api.isDestroyed?.()) return;
@@ -1323,6 +1403,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showCopyActions,
     translation,
     isColumnFilterActive,
+    activeFilterColIdsKey,
   ]);
 
   const gridColumnDefs = useMemo(
@@ -1410,6 +1491,7 @@ const AgGrid: FC<IAgGridProps> = ({
     dateFinancialEnabledRef,
     filterInactiveRecordsEnabledRef,
     onFilterLoaded: (record) => {
+      clearMonoCriteriaFilter();
       const linkedSort = record?.linkedSortId ?? record?.linkedSort;
       if (linkedSort === null || linkedSort === undefined || String(linkedSort).trim() === '')
         return;
@@ -1500,7 +1582,9 @@ const AgGrid: FC<IAgGridProps> = ({
       const next = Boolean(enabled);
       dateFinancialEnabledRef.current = next;
       setDateFinancialFilterEnabled(next);
-      filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      if (!monoCriteriaFilterRef.current) {
+        filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      }
       gridRef.current?.api?.refreshInfiniteCache();
     },
     [filtersManager],
@@ -1511,7 +1595,9 @@ const AgGrid: FC<IAgGridProps> = ({
       const next = Boolean(enabled);
       filterInactiveRecordsEnabledRef.current = next;
       setFilterInactiveRecordsEnabled(next);
-      filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      if (!monoCriteriaFilterRef.current) {
+        filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      }
       gridRef.current?.api?.refreshInfiniteCache();
     },
     [filtersManager],
@@ -1565,6 +1651,14 @@ const AgGrid: FC<IAgGridProps> = ({
       const api = gridRef.current?.api;
       if (!api) return;
       const data = await filterDs.getValue();
+      const isClear = isFilterDsValueEmpty(data);
+      const previous = lastFilterDsSnapshotRef.current;
+      const becameClear = isClear && !isFilterDsValueEmpty(previous);
+      // Mono is ephemeral — ignore filterDs while mono is active unless host explicitly cleared.
+      if (monoCriteriaFilterRef.current && !becameClear) {
+        lastFilterDsSnapshotRef.current = cloneDeep(data);
+        return;
+      }
       applyingExternalStateRef.current = true;
       try {
         // `applyPersistedValue` calls `setFilterModel` → `filterChanged` →
@@ -1579,8 +1673,17 @@ const AgGrid: FC<IAgGridProps> = ({
             ? ((data as any).filterModel ?? {})
             : {};
         commitLiveFilterModel(nextLive);
+        clearMonoCriteriaFilter();
+        if (isClear) {
+          filterEmitGenerationRef.current += 1;
+          const { filterFingerprint } = buildServerEmitPackRef.current(api, null);
+          lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+        }
         setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
         setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
+        bumpFilterActiveIndicators();
+        refreshColumnFilterHeaders(api);
+        lastFilterDsSnapshotRef.current = cloneDeep(data);
       } finally {
         setTimeout(() => {
           applyingExternalStateRef.current = false;
@@ -1591,7 +1694,14 @@ const AgGrid: FC<IAgGridProps> = ({
     return () => {
       filterDs.removeListener('changed', listener);
     };
-  }, [filterDs, filtersManager]);
+  }, [
+    filterDs,
+    filtersManager,
+    bumpFilterActiveIndicators,
+    clearMonoCriteriaFilter,
+    commitLiveFilterModel,
+    refreshColumnFilterHeaders,
+  ]);
 
   useEffect(() => {
     if (!sortDs) return;
@@ -1938,13 +2048,15 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const onFilterChanged = useCallback(
     (event: FilterChangedEvent) => {
+      if (monoCriteriaFilterRef.current || applyingMonoFilterRef.current) return;
       const fromGrid = event.api.getFilterModel() ?? {};
       const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
       const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
       commitLiveFilterModel(next);
       filtersManager.persistCurrent(fromGrid);
+      bumpFilterActiveIndicators();
     },
-    [commitLiveFilterModel, filtersManager],
+    [bumpFilterActiveIndicators, commitLiveFilterModel, filtersManager],
   );
 
   const applyFilterRuntimeOptions = useCallback((options?: FilterApplyOptions) => {
@@ -1965,20 +2077,22 @@ const AgGrid: FC<IAgGridProps> = ({
     return changed;
   }, []);
 
-  const applyHeaderFilterModel = useCallback(
-    (nextModel: any, options?: FilterApplyOptions) => {
+  const applyDialogFilterModel = useCallback(
+    (next: any, options?: FilterApplyOptions) => {
       const api = gridRef.current?.api;
       if (!api || api.isDestroyed()) return;
+      filterEmitGenerationRef.current += 1;
+      clearMonoCriteriaFilter();
       const runtimeOptionsChanged = applyFilterRuntimeOptions(options);
       const prevLiveModel = liveFilterModelRef.current ?? {};
-      const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
+      const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
       const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
       const agChanged = !isEqual(currentAg, nextAg);
       if (agChanged) {
         api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
         persistFilterDsNow(nextAg);
       }
-      const normalizedNextLive = nextModel ?? {};
+      const normalizedNextLive = next ?? {};
       const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
       commitLiveFilterModel(normalizedNextLive);
       if (!agChanged && liveChanged) {
@@ -1988,8 +2102,18 @@ const AgGrid: FC<IAgGridProps> = ({
       } else if (!agChanged && !liveChanged && runtimeOptionsChanged) {
         api.refreshInfiniteCache();
       }
+      refreshColumnFilterHeaders(api);
+      bumpFilterActiveIndicators();
     },
-    [applyFilterRuntimeOptions, commitLiveFilterModel, filtersManager, persistFilterDsNow],
+    [
+      applyFilterRuntimeOptions,
+      bumpFilterActiveIndicators,
+      clearMonoCriteriaFilter,
+      commitLiveFilterModel,
+      filtersManager,
+      persistFilterDsNow,
+      refreshColumnFilterHeaders,
+    ],
   );
 
   const getState = useCallback(
@@ -2037,6 +2161,7 @@ const AgGrid: FC<IAgGridProps> = ({
               ? ((value as any).filterModel ?? {})
               : {};
           commitLiveFilterModel(nextLive);
+          clearMonoCriteriaFilter();
           setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
           setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
         } catch {
@@ -2370,12 +2495,16 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const buildServerEmitPack = useCallback(
     (api: GridApi, rowParams: IGetRowsParams | null) => {
+      const mono = monoCriteriaFilterRef.current;
       const apiFm = api.getFilterModel() ?? {};
       const rowFm = rowParams?.filterModel ?? {};
-      const effectiveFilterModel = withAdvancedRulesOnFilterModel(
-        rowParams != null && !isEqual(rowFm, {}) ? rowFm : apiFm,
-        getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
-      );
+      const effectiveFilterModel = mono
+        ? buildMonoFilterModel(mono)
+        : withAdvancedRulesOnFilterModel(
+            rowParams != null && !isEqual(rowFm, {}) ? rowFm : apiFm,
+            getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
+          );
+      const activeApplyOptions = mono ? monoFilterApplyOptionsRef.current : filterApplyOptionsRef.current;
       const cols = columnsRef.current;
 
       const rawSort = buildSortModelFromColumnState(
@@ -2393,13 +2522,13 @@ const AgGrid: FC<IAgGridProps> = ({
 
       const filterFingerprint = {
         filterModel: normalizeAgGridFilterModel(effectiveFilterModel) ?? {},
-        advancedRules: getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
+        advancedRules: mono ? [] : getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
         dateFinancial: Boolean(dateFinancial && dateFinancialEnabledRef.current),
         filterInactiveRecords: Boolean(
           filterInactiveRecords && filterInactiveRecordsEnabledRef.current,
         ),
-        scope: filterApplyOptionsRef.current.scope,
-        searchType: filterApplyOptionsRef.current.searchType,
+        scope: activeApplyOptions.scope,
+        searchType: activeApplyOptions.searchType,
         filterQuery,
       };
 
@@ -2432,6 +2561,118 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const buildServerEmitPackRef = useRef(buildServerEmitPack);
   buildServerEmitPackRef.current = buildServerEmitPack;
+
+  const emitServerFilterOnApply = useCallback(async (api: GridApi) => {
+    if (!allowServerFilterSortEmitRef.current) return;
+    const { filterFingerprint, onFilterEmitPayload } = buildServerEmitPackRef.current(api, null);
+    const strippedFm = stripAdvancedRulesFromFilterModel(filterFingerprint.filterModel ?? {});
+    const normalizedCols = normalizeAgGridFilterModel(strippedFm) ?? {};
+    const hasColumnFilters =
+      normalizedCols != null &&
+      typeof normalizedCols === 'object' &&
+      !Array.isArray(normalizedCols) &&
+      Object.keys(normalizedCols).length > 0;
+    const adv = filterFingerprint.advancedRules;
+    const hasAdvancedRules = Array.isArray(adv) && adv.length > 0;
+    if (hasColumnFilters || hasAdvancedRules) {
+      await emitRef.current('onfilter', onFilterEmitPayload);
+    }
+    lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+  }, []);
+
+  const applyMonoCriteriaFilter = useCallback(
+    (
+      colId: string,
+      condition: any | null,
+      options?: {
+        scope: { option: FilterSearchScopeKind };
+        searchType: { option: FilterSearchTypeKind };
+      },
+    ) => {
+      const api = gridRef.current?.api;
+      if (!api || api.isDestroyed()) return;
+
+      const scope: FilterSearchScopeKind =
+        options?.scope?.option === 'selection' ? 'selection' : 'global';
+      const searchType: FilterSearchTypeKind =
+        options?.searchType?.option === 'add' || options?.searchType?.option === 'remove'
+          ? options.searchType.option
+          : 'replace';
+
+      const finishMonoApply = async () => {
+        filterEmitGenerationRef.current += 1;
+        suppressFilterEmitInGetRowsRef.current = true;
+        try {
+          if (!condition) {
+            clearMonoCriteriaFilter();
+            commitLiveFilterModel({});
+            setSelectedFilterName('');
+            monoFilterApplyOptionsRef.current = {
+              scope: { option: scope },
+              searchType: { option: 'replace' },
+            };
+            applyingMonoFilterRef.current = true;
+            try {
+              api.setFilterModel(null);
+              persistFilterDsNow({});
+            } finally {
+              applyingMonoFilterRef.current = false;
+            }
+            bumpFilterActiveIndicators();
+            refreshColumnFilterHeaders(api);
+            api.refreshInfiniteCache();
+            return;
+          }
+
+          const nextMono: MonoCriteriaFilter = { colId, condition, scope, searchType };
+
+          // Phase 1 — tear down multi-criteria in memory/grid (mono is not persisted to filterDs).
+          monoCriteriaFilterRef.current = null;
+          commitLiveFilterModel({});
+          setSelectedFilterName('');
+          applyingMonoFilterRef.current = true;
+          try {
+            api.setFilterModel(null);
+          } finally {
+            applyingMonoFilterRef.current = false;
+          }
+
+          // Phase 2 — apply mono criteria and emit once.
+          monoCriteriaFilterRef.current = nextMono;
+          setMonoCriteriaFilter(nextMono);
+          monoFilterApplyOptionsRef.current = {
+            scope: { option: scope },
+            searchType: { option: searchType },
+          };
+
+          applyingMonoFilterRef.current = true;
+          try {
+            api.setFilterModel(buildMonoFilterModel(nextMono));
+          } finally {
+            applyingMonoFilterRef.current = false;
+          }
+
+          filterEmitGenerationRef.current += 1;
+          bumpFilterActiveIndicators();
+          await emitServerFilterOnApply(api);
+          refreshColumnFilterHeaders(api);
+          api.refreshInfiniteCache();
+          requestAnimationFrame(() => refreshColumnFilterHeaders(api));
+        } finally {
+          suppressFilterEmitInGetRowsRef.current = false;
+        }
+      };
+
+      void finishMonoApply();
+    },
+    [
+      bumpFilterActiveIndicators,
+      clearMonoCriteriaFilter,
+      commitLiveFilterModel,
+      emitServerFilterOnApply,
+      refreshColumnFilterHeaders,
+    ],
+  );
 
   const getSelectedRow = useCallback(async (api: GridApi) => {
     // select current element
@@ -2490,13 +2731,18 @@ const AgGrid: FC<IAgGridProps> = ({
     setInitialColumnState(params.api.getColumnState());
     params.api.setGridOption('datasource', {
       getRows: async (rowParams: IGetRowsParams) => {
-        const { filterFingerprint, sortFingerprint, onFilterEmitPayload, onSortEmitPayload } =
-          buildServerEmitPackRef.current(params.api, rowParams);
-
         suppressDsChangeRefreshRef.current = true;
         try {
-          if (allowServerFilterSortEmitRef.current) {
-            if (!isEqual(filterFingerprint, lastEmittedOnFilterPayloadRef.current)) {
+          if (allowServerFilterSortEmitRef.current && !suppressFilterEmitInGetRowsRef.current) {
+            const emitGeneration = filterEmitGenerationRef.current;
+            const { filterFingerprint, onFilterEmitPayload } = buildServerEmitPackRef.current(
+              params.api,
+              rowParams,
+            );
+            if (
+              emitGeneration === filterEmitGenerationRef.current &&
+              !isEqual(filterFingerprint, lastEmittedOnFilterPayloadRef.current)
+            ) {
               const strippedFm = stripAdvancedRulesFromFilterModel(
                 filterFingerprint.filterModel ?? {},
               );
@@ -2508,14 +2754,28 @@ const AgGrid: FC<IAgGridProps> = ({
                 Object.keys(normalizedCols).length > 0;
               const adv = filterFingerprint.advancedRules;
               const hasAdvancedRules = Array.isArray(adv) && adv.length > 0;
-              if (hasColumnFilters || hasAdvancedRules) {
+              if (
+                (hasColumnFilters || hasAdvancedRules) &&
+                emitGeneration === filterEmitGenerationRef.current
+              ) {
                 await emitRef.current('onfilter', onFilterEmitPayload);
               }
-              lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+              if (emitGeneration === filterEmitGenerationRef.current) {
+                lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+              }
             }
-            if (!isEqual(sortFingerprint, lastEmittedOnSortPayloadRef.current)) {
+            const { sortFingerprint, onSortEmitPayload } = buildServerEmitPackRef.current(
+              params.api,
+              rowParams,
+            );
+            if (
+              emitGeneration === filterEmitGenerationRef.current &&
+              !isEqual(sortFingerprint, lastEmittedOnSortPayloadRef.current)
+            ) {
               await emitRef.current('onsort', onSortEmitPayload);
-              lastEmittedOnSortPayloadRef.current = cloneDeep(sortFingerprint);
+              if (emitGeneration === filterEmitGenerationRef.current) {
+                lastEmittedOnSortPayloadRef.current = cloneDeep(sortFingerprint);
+              }
             }
           }
 
@@ -2613,10 +2873,14 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const openAdvancedFilterDialog = () => {
-    const fromGrid = gridRef.current?.api?.getFilterModel() ?? {};
-    const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
-    const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
-    commitLiveFilterModel(next);
+    if (monoCriteriaFilterRef.current) {
+      commitLiveFilterModel({});
+    } else {
+      const fromGrid = gridRef.current?.api?.getFilterModel() ?? {};
+      const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
+      const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
+      commitLiveFilterModel(next);
+    }
     setShowFilterDialog(true);
   };
 
@@ -3181,6 +3445,7 @@ const AgGrid: FC<IAgGridProps> = ({
                             api.setFilterModel(null);
                           }
                           commitLiveFilterModel({});
+                          clearMonoCriteriaFilter();
                           persistFilterDsNow({});
                           setSelectedFilterName('');
                         }
@@ -3365,31 +3630,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       initialScopeOption="global"
                       initialSearchTypeOption="replace"
                       filterModel={liveFilterModel}
-                      setFilterModel={(next, options) => {
-                        const api = gridRef.current?.api;
-                        if (!api || api.isDestroyed()) return;
-                        const runtimeOptionsChanged = applyFilterRuntimeOptions(options);
-                        const prevLiveModel = liveFilterModelRef.current ?? {};
-                        const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
-                        const currentAg = stripAdvancedRulesFromFilterModel(
-                          api.getFilterModel() ?? {},
-                        );
-                        const agChanged = !isEqual(currentAg, nextAg);
-                        if (agChanged) {
-                          api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
-                          persistFilterDsNow(nextAg);
-                        }
-                        const normalizedNextLive = next ?? {};
-                        const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
-                        commitLiveFilterModel(normalizedNextLive);
-                        if (!agChanged && liveChanged) {
-                          persistFilterDsNow(nextAg);
-                          filtersManager.persistCurrent(nextAg);
-                          api.refreshInfiniteCache();
-                        } else if (!agChanged && !liveChanged && runtimeOptionsChanged) {
-                          api.refreshInfiniteCache();
-                        }
-                      }}
+                      setFilterModel={applyDialogFilterModel}
                       savedFilters={filtersManager.savedFilters}
                       savedSorts={sortsManager.savedSorts}
                       saveFilter={filtersManager.saveFilter}
@@ -3507,10 +3748,10 @@ const AgGrid: FC<IAgGridProps> = ({
               column={headerPopupColumn}
               i18n={i18n}
               lang={lang}
-              currentModel={liveFilterModel}
               currentEntry={
-                headerFilterPopupState
-                  ? (liveFilterModel?.[headerFilterPopupState.colId] ?? null)
+                headerFilterPopupState &&
+                monoCriteriaFilter?.colId === headerFilterPopupState.colId
+                  ? monoCriteriaFilter.condition
                   : null
               }
               showDateFinancialToggle={Boolean(dateFinancial)}
@@ -3519,12 +3760,22 @@ const AgGrid: FC<IAgGridProps> = ({
               showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
               filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
               onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
-              initialScopeOption="global"
-              initialSearchTypeOption="replace"
+              initialScopeOption={
+                headerFilterPopupState &&
+                monoCriteriaFilter?.colId === headerFilterPopupState.colId
+                  ? monoCriteriaFilter.scope
+                  : 'global'
+              }
+              initialSearchTypeOption={
+                headerFilterPopupState &&
+                monoCriteriaFilter?.colId === headerFilterPopupState.colId
+                  ? monoCriteriaFilter.searchType
+                  : 'replace'
+              }
               translation={translation}
               dateSaisieLibreTranslation={dateSaisieLibreTranslation}
-              onApply={(nextModel, options) => {
-                applyHeaderFilterModel(nextModel ?? {}, options);
+              onApply={(colId, condition, options) => {
+                applyMonoCriteriaFilter(colId, condition, options);
               }}
               onClose={() => setHeaderFilterPopupState(null)}
             />
