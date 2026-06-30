@@ -35,7 +35,7 @@ import {
   type TManualSelectedCell,
   getInitialGridCopyMode,
   persistGridCopyMode,
-  type GridCopyModeSetting,
+  type GridCopyMode,
   writeTextToClipboard,
 } from './AgGrid.clipboard';
 import {
@@ -83,7 +83,13 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
 import set from 'lodash/set';
-import { FaTableColumns, FaCopy, FaClockRotateLeft, FaSearchengin, FaListCheck } from 'react-icons/fa6';
+import {
+  FaTableColumns,
+  FaCopy,
+  FaClockRotateLeft,
+  FaSearchengin,
+  FaListCheck,
+} from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { FaSortAmountDown, FaFilter } from 'react-icons/fa';
 import {
@@ -151,15 +157,19 @@ function sequencePayloadFromRecord(record: unknown): SequenceProgrammingPayload 
     return source.sequence as SequenceProgrammingPayload;
   }
   if ('viewId' in source || 'filters' in source || 'sortId' in source || 'output' in source) {
-    const output = source.output && typeof source.output === 'object'
-      ? (source.output as Record<string, unknown>)
-      : {};
-    const transposition = source.transposition && typeof source.transposition === 'object'
-      ? (source.transposition as Record<string, unknown>)
-      : {};
+    const output =
+      source.output && typeof source.output === 'object'
+        ? (source.output as Record<string, unknown>)
+        : {};
+    const transposition =
+      source.transposition && typeof source.transposition === 'object'
+        ? (source.transposition as Record<string, unknown>)
+        : {};
     return {
       viewId: sequenceIdValue(source.viewId) ?? sequenceIdValue(source.linkedViewId) ?? '',
-      filters: Array.isArray(source.filters) ? source.filters as SequenceProgrammingPayload['filters'] : [],
+      filters: Array.isArray(source.filters)
+        ? (source.filters as SequenceProgrammingPayload['filters'])
+        : [],
       sortId: sequenceIdValue(source.sortId) ?? sequenceIdValue(source.linkedSortId) ?? '',
       output: {
         mode: output.mode as SequenceProgrammingPayload['output']['mode'],
@@ -180,7 +190,9 @@ function sequencePayloadFromRecord(record: unknown): SequenceProgrammingPayload 
               : 'csv',
       },
       transposition: {
-        mode: (transposition.mode ?? source.transpositionMode ?? 'none') as SequenceProgrammingPayload['transposition']['mode'],
+        mode: (transposition.mode ??
+          source.transpositionMode ??
+          'none') as SequenceProgrammingPayload['transposition']['mode'],
         chainedSequenceId:
           sequenceIdValue(transposition.chainedSequenceId) ??
           sequenceIdValue(source.chainedSequenceId) ??
@@ -541,7 +553,7 @@ function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
   return undefined;
 }
 
-type CopyMode = GridCopyModeSetting;
+type CopyMode = GridCopyMode;
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -827,9 +839,7 @@ const AgGrid: FC<IAgGridProps> = ({
     [multiSelection, i18n, lang, showSelectAllHeaderCheckbox],
   );
 
-  const [copyMode, setCopyMode] = useState<CopyMode>(() =>
-    getInitialGridCopyMode(nodeID, multiSelection),
-  );
+  const [copyMode, setCopyMode] = useState<CopyMode>(() => getInitialGridCopyMode(nodeID));
   const [showCopyModeDialog, setShowCopyModeDialog] = useState(false);
 
   const applyUserCopyMode = useCallback(
@@ -1083,7 +1093,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   /** After copy mode changes, restore grid cell focus so Ctrl+C works without re-clicking (dialog steals focus; row # col has no `field`). */
   useEffect(() => {
-    if (!showCopyActions || copyMode === 'none') return;
+    if (!showCopyActions) return;
     const api = gridRef.current?.api;
     if (!api) return;
     const t = window.setTimeout(() => {
@@ -1469,8 +1479,7 @@ const AgGrid: FC<IAgGridProps> = ({
       setColumnVisibility((prev) =>
         appliedColumnState.map((column: any) => {
           const previous = prev.find((entry) => entry.field === column.colId);
-          const hasWidth =
-            typeof column.width === 'number' && Number.isFinite(column.width);
+          const hasWidth = typeof column.width === 'number' && Number.isFinite(column.width);
           return {
             field: column.colId,
             isHidden: Boolean(column.hide),
@@ -1808,10 +1817,6 @@ const AgGrid: FC<IAgGridProps> = ({
     (event: any, api: GridApi): boolean => {
       if (!isCopyShortcut(event)) return false;
       if (!showCopyActions) return false;
-
-      if (copyMode === 'none') {
-        return false;
-      }
 
       if (copyMode === 'rows') {
         event.preventDefault?.();
@@ -2668,8 +2673,8 @@ const AgGrid: FC<IAgGridProps> = ({
         onClick={clearCopyCellsSelection}
       >
         {!isCellSelectionAvailable && manualSelectedCells.length > 0
-          ? `${translation('Clear')} (${manualSelectedCells.length})`
-          : translation('Clear')}
+          ? `${translation('Cancel')} (${manualSelectedCells.length})`
+          : translation('Cancel')}
       </button>
     );
   };
@@ -2879,83 +2884,83 @@ const AgGrid: FC<IAgGridProps> = ({
                                 menuLabel={translation('Open quick shortcuts')}
                                 buttonText={translation('Shortcuts')}
                                 sections={[
-                                {
-                                  id: 'views',
-                                  label: translation('Views'),
-                                  emptyLabel: translation('No saved views'),
-                                  items: (showToolbarView ? viewsManager.savedViews : []).map(
-                                    (view) => {
-                                      const key = savedRecordKey(view);
-                                      return { id: key, label: view.name };
-                                    },
-                                  ),
-                                  onSelect: (itemId) => handleLoadViewSelection(itemId),
-                                },
-                                {
-                                  id: 'filters',
-                                  label: translation('Filters'),
-                                  emptyLabel: translation('No saved filters'),
-                                  items: (showToolbarFiltering
-                                    ? filtersManager.savedFilters
-                                    : []
-                                  ).map((filterRecord) => {
-                                    const key = savedRecordKey(filterRecord);
-                                    return { id: key, label: filterRecord.name };
-                                  }),
-                                  onSelect: (itemId) => {
-                                    setSelectedFilterName(itemId);
-                                    filtersManager.loadFilter(itemId);
-                                    setDateFinancialFilterEnabled(
-                                      Boolean(dateFinancialEnabledRef.current),
-                                    );
-                                    setFilterInactiveRecordsEnabled(
-                                      Boolean(filterInactiveRecordsEnabledRef.current),
-                                    );
+                                  {
+                                    id: 'views',
+                                    label: translation('Views'),
+                                    emptyLabel: translation('No saved views'),
+                                    items: (showToolbarView ? viewsManager.savedViews : []).map(
+                                      (view) => {
+                                        const key = savedRecordKey(view);
+                                        return { id: key, label: view.name };
+                                      },
+                                    ),
+                                    onSelect: (itemId) => handleLoadViewSelection(itemId),
                                   },
-                                },
-                                {
-                                  id: 'sorts',
-                                  label: translation('Sorts'),
-                                  emptyLabel: translation('No saved sorts'),
-                                  items: (showToolbarSorting ? sortsManager.savedSorts : []).map(
-                                    (sort) => {
-                                      const key = savedRecordKey(sort);
-                                      return { id: key, label: sort.name };
+                                  {
+                                    id: 'filters',
+                                    label: translation('Filters'),
+                                    emptyLabel: translation('No saved filters'),
+                                    items: (showToolbarFiltering
+                                      ? filtersManager.savedFilters
+                                      : []
+                                    ).map((filterRecord) => {
+                                      const key = savedRecordKey(filterRecord);
+                                      return { id: key, label: filterRecord.name };
+                                    }),
+                                    onSelect: (itemId) => {
+                                      setSelectedFilterName(itemId);
+                                      filtersManager.loadFilter(itemId);
+                                      setDateFinancialFilterEnabled(
+                                        Boolean(dateFinancialEnabledRef.current),
+                                      );
+                                      setFilterInactiveRecordsEnabled(
+                                        Boolean(filterInactiveRecordsEnabledRef.current),
+                                      );
                                     },
-                                  ),
-                                  onSelect: (itemId) => {
-                                    setSelectedSortName(itemId);
-                                    sortsManager.loadSort(itemId);
                                   },
-                                },
-                                {
-                                  id: 'sequences',
-                                  label: translation('Sequence programming'),
-                                  emptyLabel: translation('No saved sequence programming'),
-                                  items: (showToolbarSequence ? savedSequences : []).map(
-                                    (sequenceRecord) => {
-                                      const key = savedRecordKey(sequenceRecord);
-                                      return { id: key, label: sequenceRecord.name };
+                                  {
+                                    id: 'sorts',
+                                    label: translation('Sorts'),
+                                    emptyLabel: translation('No saved sorts'),
+                                    items: (showToolbarSorting ? sortsManager.savedSorts : []).map(
+                                      (sort) => {
+                                        const key = savedRecordKey(sort);
+                                        return { id: key, label: sort.name };
+                                      },
+                                    ),
+                                    onSelect: (itemId) => {
+                                      setSelectedSortName(itemId);
+                                      sortsManager.loadSort(itemId);
                                     },
-                                  ),
-                                  onSelect: (itemId) => {
-                                    const record = findSavedRecord(
-                                      savedSequences,
-                                      itemId,
-                                    ) as SavedSequence | null;
-                                    setSelectedSequence(record);
-                                    if (record?.sequence && sequenceDs) {
-                                      sequenceDs.setValue(null, record.sequence);
-                                    }
-                                    emit('onloadsequence', {
-                                      key: itemId,
-                                      sequence: record?.sequence,
-                                    });
-                                    if (record?.sequence) {
-                                      emit('onsequence', record.sequence);
-                                    }
                                   },
-                                },
+                                  {
+                                    id: 'sequences',
+                                    label: translation('Sequence programming'),
+                                    emptyLabel: translation('No saved sequence programming'),
+                                    items: (showToolbarSequence ? savedSequences : []).map(
+                                      (sequenceRecord) => {
+                                        const key = savedRecordKey(sequenceRecord);
+                                        return { id: key, label: sequenceRecord.name };
+                                      },
+                                    ),
+                                    onSelect: (itemId) => {
+                                      const record = findSavedRecord(
+                                        savedSequences,
+                                        itemId,
+                                      ) as SavedSequence | null;
+                                      setSelectedSequence(record);
+                                      if (record?.sequence && sequenceDs) {
+                                        sequenceDs.setValue(null, record.sequence);
+                                      }
+                                      emit('onloadsequence', {
+                                        key: itemId,
+                                        sequence: record?.sequence,
+                                      });
+                                      if (record?.sequence) {
+                                        emit('onsequence', record.sequence);
+                                      }
+                                    },
+                                  },
                                 ]}
                               />
                             )}
@@ -3238,7 +3243,10 @@ const AgGrid: FC<IAgGridProps> = ({
                         emit('onloadsequence', { key, sequence: record?.sequence });
                       }}
                       onUpdate={(key, sequencePayload) => {
-                        const existing = findSavedRecord(savedSequences, key) as SavedSequence | null;
+                        const existing = findSavedRecord(
+                          savedSequences,
+                          key,
+                        ) as SavedSequence | null;
                         const nextRecord: SavedSequence = {
                           ...(existing ?? { name: String(key) }),
                           sequence: sequencePayload,
@@ -3441,9 +3449,8 @@ const AgGrid: FC<IAgGridProps> = ({
                   <div className="space-y-2">
                     {(
                       [
-                        { value: 'cells' as CopyMode, title: translation('Cells') },
                         { value: 'rows' as CopyMode, title: translation('Rows') },
-                        { value: 'none' as CopyMode, title: translation('Nothing') },
+                        { value: 'cells' as CopyMode, title: translation('Cells') },
                       ] as const
                     ).map((opt) => {
                       const selected = copyMode === opt.value;
@@ -3485,7 +3492,7 @@ const AgGrid: FC<IAgGridProps> = ({
           {showRecordCount && (
             <div className="records-count text-sm  flex justify-end gap-2 mt-2 mb-2 pr-4">
               <span style={{ color: '#0A0A0A', fontSize: '12px', fontWeight: 400 }}>
-                {displayedRecordCount}
+                {displayedRecordCount.toLocaleString(i18n.userLang.primary)}
               </span>{' '}
               <span style={{ color: '#717182', fontSize: '12px', fontWeight: 400 }}>
                 {translation('records')}
