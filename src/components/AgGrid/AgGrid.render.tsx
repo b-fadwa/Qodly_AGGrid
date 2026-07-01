@@ -152,6 +152,21 @@ const buildMonoFilterModel = (mono: MonoCriteriaFilter): Record<string, any> => 
   },
 });
 
+const resolveMonoHeaderColIds = (
+  colId: string,
+  scope: FilterSearchScopeKind,
+  searchType: FilterSearchTypeKind,
+  previousActiveColIds: string[],
+): string[] => {
+  if (searchType === 'add' || searchType === 'remove') {
+    return [];
+  }
+  if (scope === 'selection' && searchType === 'replace' && previousActiveColIds.length > 0) {
+    return Array.from(new Set([...previousActiveColIds, colId]));
+  }
+  return [colId];
+};
+
 const isFilterDsValueEmpty = (data: unknown): boolean => {
   if (data == null) return true;
   if (typeof data !== 'object' || Array.isArray(data)) return false;
@@ -730,6 +745,8 @@ const AgGrid: FC<IAgGridProps> = ({
   });
   const [monoCriteriaFilter, setMonoCriteriaFilter] = useState<MonoCriteriaFilter | null>(null);
   const monoCriteriaFilterRef = useRef<MonoCriteriaFilter | null>(null);
+  const [monoHeaderActiveColIds, setMonoHeaderActiveColIds] = useState<string[]>([]);
+  const monoHeaderActiveColIdsRef = useRef<string[]>([]);
   const applyingMonoFilterRef = useRef(false);
   const [filterActiveRevision, setFilterActiveRevision] = useState(0);
 
@@ -942,6 +959,8 @@ const AgGrid: FC<IAgGridProps> = ({
   const clearMonoCriteriaFilter = useCallback(() => {
     monoCriteriaFilterRef.current = null;
     setMonoCriteriaFilter(null);
+    monoHeaderActiveColIdsRef.current = [];
+    setMonoHeaderActiveColIds([]);
     setFilterActiveRevision((v) => v + 1);
   }, []);
 
@@ -1243,6 +1262,14 @@ const AgGrid: FC<IAgGridProps> = ({
     const ids = new Set<string>();
     const mono = monoCriteriaFilterRef.current;
     if (mono?.condition) {
+      if (mono.searchType === 'add' || mono.searchType === 'remove') {
+        return ids;
+      }
+      const headerCols = monoHeaderActiveColIdsRef.current;
+      if (headerCols.length) {
+        headerCols.forEach((field) => ids.add(field));
+        return ids;
+      }
       ids.add(mono.colId);
       return ids;
     }
@@ -1259,9 +1286,16 @@ const AgGrid: FC<IAgGridProps> = ({
   const activeFilterColIdsKey = useMemo(() => {
     void filterActiveRevision;
     void monoCriteriaFilter;
+    void monoHeaderActiveColIds;
     void liveFilterModel;
     return Array.from(readActiveFilterColIds()).sort().join('|');
-  }, [filterActiveRevision, monoCriteriaFilter, liveFilterModel, readActiveFilterColIds]);
+  }, [
+    filterActiveRevision,
+    monoCriteriaFilter,
+    monoHeaderActiveColIds,
+    liveFilterModel,
+    readActiveFilterColIds,
+  ]);
 
   const isColumnFilterActive = useCallback(
     (colId: string): boolean => readActiveFilterColIds().has(colId),
@@ -2625,6 +2659,13 @@ const AgGrid: FC<IAgGridProps> = ({
           }
 
           const nextMono: MonoCriteriaFilter = { colId, condition, scope, searchType };
+          const previousActiveColIds = Array.from(readActiveFilterColIds());
+          const headerColIds = resolveMonoHeaderColIds(
+            colId,
+            scope,
+            searchType,
+            previousActiveColIds,
+          );
 
           // Phase 1 — tear down multi-criteria in memory/grid (mono is not persisted to filterDs).
           monoCriteriaFilterRef.current = null;
@@ -2637,9 +2678,11 @@ const AgGrid: FC<IAgGridProps> = ({
             applyingMonoFilterRef.current = false;
           }
 
-          // Phase 2 — apply mono criteria and emit once.
+          // Phase 2 — apply mono criteria and emit once (emit payload is always the new condition only).
           monoCriteriaFilterRef.current = nextMono;
           setMonoCriteriaFilter(nextMono);
+          monoHeaderActiveColIdsRef.current = headerColIds;
+          setMonoHeaderActiveColIds(headerColIds);
           monoFilterApplyOptionsRef.current = {
             scope: { option: scope },
             searchType: { option: searchType },
@@ -2647,7 +2690,11 @@ const AgGrid: FC<IAgGridProps> = ({
 
           applyingMonoFilterRef.current = true;
           try {
-            api.setFilterModel(buildMonoFilterModel(nextMono));
+            if (searchType === 'add' || searchType === 'remove') {
+              api.setFilterModel(null);
+            } else {
+              api.setFilterModel(buildMonoFilterModel(nextMono));
+            }
           } finally {
             applyingMonoFilterRef.current = false;
           }
@@ -2670,6 +2717,7 @@ const AgGrid: FC<IAgGridProps> = ({
       clearMonoCriteriaFilter,
       commitLiveFilterModel,
       emitServerFilterOnApply,
+      readActiveFilterColIds,
       refreshColumnFilterHeaders,
     ],
   );
