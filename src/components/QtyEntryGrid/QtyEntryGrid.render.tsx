@@ -879,7 +879,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
             {cellOptionMenu.options.map((opt) => (
               <div
                 key={String(opt.value)}
-                onClick={() => handleSelectCellOption(cellOptionMenu, opt.value)}
+                onClick={() => handleSelectCellOption(cellOptionMenu, opt.label)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -893,7 +893,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
                 <span style={{ width: 14, display: 'inline-flex', flexShrink: 0 }}>
-                  {String(opt.value) === String(cellOptionMenu.currentValue) ? <MdCheck /> : null}
+                  {opt.label === String(cellOptionMenu.currentValue) ? <MdCheck /> : null}
                 </span>
                 <span>{opt.label}</span>
               </div>
