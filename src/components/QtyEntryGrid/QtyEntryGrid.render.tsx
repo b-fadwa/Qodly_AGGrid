@@ -465,6 +465,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     () =>
       columns.map((col) => {
         const isBool = col.dataType === 'bool' || col.format === 'checkbox';
+        const hasOptionMenu = col.enableCellOptionMenu === true;
 
         const def: ColDef = {
           field: col.title,
@@ -473,7 +474,13 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
           // Bool columns handle their own value changes via node.setDataValue in the checkbox renderer;
           // setting editable:false prevents AG Grid from opening a text editor on click.
           editable: isBool ? false : !disabled && col.editable === true,
-          headerClass: col.editable === true ? 'editable-cell' : '',
+          headerClass: [
+            col.editable === true ? 'editable-cell' : '',
+            hasOptionMenu ? 'option-list-cell' : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+          cellClass: hasOptionMenu ? 'option-list-cell' : undefined,
           sortable: !!col.sorting,
           width: col.width,
           flex: col.flex,
