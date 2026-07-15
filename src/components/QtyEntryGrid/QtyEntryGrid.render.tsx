@@ -31,6 +31,7 @@ import {
   ColDef,
   GridApi,
   GridReadyEvent,
+  ICellRendererParams,
   IGetRowsParams,
   IHeaderParams,
   IRowNode,
@@ -153,6 +154,14 @@ const formatDurationForEdit = (value: unknown, format?: string): string => {
   return String(value);
 };
 
+const ROW_NUMBER_COL_ID = '__qodlyRowNumber';
+
+const RowNumberCell: FC<ICellRendererParams> = (params) => (
+  <span style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+    {params.value ?? ''}
+  </span>
+);
+
 // -- Boolean checkbox cell renderer --
 // Always interactive; only the grid-level `disabled` prop (via context) locks it.
 const BoolCheckboxCell = (params: any) => {
@@ -217,6 +226,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   disabled = false,
   enableCopySelectedValue = false,
   enableCopySelectedRow = false,
+  showRowNumbers = false,
   className,
   classNames = [],
 }) => {
@@ -512,6 +522,39 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
         return def;
       }),
     [columns, disabled, handleHeaderClick],
+  );
+
+  const rowNumberColDef = useMemo<ColDef>(
+    () => ({
+      colId: ROW_NUMBER_COL_ID,
+      headerName: '#',
+      valueGetter: (params) => {
+        const idx = params.node?.rowIndex;
+        if (typeof idx !== 'number') return '';
+        return idx + 1;
+      },
+      width: 58,
+      maxWidth: 72,
+      flex: 0,
+      minWidth: 48,
+      pinned: 'left',
+      lockPinned: true,
+      lockPosition: 'left',
+      suppressMovable: true,
+      sortable: false,
+      filter: false,
+      resizable: false,
+      editable: false,
+      suppressHeaderMenuButton: true,
+      suppressHeaderFilterButton: true,
+      cellRenderer: RowNumberCell,
+    }),
+    [],
+  );
+
+  const gridColumnDefs = useMemo(
+    () => (showRowNumbers ? [rowNumberColDef, ...colDefs] : colDefs),
+    [showRowNumbers, rowNumberColDef, colDefs],
   );
 
   const defaultColDef = useMemo<ColDef>(
@@ -864,7 +907,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
           key={hasEntitySel ? 'qty-entry-entitysel' : 'qty-entry-scalar'}
           ref={gridRef}
           rowData={hasEntitySel ? undefined : rowData}
-          columnDefs={colDefs}
+          columnDefs={gridColumnDefs}
           defaultColDef={defaultColDef}
           rowModelType={hasEntitySel ? 'infinite' : undefined}
           suppressCellFocus={true}

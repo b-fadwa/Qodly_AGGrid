@@ -213,6 +213,7 @@ export default {
     columnBorder: false,
     enableCopySelectedValue: false,
     rowCssField: '',
+    showRowNumbers: false,
   },
 } as T4DComponentConfig<IQtyEntryGridProps>;
 
@@ -236,6 +237,7 @@ export interface IQtyEntryGridProps extends webforms.ComponentProps {
   /** Enables Ctrl/Cmd+C row copy. Kept as "Value" for backward compatibility with existing pages. */
   enableCopySelectedValue?: boolean;
   enableCopySelectedRow?: boolean;
+  showRowNumbers?: boolean;
 }
 
 export interface IQtyEntryColumn {

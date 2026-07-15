@@ -105,6 +105,12 @@ const generalSettings: TSetting[] = [
     defaultValue: false,
   },
   {
+    label: 'Show row numbers',
+    defaultValue: false,
+    type: ESetting.CHECKBOX,
+    key: 'showRowNumbers',
+  },
+  {
     key: 'classNames',
     label: 'Class',
     type: ESetting.CSSCLASS_SELECTOR,
