@@ -58,6 +58,17 @@ const columnSettings: TSetting[] = [
         type: ESetting.CHECKBOX,
         key: 'hidden',
       },
+      {
+        label: 'Enable click cell option list (non-editable columns only)',
+        defaultValue: true,
+        type: ESetting.CHECKBOX,
+        key: 'enableCellOptionMenu',
+      },
+      {
+        label: 'Options Source (dynamic collection)',
+        type: ESetting.DS_AUTO_SUGGEST,
+        key: 'optionsSource',
+      },
     ],
   },
 ];
