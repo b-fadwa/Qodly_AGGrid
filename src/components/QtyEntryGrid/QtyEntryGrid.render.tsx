@@ -527,9 +527,8 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   const getRowClass = useCallback(
     (params: RowClassParams) => {
       if (!rowCssField || !params.data) return '';
-      const value =
-        params.data.__entity?.[rowCssField] ??
-        findValueBySource(params.data, rowCssField, columnsRef.current);
+      const displayed = findValueBySource(params.data, rowCssField, columnsRef.current);
+      const value = displayed.found ? displayed.value : params.data.__entity?.[rowCssField];
       if (value === undefined || value === null || value === '') return '';
       const sanitized = String(value)
         .replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -695,8 +694,14 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
 
       // Keep React state in sync in case grid mutates row objects in-place.
       setRowData((prev) => prev.map((r, i) => (i === rowIndex ? { ...event.data } : r)));
+
+      // getRowClass isn't re-evaluated on data change alone, so force a redraw
+      // when the edited column is the one driving the row's CSS class.
+      if (rowCssField && col?.source === rowCssField && event.node) {
+        gridRef.current?.api.redrawRows({ rowNodes: [event.node] });
+      }
     },
-    [emit, buildPayloadFromRow],
+    [emit, buildPayloadFromRow, rowCssField],
   );
 
   const onCellDoubleClicked = useCallback(
@@ -931,9 +936,13 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   );
 };
 
-function findValueBySource(data: any, sourceField: string, columns: IQtyEntryColumn[]): any {
+function findValueBySource(
+  data: any,
+  sourceField: string,
+  columns: IQtyEntryColumn[],
+): { found: boolean; value: any } {
   const col = columns.find((c) => c.source === sourceField);
-  return col ? data[col.title] : undefined;
+  return col ? { found: true, value: data[col.title] } : { found: false, value: undefined };
 }
 
 export default QtyEntryGrid;
