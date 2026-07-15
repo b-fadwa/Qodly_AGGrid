@@ -84,6 +84,12 @@ const dataAccessSettings: TSetting[] = [
     label: 'Selected Element',
     type: ESetting.DS_AUTO_SUGGEST,
   },
+  {
+    key: 'rowCssField',
+    label: 'Row CSS Field',
+    type: ESetting.TEXT_FIELD,
+    placeholder: 'e.g. status',
+  },
 ];
 
 const generalSettings: TSetting[] = [

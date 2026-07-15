@@ -34,6 +34,7 @@ import {
   IGetRowsParams,
   IHeaderParams,
   IRowNode,
+  RowClassParams,
   RowDoubleClickedEvent,
   ValueFormatterParams,
   ValueParserParams,
@@ -200,6 +201,7 @@ const ClickableHeader = (
 const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   datasource,
   columns,
+  rowCssField,
   spacing,
   accentColor,
   backgroundColor,
@@ -520,6 +522,21 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
       cellRenderer: CustomCell,
     }),
     [],
+  );
+
+  const getRowClass = useCallback(
+    (params: RowClassParams) => {
+      if (!rowCssField || !params.data) return '';
+      const value =
+        params.data.__entity?.[rowCssField] ??
+        findValueBySource(params.data, rowCssField, columnsRef.current);
+      if (value === undefined || value === null || value === '') return '';
+      const sanitized = String(value)
+        .replace(/[^a-zA-Z0-9_-]/g, '-')
+        .toLowerCase();
+      return `qty-entry-row-${sanitized}`;
+    },
+    [rowCssField],
   );
 
   const theme = themeQuartz.withParams({
@@ -855,6 +872,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
           rowSelection={rowSelection}
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
+          getRowClass={getRowClass}
           context={{ gridDisabled: disabled }}
           theme={theme}
           className={cn({ 'pointer-events-none opacity-40': disabled })}
@@ -912,5 +930,10 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
     </div>
   );
 };
+
+function findValueBySource(data: any, sourceField: string, columns: IQtyEntryColumn[]): any {
+  const col = columns.find((c) => c.source === sourceField);
+  return col ? data[col.title] : undefined;
+}
 
 export default QtyEntryGrid;

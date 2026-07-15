@@ -212,6 +212,7 @@ export default {
     rowBorder: true,
     columnBorder: false,
     enableCopySelectedValue: false,
+    rowCssField: '',
   },
 } as T4DComponentConfig<IQtyEntryGridProps>;
 
@@ -219,6 +220,7 @@ export interface IQtyEntryGridProps extends webforms.ComponentProps {
   datasource?: string;
   currentElement?: string;
   columns: IQtyEntryColumn[];
+  rowCssField: string;
   spacing: string;
   accentColor: string;
   backgroundColor: string;
