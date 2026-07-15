@@ -60,7 +60,7 @@ const columnSettings: TSetting[] = [
       },
       {
         label: 'Enable click cell option list (non-editable columns only)',
-        defaultValue: true,
+        defaultValue: false,
         type: ESetting.CHECKBOX,
         key: 'enableCellOptionMenu',
       },
