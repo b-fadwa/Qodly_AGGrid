@@ -58,6 +58,17 @@ const columnSettings: TSetting[] = [
         type: ESetting.CHECKBOX,
         key: 'hidden',
       },
+      {
+        label: 'Enable click cell option list (non-editable columns only)',
+        defaultValue: false,
+        type: ESetting.CHECKBOX,
+        key: 'enableCellOptionMenu',
+      },
+      {
+        label: 'Options Source (dynamic collection)',
+        type: ESetting.DS_AUTO_SUGGEST,
+        key: 'optionsSource',
+      },
     ],
   },
 ];
@@ -73,6 +84,12 @@ const dataAccessSettings: TSetting[] = [
     label: 'Selected Element',
     type: ESetting.DS_AUTO_SUGGEST,
   },
+  {
+    key: 'rowCssField',
+    label: 'Row CSS Field',
+    type: ESetting.TEXT_FIELD,
+    placeholder: 'e.g. status',
+  },
 ];
 
 const generalSettings: TSetting[] = [
@@ -86,6 +103,12 @@ const generalSettings: TSetting[] = [
     label: 'Copy selected row',
     type: ESetting.CHECKBOX,
     defaultValue: false,
+  },
+  {
+    label: 'Show row numbers',
+    defaultValue: false,
+    type: ESetting.CHECKBOX,
+    key: 'showRowNumbers',
   },
   {
     key: 'classNames',
