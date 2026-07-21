@@ -16,6 +16,8 @@ export type AgGridFilterHeaderParams = CustomHeaderProps & {
   translation: (key: string) => string;
   onOpenFilter: (args: { colId: string; anchorEl: HTMLElement }) => void;
   isColumnFilterActive?: (colId: string) => boolean;
+  /** Changes when mono / multi-criteria active columns change — forces header icon refresh. */
+  activeFilterColIdsKey?: string;
 };
 
 const HeaderPopover: React.FC<{ label: string; children: any }> = ({ label, children }) => {
@@ -97,15 +99,13 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
       return typeof raw === 'number' && raw >= 0 ? raw : null;
     });
     const computeFilterActive = useCallback((): boolean => {
-      // Prefer an OR-combination of all available sources. In this project,
-      // header filters can be mirrored through advanced rules before AG Grid
-      // fully reflects them on the column instance.
-      const apiModel = props.api?.getFilterModel?.() ?? {};
       const colId = column.getColId();
+      if (props.isColumnFilterActive) {
+        return props.isColumnFilterActive(colId);
+      }
+      const apiModel = props.api?.getFilterModel?.() ?? {};
       const fromApi = apiModel != null && Object.prototype.hasOwnProperty.call(apiModel, colId);
-      const fromParentMirror = props.isColumnFilterActive?.(colId) ?? false;
-      const fromColumn = column.isFilterActive();
-      return fromApi || fromParentMirror || fromColumn;
+      return fromApi || column.isFilterActive();
     }, [props.api, props.isColumnFilterActive, column]);
 
     const [filterActive, setFilterActive] = useState<boolean>(() => computeFilterActive());
@@ -126,7 +126,7 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
         column.removeEventListener('filterChanged', sync);
         props.api?.removeEventListener?.('filterChanged', sync);
       };
-    }, [column, computeFilterActive, props.api]);
+    }, [column, computeFilterActive, props.api, props.activeFilterColIdsKey]);
 
     useImperativeHandle(
       ref,

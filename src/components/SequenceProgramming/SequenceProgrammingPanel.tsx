@@ -1,76 +1,89 @@
-import { FC, useEffect, useMemo, useState } from 'react';
-import { IoMdClose } from 'react-icons/io';
+import { CSSProperties, FC, useEffect, useMemo, useState } from 'react';
 import { GoTrash } from 'react-icons/go';
-import { findSavedRecord, savedRecordKey } from '../state/gridState';
 import type {
+  SavedExportFormat,
   SavedFilter,
+  SavedPrintFormat,
   SavedSequence,
   SavedSort,
   SavedView,
   SequenceFilterMode,
   SequenceFilterStep,
   SequenceProgrammingPayload,
-} from '../state/types';
-import type { Translation } from '../state/sorts';
+  SequenceTranspositionOption,
+  SequenceTranspositionsValue,
+} from './SequenceProgramming.types';
+import {
+  findSavedRecord,
+  recordLabel,
+  savedExportFormatKey,
+  savedPrintFormatKey,
+  savedRecordKey,
+} from './SequenceProgramming.types';
 
-interface SequenceProgrammingDialogProps {
-  open: boolean;
-  onClose: () => void;
-  translation: Translation;
+type SequenceProgrammingI18n =
+  | { keys?: Record<string, Record<string, unknown>> }
+  | null
+  | undefined;
+type AgGridTranslation = (key: string) => string;
+
+function pickI18nString(
+  entry: Record<string, unknown> | undefined,
+  lang?: string,
+): string | undefined {
+  if (!entry) return undefined;
+  const localized = lang ? entry[lang] : undefined;
+  if (typeof localized === 'string' && localized.trim()) return localized;
+  const fallback = entry.default;
+  return typeof fallback === 'string' && fallback.trim() ? fallback : undefined;
+}
+
+function translateAgGridKey(
+  i18n: SequenceProgrammingI18n,
+  lang: string | undefined,
+  key: string,
+): string {
+  const formattedKey = key.replace(/\s+/g, '_');
+  return pickI18nString(i18n?.keys?.[`aggrid_${formattedKey}`], lang) ?? key;
+}
+
+function translateAgGridAlias(
+  translation: AgGridTranslation,
+  key: string,
+  fallback?: string,
+): string {
+  const translated = translation(key);
+  return translated === key && fallback ? fallback : translated;
+}
+
+interface SequenceProgrammingPanelProps {
   savedViews: SavedView[];
   savedFilters: SavedFilter[];
   savedSorts: SavedSort[];
   savedSequences: SavedSequence[];
   transpositions: SequenceTranspositionsValue | null;
-  selectedSequence: SavedSequence | null;
-  setSelectedSequence: (record: SavedSequence | null) => void;
-  onSave: (name: string, sequence: SequenceProgrammingPayload) => void;
-  onUpdate: (key: string, sequence: SequenceProgrammingPayload) => void;
-  onDelete: (record: SavedSequence) => void;
-  onLoad: (key: string) => void;
-  onApply: (sequence: SequenceProgrammingPayload) => void;
+  exportFormats: SavedExportFormat[];
+  printFormats: SavedPrintFormat[];
+  predefinedDocuments: SequenceTranspositionOption[];
+  chainedSequences: SavedSequence[];
+  value: SequenceProgrammingPayload;
+  accentColor?: string;
+  disabled?: boolean;
+  i18n?: SequenceProgrammingI18n;
+  lang?: string;
+  style?: CSSProperties;
+  className?: string;
+  onChange: (value: SequenceProgrammingPayload) => void;
+  onSaveSequence: (name: string, value: SequenceProgrammingPayload) => void;
+  onUpdateSequence: (key: string, value: SequenceProgrammingPayload) => void;
+  onDeleteSequence: (record: SavedSequence) => void;
+  onLoadSequence: (record: SavedSequence) => void;
+  onApply: (value: SequenceProgrammingPayload) => void;
+  onAutomatisationTraitement: () => void;
+  onShare: (record: SavedSequence) => void;
+  onTranspositionSelect: (option: SequenceTranspositionOption, mode: 'oneToN' | 'nTo1') => void;
+  onCancel: () => void;
 }
-
-export type SequenceTranspositionOption = {
-  key?: string;
-  id?: string | number;
-  tableId?: string | number;
-  targetId?: string | number;
-  name?: string;
-  label?: string;
-  link?: string;
-  children?: SequenceTranspositionOption[];
-  [key: string]: unknown;
-};
-
-export type SequenceTranspositionsValue = {
-  oneToN?: SequenceTranspositionOption[];
-  nToOne?: SequenceTranspositionOption[];
-  predefinedDocuments?: SequenceTranspositionOption[];
-};
-
-const emptySequence = (): SequenceProgrammingPayload => ({
-  viewId: '',
-  filters: [],
-  sortId: '',
-  output: {
-    mode: undefined,
-    referenceDocumentId: '',
-    uppercase: false,
-    header: true,
-    type: 'csv',
-  },
-  transposition: {
-    mode: 'none',
-    selectionId: '',
-    selectionKey: '',
-    selectionLabel: '',
-    selectionLink: '',
-    chainedSequenceId: '',
-    runSearchesOnResultSelection: false,
-    predefinedDocumentId: '',
-  },
-});
 
 const filterModeOptions: Array<{ value: SequenceFilterMode; label: string }> = [
   { value: 'intersection', label: 'Intersect with previous selection' },
@@ -78,27 +91,9 @@ const filterModeOptions: Array<{ value: SequenceFilterMode; label: string }> = [
   { value: 'exclusion', label: 'Subtract from previous selection' },
 ];
 
-const sequenceFromRecord = (record: SavedSequence | null): SequenceProgrammingPayload =>
-  record?.sequence
-    ? {
-        ...emptySequence(),
-        ...record.sequence,
-        filters: Array.isArray(record.sequence.filters) ? record.sequence.filters : [],
-        output: { ...emptySequence().output, ...(record.sequence.output ?? {}) },
-        transposition: {
-          ...emptySequence().transposition,
-          ...(record.sequence.transposition ?? {}),
-        },
-      }
-    : emptySequence();
-
-const recordLabel = (record: { name?: string; title?: string; id?: string | number }) =>
-  record.name || record.title || String(record.id ?? '');
-
 const fallbackTranspositions: SequenceTranspositionsValue = {
   oneToN: [],
   nToOne: [],
-  predefinedDocuments: [],
 };
 
 const optionKey = (option: SequenceTranspositionOption): string =>
@@ -189,145 +184,202 @@ const TranspositionTree: FC<{
   );
 };
 
-export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
-  open,
-  onClose,
-  translation,
+const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
   savedViews,
   savedFilters,
   savedSorts,
   savedSequences,
   transpositions,
-  selectedSequence,
-  setSelectedSequence,
-  onSave,
-  onUpdate,
-  onDelete,
-  onLoad,
+  exportFormats,
+  printFormats,
+  predefinedDocuments,
+  chainedSequences,
+  value,
+  disabled = false,
+  i18n,
+  lang,
+  style,
+  className,
+  onChange,
+  onSaveSequence,
+  onUpdateSequence,
+  onDeleteSequence,
+  onLoadSequence,
   onApply,
+  onAutomatisationTraitement,
+  onShare,
+  onTranspositionSelect,
+  onCancel,
 }) => {
   const [sequenceName, setSequenceName] = useState('');
   const [selectedSequenceKey, setSelectedSequenceKey] = useState('');
-  const [draft, setDraft] = useState<SequenceProgrammingPayload>(emptySequence);
   const [expandedTranspositionKeys, setExpandedTranspositionKeys] = useState<Set<string>>(
     () => new Set(),
   );
 
+  /**
+   * Once the caller's `savedSequences` round-trips back (e.g. the backend assigns a
+   * real `id` to a just-created record), re-resolve the current selection to that
+   * record's canonical key so the `<select>` stays visually selected.
+   */
+  useEffect(() => {
+    if (!selectedSequenceKey) return;
+    const match = findSavedRecord(savedSequences, selectedSequenceKey);
+    if (!match) return;
+    const canonicalKey = savedRecordKey(match);
+    if (canonicalKey && canonicalKey !== selectedSequenceKey) {
+      setSelectedSequenceKey(canonicalKey);
+    }
+  }, [savedSequences, selectedSequenceKey]);
+
+  const t = (key: string) => translateAgGridKey(i18n, lang, key);
+  const translation = (key: string) => translateAgGridAlias(t, key, key);
+
   const normalizedFilters = useMemo(
     () =>
-      draft.filters.length > 0
-        ? draft.filters
+      value.filters.length > 0
+        ? value.filters
         : ([{ filterId: '', mode: 'intersection' }] as SequenceFilterStep[]),
-    [draft.filters],
+    [value.filters],
   );
 
   const currentTranspositionTree =
-    draft.transposition.mode === 'oneToN'
+    value.transposition.mode === 'oneToN'
       ? ((transpositions ?? fallbackTranspositions).oneToN ?? [])
-      : draft.transposition.mode === 'nTo1'
+      : value.transposition.mode === 'nTo1'
         ? ((transpositions ?? fallbackTranspositions).nToOne ?? [])
         : [];
-  const predefinedDocumentOptions =
-    (transpositions ?? fallbackTranspositions).predefinedDocuments ?? [];
   const selectedOperation =
-    draft.transposition.mode === 'nTo1' || draft.transposition.mode === 'oneToN'
-      ? draft.transposition.mode
-      : (draft.output.mode ?? '');
-  const isOutputOperation =
-    selectedOperation === 'export' ||
-    selectedOperation === 'list' ||
-    selectedOperation === 'table' ||
-    selectedOperation === 'predefinedDocuments';
-  const needsPredefinedDocument =
-    selectedOperation === 'list' ||
-    selectedOperation === 'table' ||
-    selectedOperation === 'predefinedDocuments';
+    value.transposition.mode === 'nTo1' || value.transposition.mode === 'oneToN'
+      ? value.transposition.mode
+      : (value.output.mode ?? '');
+  const needsExportFormat = selectedOperation === 'export';
+  const needsPrintFormat = selectedOperation === 'list' || selectedOperation === 'table';
+  const needsPredefinedDocument = selectedOperation === 'predefinedDocuments';
+  const isOutputOperation = needsExportFormat || needsPrintFormat || needsPredefinedDocument;
   const isTranspositionOperation = selectedOperation === 'nTo1' || selectedOperation === 'oneToN';
+  const chainedSequenceMode = isTranspositionOperation
+    ? findSavedRecord(chainedSequences, value.transposition.chainedSequenceId ?? '')?.sequence
+        ?.output?.mode
+    : undefined;
+  const canAutomatisationTraitement =
+    Boolean(selectedSequenceKey) &&
+    (isOutputOperation ||
+      (isTranspositionOperation &&
+        (chainedSequenceMode === 'export' ||
+          chainedSequenceMode === 'list' ||
+          chainedSequenceMode === 'table' ||
+          chainedSequenceMode === 'predefinedDocuments')));
 
-  useEffect(() => {
-    if (!open) return;
-    setSequenceName('');
-    setSelectedSequenceKey(selectedSequence ? savedRecordKey(selectedSequence) : '');
-    setDraft(sequenceFromRecord(selectedSequence));
-    setExpandedTranspositionKeys(new Set());
-  }, [open, selectedSequence]);
-
-  if (!open) return null;
+  const resolveSortIdForFilter = (filterId: string | number): string => {
+    const filterRecord = findSavedRecord(savedFilters, filterId);
+    const linkedSort = filterRecord?.linkedSortId ?? filterRecord?.linkedSort;
+    if (linkedSort == null || String(linkedSort).trim() === '') return '';
+    const sortRecord = findSavedRecord(savedSorts, linkedSort);
+    return sortRecord ? savedRecordKey(sortRecord) : String(linkedSort).trim();
+  };
 
   const setFilterAt = (index: number, patch: Partial<SequenceFilterStep>) => {
-    setDraft((prev) => {
-      const next = normalizedFilters.map((step, i) => (i === index ? { ...step, ...patch } : step));
-      return { ...prev, filters: next };
+    onChange({
+      ...value,
+      filters: normalizedFilters.map((step, i) => (i === index ? { ...step, ...patch } : step)),
+    });
+  };
+
+  /** Initial search filter (index 0) drives Sort — re-derive `sortId` from its linked sort on every change. */
+  const setInitialSearchFilter = (filterId: string) => {
+    onChange({
+      ...value,
+      sortId: resolveSortIdForFilter(filterId),
+      filters: normalizedFilters.map((step, i) => (i === 0 ? { ...step, filterId } : step)),
+    });
+  };
+
+  const handleViewSelect = (viewId: string) => {
+    const viewRecord = findSavedRecord(savedViews, viewId);
+    const linkedFilter = viewRecord?.linkedFilterId ?? viewRecord?.linkedFilter;
+    if (linkedFilter == null || String(linkedFilter).trim() === '') {
+      onChange({ ...value, viewId });
+      return;
+    }
+    const filterRecord = findSavedRecord(savedFilters, linkedFilter);
+    const filterKey = filterRecord ? savedRecordKey(filterRecord) : String(linkedFilter).trim();
+    onChange({
+      ...value,
+      viewId,
+      sortId: resolveSortIdForFilter(filterKey),
+      filters: normalizedFilters.map((step, i) =>
+        i === 0 ? { ...step, filterId: filterKey } : step,
+      ),
     });
   };
 
   const addFilter = () => {
-    setDraft((prev) => ({
-      ...prev,
+    onChange({
+      ...value,
       filters: [...normalizedFilters, { filterId: '', mode: 'intersection' }],
-    }));
+    });
   };
 
   const removeFilter = (index: number) => {
-    setDraft((prev) => ({
-      ...prev,
+    onChange({
+      ...value,
       filters: normalizedFilters.filter((_, i) => i !== index),
-    }));
+    });
   };
 
   const handleSequenceSelect = (key: string) => {
     setSelectedSequenceKey(key);
     if (!key) {
-      setSelectedSequence(null);
-      setDraft(emptySequence());
       setSequenceName('');
       return;
     }
-    const record = findSavedRecord(savedSequences, key) as SavedSequence | null;
-    setSelectedSequence(record);
-    setDraft(sequenceFromRecord(record));
-    setSequenceName(recordLabel(record ?? {}));
-    onLoad(key);
+    const record = findSavedRecord(savedSequences, key);
+    if (!record) return;
+    setSequenceName(recordLabel(record));
+    onLoadSequence(record);
   };
 
   const sequenceToPersist = (): SequenceProgrammingPayload => {
     const filters = normalizedFilters.filter((step) => String(step.filterId ?? '').trim() !== '');
-    if (draft.transposition.mode === 'nTo1' || draft.transposition.mode === 'oneToN') {
-      return { ...draft, filters };
+    if (value.transposition.mode === 'nTo1' || value.transposition.mode === 'oneToN') {
+      return { ...value, filters };
     }
-    const mode = draft.output.mode;
+    const mode = value.output.mode;
     if (mode === 'display') {
-      return {
-        ...draft,
-        filters,
-        output: {
-          mode: 'display',
-        },
-      };
+      return { ...value, filters, output: { mode: 'display' } };
     }
     if (mode === 'export') {
       return {
-        ...draft,
+        ...value,
         filters,
         output: {
           mode: 'export',
-          uppercase: Boolean(draft.output.uppercase),
-          header: Boolean(draft.output.header),
-          type: draft.output.type ?? 'csv',
+          exportFormatId: value.output.exportFormatId ?? '',
         },
       };
     }
-    if (mode === 'list' || mode === 'table' || mode === 'predefinedDocuments') {
+    if (mode === 'list' || mode === 'table') {
       return {
-        ...draft,
+        ...value,
         filters,
         output: {
           mode,
-          referenceDocumentId: draft.output.referenceDocumentId ?? '',
+          printFormatId: value.output.printFormatId ?? '',
         },
       };
     }
-    return { ...draft, filters };
+    if (mode === 'predefinedDocuments') {
+      return {
+        ...value,
+        filters,
+        output: {
+          mode,
+          referenceDocumentId: value.output.referenceDocumentId ?? '',
+        },
+      };
+    }
+    return { ...value, filters };
   };
 
   const trimmedName = sequenceName.trim();
@@ -342,38 +394,60 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
     const payload = sequenceToPersist();
     if (trimmedName) {
       if (matchingExisting) {
-        onUpdate(savedRecordKey(matchingExisting), payload);
+        const key = savedRecordKey(matchingExisting);
+        onUpdateSequence(key, payload);
+        setSelectedSequenceKey(key);
       } else {
-        onSave(trimmedName, payload);
+        onSaveSequence(trimmedName, payload);
+        // Optimistic key — the reconciliation effect above will correct it to the
+        // backend-assigned id once the updated collection round-trips back.
+        setSelectedSequenceKey(trimmedName);
       }
     } else if (selectedSequenceKey) {
-      onUpdate(selectedSequenceKey, payload);
+      onUpdateSequence(selectedSequenceKey, payload);
     }
     setSequenceName('');
   };
 
+  const handleDeletePressed = () => {
+    const record = findSavedRecord(savedSequences, selectedSequenceKey);
+    if (!record) return;
+    onDeleteSequence(record);
+    setSelectedSequenceKey('');
+    setSequenceName('');
+  };
+
+  const handleSharePressed = () => {
+    const record = findSavedRecord(savedSequences, selectedSequenceKey);
+    if (!record) return;
+    onShare(record);
+  };
+
   const selectTranspositionTreeOption = (option: SequenceTranspositionOption) => {
     const key = optionKey(option);
-    setDraft((prev) => ({
-      ...prev,
+    onChange({
+      ...value,
       transposition: {
-        ...prev.transposition,
+        ...value.transposition,
         selectionKey: key,
         selectionId: option.id ?? option.tableId ?? option.targetId ?? key,
         selectionLabel: optionLabel(option),
         selectionLink: option.link ?? '',
       },
-    }));
+    });
+    if (value.transposition.mode === 'oneToN' || value.transposition.mode === 'nTo1') {
+      onTranspositionSelect(option, value.transposition.mode);
+    }
   };
 
   const renderPredefinedDocumentOptions = (currentValue: string) => {
-    const hasCurrentValue = predefinedDocumentOptions.some(
+    const hasCurrentValue = predefinedDocuments.some(
       (option) => optionKey(option) === currentValue,
     );
     return (
       <>
         <option value="">{translation('Select predefined document')}</option>
-        {predefinedDocumentOptions.map((option) => {
+        {predefinedDocuments.map((option) => {
           const key = optionKey(option);
           return (
             <option key={key || optionLabel(option)} value={key}>
@@ -390,39 +464,35 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
 
   const setSequenceOperation = (operation: string) => {
     setExpandedTranspositionKeys(new Set());
-    setDraft((prev) => {
-      if (operation === 'nTo1' || operation === 'oneToN') {
-        return {
-          ...prev,
-          output: {
-            ...prev.output,
-            mode: undefined,
-          },
-          transposition: {
-            ...prev.transposition,
-            mode: operation as SequenceProgrammingPayload['transposition']['mode'],
-            selectionId: '',
-            selectionKey: '',
-            selectionLabel: '',
-            selectionLink: '',
-          },
-        };
-      }
-      return {
-        ...prev,
-        output: {
-          ...prev.output,
-          mode: operation as SequenceProgrammingPayload['output']['mode'],
-        },
+    if (operation === 'nTo1' || operation === 'oneToN') {
+      onChange({
+        ...value,
+        output: { ...value.output, mode: undefined },
         transposition: {
-          ...prev.transposition,
-          mode: 'none',
+          ...value.transposition,
+          mode: operation as SequenceProgrammingPayload['transposition']['mode'],
           selectionId: '',
           selectionKey: '',
           selectionLabel: '',
           selectionLink: '',
         },
-      };
+      });
+      return;
+    }
+    onChange({
+      ...value,
+      output: {
+        ...value.output,
+        mode: operation as SequenceProgrammingPayload['output']['mode'],
+      },
+      transposition: {
+        ...value.transposition,
+        mode: 'none',
+        selectionId: '',
+        selectionKey: '',
+        selectionLabel: '',
+        selectionLink: '',
+      },
     });
   };
 
@@ -450,79 +520,31 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
   const labelClass = 'text-sm font-medium text-slate-700';
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+    <section
+      className={`flex h-full min-h-full w-full flex-col overflow-hidden bg-white ${className || ''}`}
+      style={style}
+      aria-disabled={disabled}
     >
-      <div
-        className="flex w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
-        style={{ maxHeight: '92vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3 rounded-t-xl border-b border-slate-200 px-5 py-4">
-          <div>
-            <span
-              className="tracking-wide"
-              style={{ color: '#0A0A0A', fontSize: '16px', fontWeight: 500 }}
-            >
-              {translation('Sequence programming')}
-            </span>
-            <span className="mt-1 block text-sm" style={{ color: '#4A5565', fontSize: '14px' }}>
-              {translation('Prepare a view, searches, sort, and output')}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="inline-flex items-center justify-center"
-            style={{ color: '#6A7282' }}
-            onClick={onClose}
-          >
-            <IoMdClose />
-          </button>
-        </div>
-
+      <fieldset disabled={disabled} className="contents">
         <div className="min-h-0 flex-1 bg-slate-100 overflow-y-auto p-2 sm:p-3">
           <div className="rounded-md border border-slate-200 bg-white p-2 shadow-sm sm:p-3">
-            <div
-              className="grid gap-3"
-              style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
-            >
-              <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                <label className={labelClass} style={{ fontSize: '12px' }}>
-                  {translation('View')}
-                </label>
-                <select
-                  className={`${selectClass} mt-2 w-full`}
-                  style={controlStyle}
-                  value={String(draft.viewId ?? '')}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, viewId: e.target.value }))}
-                >
-                  <option value="">{translation('Select view')}</option>
-                  {savedViews.map((record) => (
-                    <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
-                      {recordLabel(record)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                <label className={labelClass} style={{ fontSize: '12px' }}>
-                  {translation('Sort')}
-                </label>
-                <select
-                  className={`${selectClass} mt-2 w-full`}
-                  style={controlStyle}
-                  value={String(draft.sortId ?? '')}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, sortId: e.target.value }))}
-                >
-                  <option value="">{translation('Select sort')}</option>
-                  {savedSorts.map((record) => (
-                    <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
-                      {recordLabel(record)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="rounded border border-slate-200 bg-slate-50 p-3">
+              <label className={labelClass} style={{ fontSize: '12px' }}>
+                {translation('View')}
+              </label>
+              <select
+                className={`${selectClass} mt-2 w-full`}
+                style={controlStyle}
+                value={String(value.viewId ?? '')}
+                onChange={(e) => handleViewSelect(e.target.value)}
+              >
+                <option value="">{translation('Select view')}</option>
+                {savedViews.map((record) => (
+                  <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
+                    {recordLabel(record)}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="py-3">
@@ -580,7 +602,11 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                           className={`${selectClass} w-full`}
                           style={controlStyle}
                           value={String(step.filterId ?? '')}
-                          onChange={(e) => setFilterAt(index, { filterId: e.target.value })}
+                          onChange={(e) =>
+                            index === 0
+                              ? setInitialSearchFilter(e.target.value)
+                              : setFilterAt(index, { filterId: e.target.value })
+                          }
                         >
                           <option value="">{translation('Select filter')}</option>
                           {savedFilters.map((record) => (
@@ -633,21 +659,21 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                     ['predefinedDocuments', 'Documents prédifinis'],
                     ['nTo1', 'Selection transposition: N to 1'],
                     ['oneToN', 'Selection transposition: 1 to N'],
-                  ].map(([value, label]) => (
+                  ].map(([option, label]) => (
                     <label
-                      key={value}
+                      key={option}
                       className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 text-slate-700"
                       style={{
                         fontSize: '12px',
-                        borderColor: selectedOperation === value ? '#2B5797' : undefined,
-                        color: selectedOperation === value ? '#2B5797' : undefined,
+                        borderColor: selectedOperation === option ? '#2B5797' : undefined,
+                        color: selectedOperation === option ? '#2B5797' : undefined,
                       }}
                     >
                       <input
                         type="radio"
                         name="sequence-operation"
-                        checked={selectedOperation === value}
-                        onChange={() => setSequenceOperation(value)}
+                        checked={selectedOperation === option}
+                        onChange={() => setSequenceOperation(option)}
                       />
                       {translation(label)}
                     </label>
@@ -663,63 +689,57 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                   >
                     {translation('Output options')}
                   </span>
-                  {selectedOperation === 'export' ? (
-                    <div className="flex flex-row gap-3">
-                      <label
-                        className="flex items-center gap-2 text-slate-700"
-                        style={{ fontSize: '12px' }}
+                  {needsExportFormat ? (
+                    <label className="block text-slate-700" style={{ fontSize: '12px' }}>
+                      {translation('Export format')}
+                      <select
+                        className={`${selectClass} mt-1 w-full`}
+                        style={controlStyle}
+                        value={String(value.output.exportFormatId ?? '')}
+                        onChange={(e) =>
+                          onChange({
+                            ...value,
+                            output: { ...value.output, exportFormatId: e.target.value },
+                          })
+                        }
                       >
-                        <input
-                          type="checkbox"
-                          checked={Boolean(draft.output.uppercase)}
-                          onChange={(e) =>
-                            setDraft((prev) => ({
-                              ...prev,
-                              output: { ...prev.output, uppercase: e.target.checked },
-                            }))
-                          }
-                        />
-                        {translation('Uppercase')}
-                      </label>
-                      <label
-                        className="flex items-center gap-2 text-slate-700"
-                        style={{ fontSize: '12px' }}
+                        <option value="">{translation('Select export format')}</option>
+                        {exportFormats.map((record) => (
+                          <option
+                            key={savedExportFormatKey(record)}
+                            value={savedExportFormatKey(record)}
+                          >
+                            {recordLabel(record)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {needsPrintFormat ? (
+                    <label className="block text-slate-700" style={{ fontSize: '12px' }}>
+                      {translation('Print format')}
+                      <select
+                        className={`${selectClass} mt-1 w-full`}
+                        style={controlStyle}
+                        value={String(value.output.printFormatId ?? '')}
+                        onChange={(e) =>
+                          onChange({
+                            ...value,
+                            output: { ...value.output, printFormatId: e.target.value },
+                          })
+                        }
                       >
-                        <input
-                          type="checkbox"
-                          checked={Boolean(draft.output.header)}
-                          onChange={(e) =>
-                            setDraft((prev) => ({
-                              ...prev,
-                              output: { ...prev.output, header: e.target.checked },
-                            }))
-                          }
-                        />
-                        {translation('Header')}
-                      </label>
-                      <label className="block text-slate-700" style={{ fontSize: '12px' }}>
-                        {translation('Type')}
-                        <select
-                          className={`${selectClass} mt-1 w-full`}
-                          style={controlStyle}
-                          value={draft.output.type ?? 'csv'}
-                          onChange={(e) =>
-                            setDraft((prev) => ({
-                              ...prev,
-                              output: {
-                                ...prev.output,
-                                type: e.target
-                                  .value as SequenceProgrammingPayload['output']['type'],
-                              },
-                            }))
-                          }
-                        >
-                          <option value="csv">csv</option>
-                          <option value="txt">txt</option>
-                          <option value="xml">xml</option>
-                        </select>
-                      </label>
-                    </div>
+                        <option value="">{translation('Select print format')}</option>
+                        {printFormats.map((record) => (
+                          <option
+                            key={savedPrintFormatKey(record)}
+                            value={savedPrintFormatKey(record)}
+                          >
+                            {recordLabel(record)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   ) : null}
                   {needsPredefinedDocument ? (
                     <label className="block text-slate-700" style={{ fontSize: '12px' }}>
@@ -727,16 +747,16 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                       <select
                         className={`${selectClass} mt-1 w-full`}
                         style={controlStyle}
-                        value={String(draft.output.referenceDocumentId ?? '')}
+                        value={String(value.output.referenceDocumentId ?? '')}
                         onChange={(e) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            output: { ...prev.output, referenceDocumentId: e.target.value },
-                          }))
+                          onChange({
+                            ...value,
+                            output: { ...value.output, referenceDocumentId: e.target.value },
+                          })
                         }
                       >
                         {renderPredefinedDocumentOptions(
-                          String(draft.output.referenceDocumentId ?? ''),
+                          String(value.output.referenceDocumentId ?? ''),
                         )}
                       </select>
                     </label>
@@ -760,9 +780,9 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                       >
                         {translation('Transposition selection')}
                       </span>
-                      {draft.transposition.selectionLabel ? (
+                      {value.transposition.selectionLabel ? (
                         <span className="truncate text-slate-500" style={{ fontSize: '11px' }}>
-                          {draft.transposition.selectionLabel}
+                          {value.transposition.selectionLabel}
                         </span>
                       ) : null}
                     </div>
@@ -772,12 +792,12 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                     >
                       <TranspositionTree
                         options={currentTranspositionTree}
-                        selectedKey={String(draft.transposition.selectionKey ?? '')}
+                        selectedKey={String(value.transposition.selectionKey ?? '')}
                         expandedKeys={expandedTranspositionKeys}
                         toggleExpanded={toggleTranspositionExpanded}
                         onSelect={selectTranspositionTreeOption}
                         emptyLabel={
-                          draft.transposition.mode === 'none'
+                          value.transposition.mode === 'none'
                             ? translation('Choose a transposition type')
                             : translation('No transposition available')
                         }
@@ -789,43 +809,24 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                     <select
                       className={`${selectClass} mt-1 w-full`}
                       style={controlStyle}
-                      value={String(draft.transposition.chainedSequenceId ?? '')}
+                      value={String(value.transposition.chainedSequenceId ?? '')}
                       onChange={(e) =>
-                        setDraft((prev) => ({
-                          ...prev,
+                        onChange({
+                          ...value,
                           transposition: {
-                            ...prev.transposition,
+                            ...value.transposition,
                             chainedSequenceId: e.target.value,
                           },
-                        }))
+                        })
                       }
                     >
                       <option value="">{translation('No sequence')}</option>
-                      {savedSequences.map((record) => (
+                      {chainedSequences.map((record) => (
                         <option key={savedRecordKey(record)} value={savedRecordKey(record)}>
                           {recordLabel(record)}
                         </option>
                       ))}
                     </select>
-                  </label>
-                  <label
-                    className="my-2 flex items-center gap-2 text-slate-700"
-                    style={{ fontSize: '12px' }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={Boolean(draft.transposition.runSearchesOnResultSelection)}
-                      onChange={(e) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          transposition: {
-                            ...prev.transposition,
-                            runSearchesOnResultSelection: e.target.checked,
-                          },
-                        }))
-                      }
-                    />
-                    {translation('Run sequence searches on the resulting selection')}
                   </label>
                 </section>
               )}
@@ -867,13 +868,7 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                     borderColor: '#EC7B80',
                     backgroundColor: '#EC7B8033',
                   }}
-                  onClick={() => {
-                    const record = findSavedRecord(
-                      savedSequences,
-                      selectedSequenceKey,
-                    ) as SavedSequence | null;
-                    if (record) onDelete(record);
-                  }}
+                  onClick={handleDeletePressed}
                   disabled={!selectedSequenceKey}
                   title={translation('Delete')}
                 >
@@ -890,12 +885,23 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
                 </button>
                 <button
                   type="button"
-                  className="rounded-lg border border-gray-300 bg-white px-2 py-1"
+                  className="rounded-lg border border-gray-300 bg-white px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50"
                   style={controlStyle}
-                  onClick={() => undefined}
+                  disabled={!selectedSequenceKey}
+                  onClick={handleSharePressed}
                 >
                   {translation('Share')}
                 </button>
+                {canAutomatisationTraitement ? (
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-1"
+                    style={controlStyle}
+                    onClick={onAutomatisationTraitement}
+                  >
+                    {translation('Automatisation traitement')}
+                  </button>
+                ) : null}
               </div>
             </section>
           </div>
@@ -911,28 +917,26 @@ export const SequenceProgrammingDialog: FC<SequenceProgrammingDialogProps> = ({
             style={{
               height: '31px',
               borderRadius: '6px',
-              borderColor: '#0000001A',
-              color: '#44444C',
+              borderColor: '#EC7B80',
+              color: '#EC7B80',
               fontSize: '12px',
             }}
-            onClick={onClose}
+            onClick={onCancel}
           >
             {translation('Cancel')}
           </button>
           <button
             type="button"
             className="flex items-center justify-center rounded-md border px-3 py-2 text-center text-sm text-white"
-            style={{
-              background: '#2B5797',
-              height: '31px',
-              fontSize: '12px',
-            }}
+            style={{ background: '#2B5797', height: '31px', fontSize: '12px' }}
             onClick={() => onApply(sequenceToPersist())}
           >
             {translation('Apply')}
           </button>
         </div>
-      </div>
-    </div>
+      </fieldset>
+    </section>
   );
 };
+
+export default SequenceProgrammingPanel;

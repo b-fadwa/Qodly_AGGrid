@@ -191,9 +191,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   const calculStatistiqueResultDS = resultDsProp ?? null;
   const [showStatisticsDialog, setShowStatisticsDialog] = useState(false);
   const [selectedColumnIds, setSelectedColumnIds] = useState<string[]>([]);
-  const [selectedOperations, setSelectedOperations] = useState<StatsOperation[]>([
-    ...StatisticCalculations.ALL_OPERATIONS,
-  ]);
+  const [selectedOperations, setSelectedOperations] = useState<StatsOperation[]>(['sum']);
   const [statsResponse, setStatsResponse] = useState<unknown>(null);
   const [lastCalculations, setLastCalculations] = useState<StatisticCalculationItem[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -269,7 +267,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
     setLastCalculations([]);
     if (statisticsColumns.length > 0) {
       setSelectedColumnIds(statisticsColumns.map((c) => c.colId));
-      setSelectedOperations([...StatisticCalculations.ALL_OPERATIONS]);
+      setSelectedOperations(['sum']);
     } else {
       setSelectedColumnIds([]);
       setSelectedOperations([]);
@@ -585,7 +583,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                                               return (
                                                 <td
                                                   key={op}
-                                                  className="border-l border-slate-100 px-3 py-2 text-center font-mono tabular-nums text-slate-900"
+                                                  className="border-l border-slate-100 px-3 py-2 text-center font-mono tabular-nums text-slate-900 text-right"
                                                 >
                                                   {cellText}
                                                 </td>

@@ -35,7 +35,7 @@ import {
   type TManualSelectedCell,
   getInitialGridCopyMode,
   persistGridCopyMode,
-  type GridCopyModeSetting,
+  type GridCopyMode,
   writeTextToClipboard,
 } from './AgGrid.clipboard';
 import {
@@ -83,7 +83,7 @@ import { Element } from '@ws-ui/craftjs-core';
 import { selectResolver } from '@ws-ui/webform-editor';
 import { get } from 'lodash';
 import set from 'lodash/set';
-import { FaTableColumns, FaCopy, FaClockRotateLeft, FaSearchengin, FaListCheck } from 'react-icons/fa6';
+import { FaTableColumns, FaCopy, FaClockRotateLeft, FaSearchengin } from 'react-icons/fa6';
 import { IoMdClose } from 'react-icons/io';
 import { FaSortAmountDown, FaFilter } from 'react-icons/fa';
 import {
@@ -109,9 +109,6 @@ import {
   type CalculatedSearchEmitPayload,
   type RelationTreeNode,
 } from './dialogs/CalculatedSearchDialog';
-import { SequenceProgrammingDialog } from './dialogs/SequenceProgrammingDialog';
-import type { SequenceTranspositionsValue } from './dialogs/SequenceProgrammingDialog';
-import type { SavedSequence, SequenceProgrammingPayload } from './state/types';
 
 type SavedCalculatedSearch = {
   name: string;
@@ -132,6 +129,49 @@ type FilterApplyOptions = {
   };
 };
 
+type MonoCriteriaFilter = {
+  colId: string;
+  condition: any;
+  scope: FilterSearchScopeKind;
+  searchType: FilterSearchTypeKind;
+};
+
+const buildMonoFilterModel = (mono: MonoCriteriaFilter): Record<string, any> => ({
+  [mono.colId]: {
+    ...mono.condition,
+    qodlyCombinator: 'AND',
+  },
+});
+
+const resolveMonoHeaderColIds = (
+  colId: string,
+  scope: FilterSearchScopeKind,
+  searchType: FilterSearchTypeKind,
+  previousActiveColIds: string[],
+): string[] => {
+  if (searchType === 'add' || searchType === 'remove') {
+    return [];
+  }
+  if (scope === 'selection' && searchType === 'replace' && previousActiveColIds.length > 0) {
+    return Array.from(new Set([...previousActiveColIds, colId]));
+  }
+  return [colId];
+};
+
+const isFilterDsValueEmpty = (data: unknown): boolean => {
+  if (data == null) return true;
+  if (typeof data !== 'object' || Array.isArray(data)) return false;
+  const record = data as Record<string, unknown>;
+  if (Object.keys(record).length === 0) return true;
+  if (!('filterModel' in record)) return false;
+  const filterModel = record.filterModel;
+  if (filterModel == null) return true;
+  if (typeof filterModel === 'object' && !Array.isArray(filterModel)) {
+    return Object.keys(filterModel as object).length === 0;
+  }
+  return false;
+};
+
 type AppliedViewColumn = {
   field: string;
   isHidden: boolean;
@@ -140,90 +180,6 @@ type AppliedViewColumn = {
   flex?: number | null;
   i18n?: string | null;
 };
-
-const sequenceIdValue = (value: unknown): string | number | undefined =>
-  typeof value === 'string' || typeof value === 'number' ? value : undefined;
-
-function sequencePayloadFromRecord(record: unknown): SequenceProgrammingPayload | null {
-  if (!record || typeof record !== 'object') return null;
-  const source = record as Record<string, unknown>;
-  if (source.sequence && typeof source.sequence === 'object') {
-    return source.sequence as SequenceProgrammingPayload;
-  }
-  if ('viewId' in source || 'filters' in source || 'sortId' in source || 'output' in source) {
-    const output = source.output && typeof source.output === 'object'
-      ? (source.output as Record<string, unknown>)
-      : {};
-    const transposition = source.transposition && typeof source.transposition === 'object'
-      ? (source.transposition as Record<string, unknown>)
-      : {};
-    return {
-      viewId: sequenceIdValue(source.viewId) ?? sequenceIdValue(source.linkedViewId) ?? '',
-      filters: Array.isArray(source.filters) ? source.filters as SequenceProgrammingPayload['filters'] : [],
-      sortId: sequenceIdValue(source.sortId) ?? sequenceIdValue(source.linkedSortId) ?? '',
-      output: {
-        mode: output.mode as SequenceProgrammingPayload['output']['mode'],
-        referenceDocumentId:
-          sequenceIdValue(output.referenceDocumentId) ??
-          sequenceIdValue(source.referenceDocumentId) ??
-          '',
-        uppercase: Boolean(output.uppercase ?? source.uppercase),
-        header:
-          output.header !== undefined || source.header !== undefined
-            ? Boolean(output.header ?? source.header)
-            : true,
-        type:
-          output.type === 'csv' || output.type === 'txt' || output.type === 'xml'
-            ? output.type
-            : source.type === 'csv' || source.type === 'txt' || source.type === 'xml'
-              ? source.type
-              : 'csv',
-      },
-      transposition: {
-        mode: (transposition.mode ?? source.transpositionMode ?? 'none') as SequenceProgrammingPayload['transposition']['mode'],
-        chainedSequenceId:
-          sequenceIdValue(transposition.chainedSequenceId) ??
-          sequenceIdValue(source.chainedSequenceId) ??
-          '',
-        runSearchesOnResultSelection: Boolean(
-          transposition.runSearchesOnResultSelection ?? source.runSearchesOnResultSelection,
-        ),
-        predefinedDocumentId:
-          sequenceIdValue(transposition.predefinedDocumentId) ??
-          sequenceIdValue(source.predefinedDocumentId) ??
-          '',
-        selectionId:
-          sequenceIdValue(transposition.selectionId) ?? sequenceIdValue(source.selectionId) ?? '',
-        selectionKey:
-          sequenceIdValue(transposition.selectionKey) ?? sequenceIdValue(source.selectionKey) ?? '',
-        selectionLabel:
-          typeof transposition.selectionLabel === 'string'
-            ? transposition.selectionLabel
-            : typeof source.selectionLabel === 'string'
-              ? source.selectionLabel
-              : '',
-        selectionLink:
-          typeof transposition.selectionLink === 'string'
-            ? transposition.selectionLink
-            : typeof source.selectionLink === 'string'
-              ? source.selectionLink
-              : '',
-      },
-    };
-  }
-  return null;
-}
-
-function sequenceRecordMatches(record: unknown, key: string | number): boolean {
-  const selectedKey = String(key ?? '').trim();
-  if (!selectedKey || !record || typeof record !== 'object') return false;
-  const source = record as Record<string, unknown>;
-  return (
-    source.name === selectedKey ||
-    source.title === selectedKey ||
-    (source.id != null && String(source.id) === selectedKey)
-  );
-}
 
 function calculatedSearchPayloadFromRecord(record: any): CalculatedSearchEmitPayload | null {
   if (!record || typeof record !== 'object') return null;
@@ -541,7 +497,7 @@ function findAgGridRowCssValue(data: any, field: string, cols: IColumn[]): any {
   return undefined;
 }
 
-type CopyMode = GridCopyModeSetting;
+type CopyMode = GridCopyMode;
 
 const AgGrid: FC<IAgGridProps> = ({
   datasource,
@@ -554,9 +510,6 @@ const AgGrid: FC<IAgGridProps> = ({
   sorts = '',
   calculatedSearch = '',
   calculatedSearches = '',
-  sequence = '',
-  sequences = '',
-  sequenceTranspositions = '',
   relationTree = '',
   dateFinancial = false,
   filterInactiveRecords = false,
@@ -595,7 +548,6 @@ const AgGrid: FC<IAgGridProps> = ({
   showToolbarFiltering = true,
   showToolbarStatistics = true,
   showToolbarCalculatedSearch = true,
-  showToolbarSequence = true,
   showToolbarSaveView = true,
   showToolbarSavedViews = true,
   className,
@@ -634,11 +586,6 @@ const AgGrid: FC<IAgGridProps> = ({
       'onloadcalculatedsearch',
       'onupdatecalculatedsearch',
       'ondeletecalculatedsearch',
-      'onsequence',
-      'onsavesequence',
-      'onloadsequence',
-      'onupdatesequence',
-      'ondeletesequence',
     ],
   });
   const { resolver } = useEnhancedEditor(selectResolver);
@@ -653,6 +600,12 @@ const AgGrid: FC<IAgGridProps> = ({
   columnsRef.current = columns;
   /** Skip `refreshInfiniteCache` from `useDsChangeHandler` while `getRows` runs emit + page fetch. */
   const suppressDsChangeRefreshRef = useRef(false);
+  /** While applying mono criteria, block `getRows` from emitting `onfilter` (explicit apply handles it once). */
+  const suppressFilterEmitInGetRowsRef = useRef(false);
+  /** Bumped when filter mode changes so in-flight `getRows` cannot emit a superseded filter. */
+  const filterEmitGenerationRef = useRef(0);
+  /** Last `filterDs` payload — used to detect a real transition to empty (not a stale `{}`). */
+  const lastFilterDsSnapshotRef = useRef<unknown>(undefined);
   /**
    * Last fingerprints successfully synced via `onfilter` / `onsort`. Dedupes infinite-cache blocks.
    * Filter fingerprint excludes sort so sort-only changes do not fire `onfilter`.
@@ -678,6 +631,16 @@ const AgGrid: FC<IAgGridProps> = ({
     scope: { option: 'global' },
     searchType: { option: 'replace' },
   });
+  const monoFilterApplyOptionsRef = useRef<FilterApplyOptions>({
+    scope: { option: 'global' },
+    searchType: { option: 'replace' },
+  });
+  const [monoCriteriaFilter, setMonoCriteriaFilter] = useState<MonoCriteriaFilter | null>(null);
+  const monoCriteriaFilterRef = useRef<MonoCriteriaFilter | null>(null);
+  const [monoHeaderActiveColIds, setMonoHeaderActiveColIds] = useState<string[]>([]);
+  const monoHeaderActiveColIdsRef = useRef<string[]>([]);
+  const applyingMonoFilterRef = useRef(false);
+  const [filterActiveRevision, setFilterActiveRevision] = useState(0);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -770,19 +733,6 @@ const AgGrid: FC<IAgGridProps> = ({
     () => (calculatedSearches ? window.DataSource.getSource(calculatedSearches, path) : null),
     [calculatedSearches, path],
   );
-  const sequenceDs = useMemo(
-    () => (sequence ? window.DataSource.getSource(sequence, path) : null),
-    [sequence, path],
-  );
-  const sequencesDs = useMemo(
-    () => (sequences ? window.DataSource.getSource(sequences, path) : null),
-    [sequences, path],
-  );
-  const sequenceTranspositionsDs = useMemo(
-    () =>
-      sequenceTranspositions ? window.DataSource.getSource(sequenceTranspositions, path) : null,
-    [sequenceTranspositions, path],
-  );
   const relationTreeDs = useMemo(
     () => (relationTree ? window.DataSource.getSource(relationTree, path) : null),
     [relationTree, path],
@@ -827,9 +777,7 @@ const AgGrid: FC<IAgGridProps> = ({
     [multiSelection, i18n, lang, showSelectAllHeaderCheckbox],
   );
 
-  const [copyMode, setCopyMode] = useState<CopyMode>(() =>
-    getInitialGridCopyMode(nodeID, multiSelection),
-  );
+  const [copyMode, setCopyMode] = useState<CopyMode>(() => getInitialGridCopyMode(nodeID));
   const [showCopyModeDialog, setShowCopyModeDialog] = useState(false);
 
   const applyUserCopyMode = useCallback(
@@ -850,7 +798,6 @@ const AgGrid: FC<IAgGridProps> = ({
   const [showPropertiesDialog, setShowPropertiesDialog] = useState(false);
   const [showSortingDialog, setShowSortingDialog] = useState(false);
   const [showCalculatedSearchDialog, setShowCalculatedSearchDialog] = useState(false);
-  const [showSequenceDialog, setShowSequenceDialog] = useState(false);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [liveFilterModel, setLiveFilterModel] = useState<any>({});
   const liveFilterModelRef = useRef<any>({});
@@ -875,16 +822,24 @@ const AgGrid: FC<IAgGridProps> = ({
   );
   const [selectedCalculatedSearch, setSelectedCalculatedSearch] =
     useState<SavedCalculatedSearch | null>(null);
-  const [savedSequences, setSavedSequences] = useState<SavedSequence[]>([]);
-  const [selectedSequence, setSelectedSequence] = useState<SavedSequence | null>(null);
-  const [sequenceTranspositionsValue, setSequenceTranspositionsValue] =
-    useState<SequenceTranspositionsValue | null>(null);
   const [relationTreeValue, setRelationTreeValue] = useState<RelationTreeNode[]>([]);
 
   const commitLiveFilterModel = useCallback((nextModel: any) => {
     const normalized = nextModel ?? {};
     liveFilterModelRef.current = normalized;
     setLiveFilterModel(normalized);
+  }, []);
+
+  const clearMonoCriteriaFilter = useCallback(() => {
+    monoCriteriaFilterRef.current = null;
+    setMonoCriteriaFilter(null);
+    monoHeaderActiveColIdsRef.current = [];
+    setMonoHeaderActiveColIds([]);
+    setFilterActiveRevision((v) => v + 1);
+  }, []);
+
+  const bumpFilterActiveIndicators = useCallback(() => {
+    setFilterActiveRevision((v) => v + 1);
   }, []);
 
   // calculated-search formats: list datasource -> local dropdown list
@@ -913,56 +868,6 @@ const AgGrid: FC<IAgGridProps> = ({
       calculatedSearchesDs.removeListener('changed', listener);
     };
   }, [calculatedSearchesDs]);
-
-  // sequence-programming records: list datasource -> local dropdown list
-  useEffect(() => {
-    if (!sequencesDs) {
-      setSavedSequences([]);
-      return;
-    }
-    const listener = async () => {
-      try {
-        const value = await sequencesDs.getValue();
-        const next = savedRecordsFromDatasourceValue<SavedSequence>(value)
-          .map((record) => ({
-            ...record,
-            sequence: sequencePayloadFromRecord(record),
-          }))
-          .filter((record): record is SavedSequence => Boolean(record.sequence));
-        setSavedSequences(next);
-      } catch {
-        setSavedSequences([]);
-      }
-    };
-    void listener();
-    sequencesDs.addListener('changed', listener);
-    return () => {
-      sequencesDs.removeListener('changed', listener);
-    };
-  }, [sequencesDs]);
-
-  // sequence transpositions datasource -> oneToN / nToOne choices
-  useEffect(() => {
-    if (!sequenceTranspositionsDs) {
-      setSequenceTranspositionsValue(null);
-      return;
-    }
-    const listener = async () => {
-      try {
-        const value = await sequenceTranspositionsDs.getValue();
-        setSequenceTranspositionsValue(
-          value && typeof value === 'object' ? (value as SequenceTranspositionsValue) : null,
-        );
-      } catch {
-        setSequenceTranspositionsValue(null);
-      }
-    };
-    void listener();
-    sequenceTranspositionsDs.addListener('changed', listener);
-    return () => {
-      sequenceTranspositionsDs.removeListener('changed', listener);
-    };
-  }, [sequenceTranspositionsDs]);
 
   // relation tree datasource -> available fields tree
   useEffect(() => {
@@ -1083,7 +988,7 @@ const AgGrid: FC<IAgGridProps> = ({
 
   /** After copy mode changes, restore grid cell focus so Ctrl+C works without re-clicking (dialog steals focus; row # col has no `field`). */
   useEffect(() => {
-    if (!showCopyActions || copyMode === 'none') return;
+    if (!showCopyActions) return;
     const api = gridRef.current?.api;
     if (!api) return;
     const t = window.setTimeout(() => {
@@ -1177,11 +1082,53 @@ const AgGrid: FC<IAgGridProps> = ({
     [],
   );
 
-  const isColumnFilterActive = useCallback((colId: string): boolean => {
+  const readActiveFilterColIds = useCallback((): Set<string> => {
+    const ids = new Set<string>();
+    const mono = monoCriteriaFilterRef.current;
+    if (mono?.condition) {
+      if (mono.searchType === 'add' || mono.searchType === 'remove') {
+        return ids;
+      }
+      const headerCols = monoHeaderActiveColIdsRef.current;
+      if (headerCols.length) {
+        headerCols.forEach((field) => ids.add(field));
+        return ids;
+      }
+      ids.add(mono.colId);
+      return ids;
+    }
     const model = liveFilterModelRef.current ?? {};
-    if (model != null && Object.prototype.hasOwnProperty.call(model, colId)) return true;
-    const advancedRules = getAdvancedRulesFromFilterModel(model);
-    return advancedRules.some((rule) => rule.field === colId);
+    Object.keys(stripAdvancedRulesFromFilterModel(model)).forEach((field) => {
+      if (field) ids.add(field);
+    });
+    getAdvancedRulesFromFilterModel(model).forEach((rule) => {
+      if (rule.field) ids.add(rule.field);
+    });
+    return ids;
+  }, []);
+
+  const activeFilterColIdsKey = useMemo(() => {
+    void filterActiveRevision;
+    void monoCriteriaFilter;
+    void monoHeaderActiveColIds;
+    void liveFilterModel;
+    return Array.from(readActiveFilterColIds()).sort().join('|');
+  }, [
+    filterActiveRevision,
+    monoCriteriaFilter,
+    monoHeaderActiveColIds,
+    liveFilterModel,
+    readActiveFilterColIds,
+  ]);
+
+  const isColumnFilterActive = useCallback(
+    (colId: string): boolean => readActiveFilterColIds().has(colId),
+    [readActiveFilterColIds],
+  );
+
+  const refreshColumnFilterHeaders = useCallback((api: GridApi | null | undefined) => {
+    if (!api || api.isDestroyed?.()) return;
+    api.refreshHeader();
   }, []);
 
   const colDefs: ColDef[] = useMemo(() => {
@@ -1219,6 +1166,7 @@ const AgGrid: FC<IAgGridProps> = ({
               // Ref-backed columns (`*_R_*`) use a custom AG Grid filter component; they are still filterable.
               filterable: !!getColumnFilterType(col, isBooleanColumn),
               isColumnFilterActive,
+              activeFilterColIdsKey,
               onOpenFilter: ({ colId, anchorEl }: { colId: string; anchorEl: HTMLElement }) => {
                 const api = gridRef.current?.api as any;
                 if (!api || api.isDestroyed?.()) return;
@@ -1313,6 +1261,7 @@ const AgGrid: FC<IAgGridProps> = ({
     showCopyActions,
     translation,
     isColumnFilterActive,
+    activeFilterColIdsKey,
   ]);
 
   const gridColumnDefs = useMemo(
@@ -1400,6 +1349,7 @@ const AgGrid: FC<IAgGridProps> = ({
     dateFinancialEnabledRef,
     filterInactiveRecordsEnabledRef,
     onFilterLoaded: (record) => {
+      clearMonoCriteriaFilter();
       const linkedSort = record?.linkedSortId ?? record?.linkedSort;
       if (linkedSort === null || linkedSort === undefined || String(linkedSort).trim() === '')
         return;
@@ -1469,8 +1419,7 @@ const AgGrid: FC<IAgGridProps> = ({
       setColumnVisibility((prev) =>
         appliedColumnState.map((column: any) => {
           const previous = prev.find((entry) => entry.field === column.colId);
-          const hasWidth =
-            typeof column.width === 'number' && Number.isFinite(column.width);
+          const hasWidth = typeof column.width === 'number' && Number.isFinite(column.width);
           return {
             field: column.colId,
             isHidden: Boolean(column.hide),
@@ -1491,7 +1440,9 @@ const AgGrid: FC<IAgGridProps> = ({
       const next = Boolean(enabled);
       dateFinancialEnabledRef.current = next;
       setDateFinancialFilterEnabled(next);
-      filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      if (!monoCriteriaFilterRef.current) {
+        filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      }
       gridRef.current?.api?.refreshInfiniteCache();
     },
     [filtersManager],
@@ -1502,7 +1453,9 @@ const AgGrid: FC<IAgGridProps> = ({
       const next = Boolean(enabled);
       filterInactiveRecordsEnabledRef.current = next;
       setFilterInactiveRecordsEnabled(next);
-      filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      if (!monoCriteriaFilterRef.current) {
+        filtersManager.persistCurrent(gridRef.current?.api?.getFilterModel() ?? {});
+      }
       gridRef.current?.api?.refreshInfiniteCache();
     },
     [filtersManager],
@@ -1556,6 +1509,14 @@ const AgGrid: FC<IAgGridProps> = ({
       const api = gridRef.current?.api;
       if (!api) return;
       const data = await filterDs.getValue();
+      const isClear = isFilterDsValueEmpty(data);
+      const previous = lastFilterDsSnapshotRef.current;
+      const becameClear = isClear && !isFilterDsValueEmpty(previous);
+      // Mono is ephemeral — ignore filterDs while mono is active unless host explicitly cleared.
+      if (monoCriteriaFilterRef.current && !becameClear) {
+        lastFilterDsSnapshotRef.current = cloneDeep(data);
+        return;
+      }
       applyingExternalStateRef.current = true;
       try {
         // `applyPersistedValue` calls `setFilterModel` → `filterChanged` →
@@ -1570,8 +1531,17 @@ const AgGrid: FC<IAgGridProps> = ({
             ? ((data as any).filterModel ?? {})
             : {};
         commitLiveFilterModel(nextLive);
+        clearMonoCriteriaFilter();
+        if (isClear) {
+          filterEmitGenerationRef.current += 1;
+          const { filterFingerprint } = buildServerEmitPackRef.current(api, null);
+          lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+        }
         setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
         setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
+        bumpFilterActiveIndicators();
+        refreshColumnFilterHeaders(api);
+        lastFilterDsSnapshotRef.current = cloneDeep(data);
       } finally {
         setTimeout(() => {
           applyingExternalStateRef.current = false;
@@ -1582,7 +1552,14 @@ const AgGrid: FC<IAgGridProps> = ({
     return () => {
       filterDs.removeListener('changed', listener);
     };
-  }, [filterDs, filtersManager]);
+  }, [
+    filterDs,
+    filtersManager,
+    bumpFilterActiveIndicators,
+    clearMonoCriteriaFilter,
+    commitLiveFilterModel,
+    refreshColumnFilterHeaders,
+  ]);
 
   useEffect(() => {
     if (!sortDs) return;
@@ -1809,10 +1786,6 @@ const AgGrid: FC<IAgGridProps> = ({
       if (!isCopyShortcut(event)) return false;
       if (!showCopyActions) return false;
 
-      if (copyMode === 'none') {
-        return false;
-      }
-
       if (copyMode === 'rows') {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -1933,13 +1906,15 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const onFilterChanged = useCallback(
     (event: FilterChangedEvent) => {
+      if (monoCriteriaFilterRef.current || applyingMonoFilterRef.current) return;
       const fromGrid = event.api.getFilterModel() ?? {};
       const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
       const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
       commitLiveFilterModel(next);
       filtersManager.persistCurrent(fromGrid);
+      bumpFilterActiveIndicators();
     },
-    [commitLiveFilterModel, filtersManager],
+    [bumpFilterActiveIndicators, commitLiveFilterModel, filtersManager],
   );
 
   const applyFilterRuntimeOptions = useCallback((options?: FilterApplyOptions) => {
@@ -1960,20 +1935,22 @@ const AgGrid: FC<IAgGridProps> = ({
     return changed;
   }, []);
 
-  const applyHeaderFilterModel = useCallback(
-    (nextModel: any, options?: FilterApplyOptions) => {
+  const applyDialogFilterModel = useCallback(
+    (next: any, options?: FilterApplyOptions) => {
       const api = gridRef.current?.api;
       if (!api || api.isDestroyed()) return;
+      filterEmitGenerationRef.current += 1;
+      clearMonoCriteriaFilter();
       const runtimeOptionsChanged = applyFilterRuntimeOptions(options);
       const prevLiveModel = liveFilterModelRef.current ?? {};
-      const nextAg = stripAdvancedRulesFromFilterModel(nextModel ?? {});
+      const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
       const currentAg = stripAdvancedRulesFromFilterModel(api.getFilterModel() ?? {});
       const agChanged = !isEqual(currentAg, nextAg);
       if (agChanged) {
         api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
         persistFilterDsNow(nextAg);
       }
-      const normalizedNextLive = nextModel ?? {};
+      const normalizedNextLive = next ?? {};
       const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
       commitLiveFilterModel(normalizedNextLive);
       if (!agChanged && liveChanged) {
@@ -1983,8 +1960,18 @@ const AgGrid: FC<IAgGridProps> = ({
       } else if (!agChanged && !liveChanged && runtimeOptionsChanged) {
         api.refreshInfiniteCache();
       }
+      refreshColumnFilterHeaders(api);
+      bumpFilterActiveIndicators();
     },
-    [applyFilterRuntimeOptions, commitLiveFilterModel, filtersManager, persistFilterDsNow],
+    [
+      applyFilterRuntimeOptions,
+      bumpFilterActiveIndicators,
+      clearMonoCriteriaFilter,
+      commitLiveFilterModel,
+      filtersManager,
+      persistFilterDsNow,
+      refreshColumnFilterHeaders,
+    ],
   );
 
   const getState = useCallback(
@@ -2032,6 +2019,7 @@ const AgGrid: FC<IAgGridProps> = ({
               ? ((value as any).filterModel ?? {})
               : {};
           commitLiveFilterModel(nextLive);
+          clearMonoCriteriaFilter();
           setDateFinancialFilterEnabled(Boolean(dateFinancialEnabledRef.current));
           setFilterInactiveRecordsEnabled(Boolean(filterInactiveRecordsEnabledRef.current));
         } catch {
@@ -2365,12 +2353,16 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const buildServerEmitPack = useCallback(
     (api: GridApi, rowParams: IGetRowsParams | null) => {
+      const mono = monoCriteriaFilterRef.current;
       const apiFm = api.getFilterModel() ?? {};
       const rowFm = rowParams?.filterModel ?? {};
-      const effectiveFilterModel = withAdvancedRulesOnFilterModel(
-        rowParams != null && !isEqual(rowFm, {}) ? rowFm : apiFm,
-        getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
-      );
+      const effectiveFilterModel = mono
+        ? buildMonoFilterModel(mono)
+        : withAdvancedRulesOnFilterModel(
+            rowParams != null && !isEqual(rowFm, {}) ? rowFm : apiFm,
+            getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
+          );
+      const activeApplyOptions = mono ? monoFilterApplyOptionsRef.current : filterApplyOptionsRef.current;
       const cols = columnsRef.current;
 
       const rawSort = buildSortModelFromColumnState(
@@ -2388,13 +2380,13 @@ const AgGrid: FC<IAgGridProps> = ({
 
       const filterFingerprint = {
         filterModel: normalizeAgGridFilterModel(effectiveFilterModel) ?? {},
-        advancedRules: getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
+        advancedRules: mono ? [] : getAdvancedRulesFromFilterModel(liveFilterModelRef.current),
         dateFinancial: Boolean(dateFinancial && dateFinancialEnabledRef.current),
         filterInactiveRecords: Boolean(
           filterInactiveRecords && filterInactiveRecordsEnabledRef.current,
         ),
-        scope: filterApplyOptionsRef.current.scope,
-        searchType: filterApplyOptionsRef.current.searchType,
+        scope: activeApplyOptions.scope,
+        searchType: activeApplyOptions.searchType,
         filterQuery,
       };
 
@@ -2427,6 +2419,132 @@ const AgGrid: FC<IAgGridProps> = ({
 
   const buildServerEmitPackRef = useRef(buildServerEmitPack);
   buildServerEmitPackRef.current = buildServerEmitPack;
+
+  const emitServerFilterOnApply = useCallback(async (api: GridApi) => {
+    if (!allowServerFilterSortEmitRef.current) return;
+    const { filterFingerprint, onFilterEmitPayload } = buildServerEmitPackRef.current(api, null);
+    const strippedFm = stripAdvancedRulesFromFilterModel(filterFingerprint.filterModel ?? {});
+    const normalizedCols = normalizeAgGridFilterModel(strippedFm) ?? {};
+    const hasColumnFilters =
+      normalizedCols != null &&
+      typeof normalizedCols === 'object' &&
+      !Array.isArray(normalizedCols) &&
+      Object.keys(normalizedCols).length > 0;
+    const adv = filterFingerprint.advancedRules;
+    const hasAdvancedRules = Array.isArray(adv) && adv.length > 0;
+    if (hasColumnFilters || hasAdvancedRules) {
+      await emitRef.current('onfilter', onFilterEmitPayload);
+    }
+    lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+  }, []);
+
+  const applyMonoCriteriaFilter = useCallback(
+    (
+      colId: string,
+      condition: any | null,
+      options?: {
+        scope: { option: FilterSearchScopeKind };
+        searchType: { option: FilterSearchTypeKind };
+      },
+    ) => {
+      const api = gridRef.current?.api;
+      if (!api || api.isDestroyed()) return;
+
+      const scope: FilterSearchScopeKind =
+        options?.scope?.option === 'selection' ? 'selection' : 'global';
+      const searchType: FilterSearchTypeKind =
+        options?.searchType?.option === 'add' || options?.searchType?.option === 'remove'
+          ? options.searchType.option
+          : 'replace';
+
+      const finishMonoApply = async () => {
+        filterEmitGenerationRef.current += 1;
+        suppressFilterEmitInGetRowsRef.current = true;
+        try {
+          if (!condition) {
+            clearMonoCriteriaFilter();
+            commitLiveFilterModel({});
+            setSelectedFilterName('');
+            monoFilterApplyOptionsRef.current = {
+              scope: { option: scope },
+              searchType: { option: 'replace' },
+            };
+            applyingMonoFilterRef.current = true;
+            try {
+              api.setFilterModel(null);
+              persistFilterDsNow({});
+            } finally {
+              applyingMonoFilterRef.current = false;
+            }
+            bumpFilterActiveIndicators();
+            refreshColumnFilterHeaders(api);
+            api.refreshInfiniteCache();
+            return;
+          }
+
+          const nextMono: MonoCriteriaFilter = { colId, condition, scope, searchType };
+          const previousActiveColIds = Array.from(readActiveFilterColIds());
+          const headerColIds = resolveMonoHeaderColIds(
+            colId,
+            scope,
+            searchType,
+            previousActiveColIds,
+          );
+
+          // Phase 1 — tear down multi-criteria in memory/grid (mono is not persisted to filterDs).
+          monoCriteriaFilterRef.current = null;
+          commitLiveFilterModel({});
+          setSelectedFilterName('');
+          applyingMonoFilterRef.current = true;
+          try {
+            api.setFilterModel(null);
+          } finally {
+            applyingMonoFilterRef.current = false;
+          }
+
+          // Phase 2 — apply mono criteria and emit once (emit payload is always the new condition only).
+          monoCriteriaFilterRef.current = nextMono;
+          setMonoCriteriaFilter(nextMono);
+          monoHeaderActiveColIdsRef.current = headerColIds;
+          setMonoHeaderActiveColIds(headerColIds);
+          monoFilterApplyOptionsRef.current = {
+            scope: { option: scope },
+            searchType: { option: searchType },
+          };
+
+          applyingMonoFilterRef.current = true;
+          try {
+            if (searchType === 'add' || searchType === 'remove') {
+              api.setFilterModel(null);
+            } else {
+              api.setFilterModel(buildMonoFilterModel(nextMono));
+            }
+          } finally {
+            applyingMonoFilterRef.current = false;
+          }
+
+          filterEmitGenerationRef.current += 1;
+          bumpFilterActiveIndicators();
+          await emitServerFilterOnApply(api);
+          refreshColumnFilterHeaders(api);
+          api.refreshInfiniteCache();
+          requestAnimationFrame(() => refreshColumnFilterHeaders(api));
+        } finally {
+          suppressFilterEmitInGetRowsRef.current = false;
+        }
+      };
+
+      void finishMonoApply();
+    },
+    [
+      bumpFilterActiveIndicators,
+      clearMonoCriteriaFilter,
+      commitLiveFilterModel,
+      emitServerFilterOnApply,
+      readActiveFilterColIds,
+      refreshColumnFilterHeaders,
+    ],
+  );
 
   const getSelectedRow = useCallback(async (api: GridApi) => {
     // select current element
@@ -2485,13 +2603,18 @@ const AgGrid: FC<IAgGridProps> = ({
     setInitialColumnState(params.api.getColumnState());
     params.api.setGridOption('datasource', {
       getRows: async (rowParams: IGetRowsParams) => {
-        const { filterFingerprint, sortFingerprint, onFilterEmitPayload, onSortEmitPayload } =
-          buildServerEmitPackRef.current(params.api, rowParams);
-
         suppressDsChangeRefreshRef.current = true;
         try {
-          if (allowServerFilterSortEmitRef.current) {
-            if (!isEqual(filterFingerprint, lastEmittedOnFilterPayloadRef.current)) {
+          if (allowServerFilterSortEmitRef.current && !suppressFilterEmitInGetRowsRef.current) {
+            const emitGeneration = filterEmitGenerationRef.current;
+            const { filterFingerprint, onFilterEmitPayload } = buildServerEmitPackRef.current(
+              params.api,
+              rowParams,
+            );
+            if (
+              emitGeneration === filterEmitGenerationRef.current &&
+              !isEqual(filterFingerprint, lastEmittedOnFilterPayloadRef.current)
+            ) {
               const strippedFm = stripAdvancedRulesFromFilterModel(
                 filterFingerprint.filterModel ?? {},
               );
@@ -2503,14 +2626,28 @@ const AgGrid: FC<IAgGridProps> = ({
                 Object.keys(normalizedCols).length > 0;
               const adv = filterFingerprint.advancedRules;
               const hasAdvancedRules = Array.isArray(adv) && adv.length > 0;
-              if (hasColumnFilters || hasAdvancedRules) {
+              if (
+                (hasColumnFilters || hasAdvancedRules) &&
+                emitGeneration === filterEmitGenerationRef.current
+              ) {
                 await emitRef.current('onfilter', onFilterEmitPayload);
               }
-              lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+              if (emitGeneration === filterEmitGenerationRef.current) {
+                lastEmittedOnFilterPayloadRef.current = cloneDeep(filterFingerprint);
+              }
             }
-            if (!isEqual(sortFingerprint, lastEmittedOnSortPayloadRef.current)) {
+            const { sortFingerprint, onSortEmitPayload } = buildServerEmitPackRef.current(
+              params.api,
+              rowParams,
+            );
+            if (
+              emitGeneration === filterEmitGenerationRef.current &&
+              !isEqual(sortFingerprint, lastEmittedOnSortPayloadRef.current)
+            ) {
               await emitRef.current('onsort', onSortEmitPayload);
-              lastEmittedOnSortPayloadRef.current = cloneDeep(sortFingerprint);
+              if (emitGeneration === filterEmitGenerationRef.current) {
+                lastEmittedOnSortPayloadRef.current = cloneDeep(sortFingerprint);
+              }
             }
           }
 
@@ -2608,10 +2745,14 @@ const AgGrid: FC<IAgGridProps> = ({
   };
 
   const openAdvancedFilterDialog = () => {
-    const fromGrid = gridRef.current?.api?.getFilterModel() ?? {};
-    const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
-    const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
-    commitLiveFilterModel(next);
+    if (monoCriteriaFilterRef.current) {
+      commitLiveFilterModel({});
+    } else {
+      const fromGrid = gridRef.current?.api?.getFilterModel() ?? {};
+      const prevRules = getAdvancedRulesFromFilterModel(liveFilterModelRef.current);
+      const next = withAdvancedRulesOnFilterModel(fromGrid, prevRules);
+      commitLiveFilterModel(next);
+    }
     setShowFilterDialog(true);
   };
 
@@ -2643,7 +2784,6 @@ const AgGrid: FC<IAgGridProps> = ({
     showToolbarSorting ||
     showToolbarStatistics ||
     showToolbarCalculatedSearch ||
-    showToolbarSequence ||
     showToolbarSaveView ||
     showToolbarSavedViews;
 
@@ -2668,8 +2808,8 @@ const AgGrid: FC<IAgGridProps> = ({
         onClick={clearCopyCellsSelection}
       >
         {!isCellSelectionAvailable && manualSelectedCells.length > 0
-          ? `${translation('Clear')} (${manualSelectedCells.length})`
-          : translation('Clear')}
+          ? `${translation('Cancel')} (${manualSelectedCells.length})`
+          : translation('Cancel')}
       </button>
     );
   };
@@ -2760,27 +2900,6 @@ const AgGrid: FC<IAgGridProps> = ({
                                 aria-label={translation('Calculated search')}
                               >
                                 <FaSearchengin size={14} />
-                              </button>
-                            </IconPopover>
-                          </div>
-                        )}
-                        {showToolbarSequence && (
-                          <div className="sequence-section">
-                            <IconPopover label={translation('Programmation séquence')}>
-                              <button
-                                type="button"
-                                onClick={() => setShowSequenceDialog(true)}
-                                className="header-button-reload-view inline-flex items-center justify-center rounded-lg border"
-                                style={{
-                                  width: '31px',
-                                  height: '31px',
-                                  borderRadius: '8px',
-                                  borderColor: '#0000001A',
-                                  color: '#44444C',
-                                }}
-                                aria-label={translation('Programmation séquence')}
-                              >
-                                <FaListCheck size={14} />
                               </button>
                             </IconPopover>
                           </div>
@@ -2879,83 +2998,55 @@ const AgGrid: FC<IAgGridProps> = ({
                                 menuLabel={translation('Open quick shortcuts')}
                                 buttonText={translation('Shortcuts')}
                                 sections={[
-                                {
-                                  id: 'views',
-                                  label: translation('Views'),
-                                  emptyLabel: translation('No saved views'),
-                                  items: (showToolbarView ? viewsManager.savedViews : []).map(
-                                    (view) => {
-                                      const key = savedRecordKey(view);
-                                      return { id: key, label: view.name };
-                                    },
-                                  ),
-                                  onSelect: (itemId) => handleLoadViewSelection(itemId),
-                                },
-                                {
-                                  id: 'filters',
-                                  label: translation('Filters'),
-                                  emptyLabel: translation('No saved filters'),
-                                  items: (showToolbarFiltering
-                                    ? filtersManager.savedFilters
-                                    : []
-                                  ).map((filterRecord) => {
-                                    const key = savedRecordKey(filterRecord);
-                                    return { id: key, label: filterRecord.name };
-                                  }),
-                                  onSelect: (itemId) => {
-                                    setSelectedFilterName(itemId);
-                                    filtersManager.loadFilter(itemId);
-                                    setDateFinancialFilterEnabled(
-                                      Boolean(dateFinancialEnabledRef.current),
-                                    );
-                                    setFilterInactiveRecordsEnabled(
-                                      Boolean(filterInactiveRecordsEnabledRef.current),
-                                    );
+                                  {
+                                    id: 'views',
+                                    label: translation('Views'),
+                                    emptyLabel: translation('No saved views'),
+                                    items: (showToolbarView ? viewsManager.savedViews : []).map(
+                                      (view) => {
+                                        const key = savedRecordKey(view);
+                                        return { id: key, label: view.name };
+                                      },
+                                    ),
+                                    onSelect: (itemId) => handleLoadViewSelection(itemId),
                                   },
-                                },
-                                {
-                                  id: 'sorts',
-                                  label: translation('Sorts'),
-                                  emptyLabel: translation('No saved sorts'),
-                                  items: (showToolbarSorting ? sortsManager.savedSorts : []).map(
-                                    (sort) => {
-                                      const key = savedRecordKey(sort);
-                                      return { id: key, label: sort.name };
+                                  {
+                                    id: 'filters',
+                                    label: translation('Filters'),
+                                    emptyLabel: translation('No saved filters'),
+                                    items: (showToolbarFiltering
+                                      ? filtersManager.savedFilters
+                                      : []
+                                    ).map((filterRecord) => {
+                                      const key = savedRecordKey(filterRecord);
+                                      return { id: key, label: filterRecord.name };
+                                    }),
+                                    onSelect: (itemId) => {
+                                      setSelectedFilterName(itemId);
+                                      filtersManager.loadFilter(itemId);
+                                      setDateFinancialFilterEnabled(
+                                        Boolean(dateFinancialEnabledRef.current),
+                                      );
+                                      setFilterInactiveRecordsEnabled(
+                                        Boolean(filterInactiveRecordsEnabledRef.current),
+                                      );
                                     },
-                                  ),
-                                  onSelect: (itemId) => {
-                                    setSelectedSortName(itemId);
-                                    sortsManager.loadSort(itemId);
                                   },
-                                },
-                                {
-                                  id: 'sequences',
-                                  label: translation('Sequence programming'),
-                                  emptyLabel: translation('No saved sequence programming'),
-                                  items: (showToolbarSequence ? savedSequences : []).map(
-                                    (sequenceRecord) => {
-                                      const key = savedRecordKey(sequenceRecord);
-                                      return { id: key, label: sequenceRecord.name };
+                                  {
+                                    id: 'sorts',
+                                    label: translation('Sorts'),
+                                    emptyLabel: translation('No saved sorts'),
+                                    items: (showToolbarSorting ? sortsManager.savedSorts : []).map(
+                                      (sort) => {
+                                        const key = savedRecordKey(sort);
+                                        return { id: key, label: sort.name };
+                                      },
+                                    ),
+                                    onSelect: (itemId) => {
+                                      setSelectedSortName(itemId);
+                                      sortsManager.loadSort(itemId);
                                     },
-                                  ),
-                                  onSelect: (itemId) => {
-                                    const record = findSavedRecord(
-                                      savedSequences,
-                                      itemId,
-                                    ) as SavedSequence | null;
-                                    setSelectedSequence(record);
-                                    if (record?.sequence && sequenceDs) {
-                                      sequenceDs.setValue(null, record.sequence);
-                                    }
-                                    emit('onloadsequence', {
-                                      key: itemId,
-                                      sequence: record?.sequence,
-                                    });
-                                    if (record?.sequence) {
-                                      emit('onsequence', record.sequence);
-                                    }
                                   },
-                                },
                                 ]}
                               />
                             )}
@@ -3176,6 +3267,7 @@ const AgGrid: FC<IAgGridProps> = ({
                             api.setFilterModel(null);
                           }
                           commitLiveFilterModel({});
+                          clearMonoCriteriaFilter();
                           persistFilterDsNow({});
                           setSelectedFilterName('');
                         }
@@ -3185,138 +3277,6 @@ const AgGrid: FC<IAgGridProps> = ({
                           sort: sortForPayload,
                         });
                         setShowCalculatedSearchDialog(false);
-                      }}
-                    />
-                  )}
-                  {showToolbarSequence && (
-                    <SequenceProgrammingDialog
-                      open={showSequenceDialog}
-                      onClose={() => setShowSequenceDialog(false)}
-                      translation={translation}
-                      savedViews={viewsManager.savedViews}
-                      savedFilters={filtersManager.savedFilters}
-                      savedSorts={sortsManager.savedSorts}
-                      savedSequences={savedSequences}
-                      transpositions={sequenceTranspositionsValue}
-                      selectedSequence={selectedSequence}
-                      setSelectedSequence={setSelectedSequence}
-                      onSave={(name, sequencePayload) => {
-                        const nextRecord: SavedSequence = { name, sequence: sequencePayload };
-                        setSavedSequences((prev) => {
-                          if (prev.some((record) => sequenceRecordMatches(record, name))) {
-                            return prev;
-                          }
-                          return [...prev, nextRecord];
-                        });
-                        setSelectedSequence(nextRecord);
-                        if (sequencesDs) {
-                          void (async () => {
-                            try {
-                              const prev = await sequencesDs.getValue();
-                              const arr = Array.isArray(prev) ? prev : [];
-                              const exists = arr.some((record: any) =>
-                                sequenceRecordMatches(record, name),
-                              );
-                              if (!exists) {
-                                sequencesDs.setValue(null, [...arr, nextRecord]);
-                              }
-                            } catch {
-                              sequencesDs.setValue(null, [nextRecord]);
-                            }
-                          })();
-                        }
-                        if (sequenceDs) {
-                          sequenceDs.setValue(null, sequencePayload);
-                        }
-                        emit('onsavesequence', { name, sequence: sequencePayload });
-                      }}
-                      onLoad={(key) => {
-                        const record = findSavedRecord(savedSequences, key) as SavedSequence | null;
-                        if (record?.sequence && sequenceDs) {
-                          sequenceDs.setValue(null, record.sequence);
-                        }
-                        emit('onloadsequence', { key, sequence: record?.sequence });
-                      }}
-                      onUpdate={(key, sequencePayload) => {
-                        const existing = findSavedRecord(savedSequences, key) as SavedSequence | null;
-                        const nextRecord: SavedSequence = {
-                          ...(existing ?? { name: String(key) }),
-                          sequence: sequencePayload,
-                        };
-                        setSavedSequences((prev) => {
-                          const exists = prev.some((record) => sequenceRecordMatches(record, key));
-                          if (!exists) return [...prev, nextRecord];
-                          return prev.map((record) =>
-                            sequenceRecordMatches(record, key)
-                              ? { ...record, sequence: sequencePayload }
-                              : record,
-                          );
-                        });
-                        setSelectedSequence(nextRecord);
-                        if (sequencesDs) {
-                          void (async () => {
-                            try {
-                              const prev = await sequencesDs.getValue();
-                              const arr = Array.isArray(prev) ? prev : [];
-                              const exists = arr.some((record: any) =>
-                                sequenceRecordMatches(record, key),
-                              );
-                              const next = exists
-                                ? arr.map((record: any) =>
-                                    sequenceRecordMatches(record, key)
-                                      ? { ...record, sequence: sequencePayload }
-                                      : record,
-                                  )
-                                : [...arr, nextRecord];
-                              sequencesDs.setValue(null, next);
-                            } catch {
-                              sequencesDs.setValue(null, [nextRecord]);
-                            }
-                          })();
-                        }
-                        if (sequenceDs) {
-                          sequenceDs.setValue(null, sequencePayload);
-                        }
-                        emit('onupdatesequence', {
-                          selectedSequence: key,
-                          sequencePayload,
-                          sequence: nextRecord,
-                        });
-                      }}
-                      onDelete={(record) => {
-                        const key = savedRecordKey(record);
-                        if (!key) return;
-                        setSavedSequences((prev) =>
-                          prev.filter((item) => !sequenceRecordMatches(item, key)),
-                        );
-                        setSelectedSequence((prev) =>
-                          prev && sequenceRecordMatches(prev, key) ? null : prev,
-                        );
-                        if (sequencesDs) {
-                          void (async () => {
-                            try {
-                              const prev = await sequencesDs.getValue();
-                              const arr = Array.isArray(prev) ? prev : [];
-                              sequencesDs.setValue(
-                                null,
-                                arr.filter((item: any) => !sequenceRecordMatches(item, key)),
-                              );
-                            } catch {
-                              sequencesDs.setValue(null, []);
-                            }
-                          })();
-                        }
-                        emit('ondeletesequence', {
-                          selectedSequence: key,
-                          sequence: record,
-                        });
-                      }}
-                      onApply={(sequencePayload) => {
-                        if (sequenceDs) {
-                          sequenceDs.setValue(null, sequencePayload);
-                        }
-                        emit('onsequence', sequencePayload);
-                        setShowSequenceDialog(false);
                       }}
                     />
                   )}
@@ -3357,31 +3317,7 @@ const AgGrid: FC<IAgGridProps> = ({
                       initialScopeOption="global"
                       initialSearchTypeOption="replace"
                       filterModel={liveFilterModel}
-                      setFilterModel={(next, options) => {
-                        const api = gridRef.current?.api;
-                        if (!api || api.isDestroyed()) return;
-                        const runtimeOptionsChanged = applyFilterRuntimeOptions(options);
-                        const prevLiveModel = liveFilterModelRef.current ?? {};
-                        const nextAg = stripAdvancedRulesFromFilterModel(next ?? {});
-                        const currentAg = stripAdvancedRulesFromFilterModel(
-                          api.getFilterModel() ?? {},
-                        );
-                        const agChanged = !isEqual(currentAg, nextAg);
-                        if (agChanged) {
-                          api.setFilterModel(Object.keys(nextAg).length ? nextAg : null);
-                          persistFilterDsNow(nextAg);
-                        }
-                        const normalizedNextLive = next ?? {};
-                        const liveChanged = !isEqual(prevLiveModel, normalizedNextLive);
-                        commitLiveFilterModel(normalizedNextLive);
-                        if (!agChanged && liveChanged) {
-                          persistFilterDsNow(nextAg);
-                          filtersManager.persistCurrent(nextAg);
-                          api.refreshInfiniteCache();
-                        } else if (!agChanged && !liveChanged && runtimeOptionsChanged) {
-                          api.refreshInfiniteCache();
-                        }
-                      }}
+                      setFilterModel={applyDialogFilterModel}
                       savedFilters={filtersManager.savedFilters}
                       savedSorts={sortsManager.savedSorts}
                       saveFilter={filtersManager.saveFilter}
@@ -3441,9 +3377,8 @@ const AgGrid: FC<IAgGridProps> = ({
                   <div className="space-y-2">
                     {(
                       [
-                        { value: 'cells' as CopyMode, title: translation('Cells') },
                         { value: 'rows' as CopyMode, title: translation('Rows') },
-                        { value: 'none' as CopyMode, title: translation('Nothing') },
+                        { value: 'cells' as CopyMode, title: translation('Cells') },
                       ] as const
                     ).map((opt) => {
                       const selected = copyMode === opt.value;
@@ -3485,7 +3420,7 @@ const AgGrid: FC<IAgGridProps> = ({
           {showRecordCount && (
             <div className="records-count text-sm  flex justify-end gap-2 mt-2 mb-2 pr-4">
               <span style={{ color: '#0A0A0A', fontSize: '12px', fontWeight: 400 }}>
-                {displayedRecordCount}
+                {displayedRecordCount.toLocaleString(i18n.userLang.primary)}
               </span>{' '}
               <span style={{ color: '#717182', fontSize: '12px', fontWeight: 400 }}>
                 {translation('records')}
@@ -3500,10 +3435,10 @@ const AgGrid: FC<IAgGridProps> = ({
               column={headerPopupColumn}
               i18n={i18n}
               lang={lang}
-              currentModel={liveFilterModel}
               currentEntry={
-                headerFilterPopupState
-                  ? (liveFilterModel?.[headerFilterPopupState.colId] ?? null)
+                headerFilterPopupState &&
+                monoCriteriaFilter?.colId === headerFilterPopupState.colId
+                  ? monoCriteriaFilter.condition
                   : null
               }
               showDateFinancialToggle={Boolean(dateFinancial)}
@@ -3512,12 +3447,22 @@ const AgGrid: FC<IAgGridProps> = ({
               showFilterInactiveRecordsToggle={Boolean(filterInactiveRecords)}
               filterInactiveRecordsEnabled={filterInactiveRecordsEnabled}
               onFilterInactiveRecordsEnabledChange={applyFilterInactiveRecordsToggle}
-              initialScopeOption="global"
-              initialSearchTypeOption="replace"
+              initialScopeOption={
+                headerFilterPopupState &&
+                monoCriteriaFilter?.colId === headerFilterPopupState.colId
+                  ? monoCriteriaFilter.scope
+                  : 'global'
+              }
+              initialSearchTypeOption={
+                headerFilterPopupState &&
+                monoCriteriaFilter?.colId === headerFilterPopupState.colId
+                  ? monoCriteriaFilter.searchType
+                  : 'replace'
+              }
               translation={translation}
               dateSaisieLibreTranslation={dateSaisieLibreTranslation}
-              onApply={(nextModel, options) => {
-                applyHeaderFilterModel(nextModel ?? {}, options);
+              onApply={(colId, condition, options) => {
+                applyMonoCriteriaFilter(colId, condition, options);
               }}
               onClose={() => setHeaderFilterPopupState(null)}
             />
