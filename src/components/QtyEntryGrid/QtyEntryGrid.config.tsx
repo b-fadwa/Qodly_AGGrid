@@ -99,6 +99,14 @@ export default {
           declarations.push({ path: currentElement });
         }
 
+        (columns || []).forEach((col: any) => {
+          const optionsSource =
+            typeof col.optionsSource === 'string' ? col.optionsSource.trim() : '';
+          if (optionsSource) {
+            declarations.push({ path: optionsSource, iterable: true });
+          }
+        });
+
         if (columns) {
           const { id: ds, namespace } = splitDatasourceID(datasource?.trim()) || {};
           const { id: currentDs, namespace: currentDsNamespace } =
@@ -204,6 +212,8 @@ export default {
     rowBorder: true,
     columnBorder: false,
     enableCopySelectedValue: false,
+    rowCssField: '',
+    showRowNumbers: false,
   },
 } as T4DComponentConfig<IQtyEntryGridProps>;
 
@@ -211,6 +221,7 @@ export interface IQtyEntryGridProps extends webforms.ComponentProps {
   datasource?: string;
   currentElement?: string;
   columns: IQtyEntryColumn[];
+  rowCssField: string;
   spacing: string;
   accentColor: string;
   backgroundColor: string;
@@ -226,6 +237,7 @@ export interface IQtyEntryGridProps extends webforms.ComponentProps {
   /** Enables Ctrl/Cmd+C row copy. Kept as "Value" for backward compatibility with existing pages. */
   enableCopySelectedValue?: boolean;
   enableCopySelectedRow?: boolean;
+  showRowNumbers?: boolean;
 }
 
 export interface IQtyEntryColumn {
@@ -240,4 +252,8 @@ export interface IQtyEntryColumn {
   format?: string;
   id: string;
   dataType: string;
+  /** When false, clicking a cell in this (non-editable) column no longer shows the quick-value option list. */
+  enableCellOptionMenu?: boolean;
+  /** Datasource (scalar collection) supplying the option list dynamically — for domains you don't control. */
+  optionsSource?: string;
 }

@@ -31,15 +31,25 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
 
   const colDefs: ColDef[] = useMemo(
     () =>
-      columns.map((col) => ({
-        field: col.title,
-        hide: !!col.hidden,
-        editable: col.editable !== false,
-        headerClass: col.editable === true ? 'editable-cell' : '',
-        sortable: !!col.sorting,
-        width: col.width,
-        flex: col.flex,
-      })),
+      columns.map((col) => {
+        const hasOptionMenu = col.enableCellOptionMenu === true;
+
+        return {
+          field: col.title,
+          hide: !!col.hidden,
+          editable: col.editable !== false,
+          headerClass: [
+            col.editable === true ? 'editable-cell' : '',
+            hasOptionMenu ? 'option-list-cell' : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+          cellClass: hasOptionMenu ? 'option-list-cell' : undefined,
+          sortable: !!col.sorting,
+          width: col.width,
+          flex: col.flex,
+        };
+      }),
     [columns],
   );
 
