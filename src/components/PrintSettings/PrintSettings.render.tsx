@@ -32,7 +32,10 @@ const PrintSettingsRender: FC<IPrintSettingsProps> = ({
   state: stateBinding = '',
   format = '',
   formats = '',
-  accentColor,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   disabled = false,
   style,
   className,
@@ -258,7 +261,10 @@ const PrintSettingsRender: FC<IPrintSettingsProps> = ({
         columns={columns}
         value={value}
         formats={savedFormats}
-        accentColor={accentColor}
+        colorPrimary={colorPrimary}
+        colorDanger={colorDanger}
+        colorAccent={colorAccent}
+        colorDangerWash={colorDangerWash}
         disabled={disabled}
         i18n={i18n}
         lang={lang}

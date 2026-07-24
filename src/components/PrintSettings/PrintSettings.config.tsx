@@ -18,7 +18,10 @@ export interface IPrintSettingsProps extends webforms.ComponentProps {
   format?: string;
   /** Scalar array containing named print format records. */
   formats?: string;
-  accentColor?: string;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
 }
 
 export default {
@@ -86,7 +89,10 @@ export default {
     state: '',
     format: '',
     formats: '',
-    accentColor: '#6B8AD4',
+    colorPrimary: '#2B5797',
+    colorDanger: '#EC7B80',
+    colorAccent: '#6B8AD4',
+    colorDangerWash: 'rgba(236, 123, 128, 0.2)',
     style: { width: '100%', height: '620px' },
   },
 } as T4DComponentConfig<IPrintSettingsProps>;
