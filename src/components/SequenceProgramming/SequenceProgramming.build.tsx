@@ -46,7 +46,10 @@ const MOCK_PREDEFINED_DOCUMENTS: SequenceTranspositionOption[] = [
 ];
 
 const SequenceProgrammingBuild: FC<ISequenceProgrammingProps> = ({
-  accentColor,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   disabled,
   style,
   className,
@@ -92,7 +95,10 @@ const SequenceProgrammingBuild: FC<ISequenceProgrammingProps> = ({
         predefinedDocuments={MOCK_PREDEFINED_DOCUMENTS}
         chainedSequences={MOCK_CHAINED_SEQUENCES}
         value={value}
-        accentColor={accentColor}
+        colorPrimary={colorPrimary}
+        colorDanger={colorDanger}
+        colorAccent={colorAccent}
+        colorDangerWash={colorDangerWash}
         disabled={disabled}
         i18n={i18n}
         lang={lang}
