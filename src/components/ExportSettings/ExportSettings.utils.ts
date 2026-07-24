@@ -11,6 +11,16 @@ export { extractPrintColumns as extractExportColumns };
 
 const EXPORT_EXTENSIONS: ExportExtension[] = ['CSV', 'TXT', 'XML'];
 
+// color-mix() resolves any valid CSS color — hex, rgb(a), named, or a var() reference —
+// natively in the browser, so it works even when a color prop is itself a theme variable.
+export function washColor(color: string, percent: number): string {
+  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
+
+export function darkenColor(color: string, percent: number): string {
+  return `color-mix(in srgb, ${color} ${100 - percent}%, black)`;
+}
+
 type ExportSettingsI18n = { keys?: Record<string, Record<string, unknown>> } | null | undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
