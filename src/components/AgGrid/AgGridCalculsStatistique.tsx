@@ -15,6 +15,7 @@ import { FaCopy } from 'react-icons/fa6';
 import { IColumn } from './AgGrid.config';
 import { buildFilterQueries } from './AgGrid.filtering';
 import { writeTextToClipboard } from './AgGrid.clipboard';
+import { washColor } from './AgGrid.colors';
 import {
   StatisticCalculations,
   type AgGridStatisticsColumn,
@@ -110,6 +111,7 @@ async function waitForCalculStatistiqueScalar(
 
 export type AgGridCalculsStatistiqueProps = {
   translation: (key: string) => string;
+  colorPrimary?: string;
   showToolbarStatistics: boolean;
   statisticsColumns: AgGridStatisticsColumn[];
   columnsRef: MutableRefObject<IColumn[]>;
@@ -181,6 +183,7 @@ const IconPopover: FC<{ label: string; children: any }> = ({ label, children }) 
 
 export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
   translation,
+  colorPrimary = '#2B5797',
   showToolbarStatistics,
   statisticsColumns,
   columnsRef,
@@ -463,6 +466,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                                 checked={selectedColumnIds.includes(column.colId)}
                                 onChange={() => toggleColumn(column.colId)}
                                 className="shrink-0 rounded border-slate-300"
+                                style={{ accentColor: colorPrimary }}
                               />
                               <span className="min-w-0 truncate" title={column.label}>
                                 {column.label}
@@ -504,10 +508,10 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                             className="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm"
                             style={{
                               borderColor: selectedOperations.includes(op)
-                                ? '#2B5797'
+                                ? colorPrimary
                                 : '#0000001A',
                               backgroundColor: selectedOperations.includes(op)
-                                ? 'rgba(43, 87, 151, 0.08)'
+                                ? washColor(colorPrimary, 8)
                                 : '#fff',
                               color: '#44444C',
                             }}
@@ -517,6 +521,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                               checked={selectedOperations.includes(op)}
                               onChange={() => toggleOperation(op)}
                               className="rounded border-slate-300"
+                              style={{ accentColor: colorPrimary }}
                             />
                             {operationLabel(op)}
                           </label>
@@ -663,7 +668,7 @@ export const AgGridCalculsStatistique: FC<AgGridCalculsStatistiqueProps> = ({
                       onClick={() => void runCalculsStatistique()}
                       disabled={!canCalculate}
                       style={{
-                        background: '#2B5797',
+                        background: colorPrimary,
                         height: '31px',
                         fontSize: '12px',
                       }}

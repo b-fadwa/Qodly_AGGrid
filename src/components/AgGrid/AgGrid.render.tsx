@@ -24,6 +24,7 @@ import {
 } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { IAgGridProps, IColumn } from './AgGrid.config';
+import { resolveAgGridColors, washColor } from './AgGrid.colors';
 import {
   buildFocusedCellClipboardText,
   buildManualSelectedCellsClipboardText,
@@ -555,7 +556,15 @@ const AgGrid: FC<IAgGridProps> = ({
   showCopyActions,
   showRecordCount = true,
   showRowNumbers = false,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
 }) => {
+  const colors = useMemo(
+    () => resolveAgGridColors(colorPrimary, colorDanger, colorAccent, colorDangerWash),
+    [colorPrimary, colorDanger, colorAccent, colorDangerWash],
+  );
   const { connect, emit } = useRenderer({
     autoBindEvents: !disabled,
     omittedEvents: [
@@ -761,6 +770,7 @@ const AgGrid: FC<IAgGridProps> = ({
             headerComponentParams: {
               ariaLabelSelectAll: translation('Select all rows'),
               showSelectAllCheckbox: showSelectAllHeaderCheckbox,
+              colorPrimary: colors.primary,
             },
             suppressHeaderMenuButton: true,
             width: 48,
@@ -774,7 +784,7 @@ const AgGrid: FC<IAgGridProps> = ({
             resizable: false,
           }
         : undefined,
-    [multiSelection, i18n, lang, showSelectAllHeaderCheckbox],
+    [multiSelection, i18n, lang, showSelectAllHeaderCheckbox, colors.primary],
   );
 
   const [copyMode, setCopyMode] = useState<CopyMode>(() => getInitialGridCopyMode(nodeID));
@@ -1167,6 +1177,7 @@ const AgGrid: FC<IAgGridProps> = ({
               filterable: !!getColumnFilterType(col, isBooleanColumn),
               isColumnFilterActive,
               activeFilterColIdsKey,
+              colorAccent: colors.accent,
               onOpenFilter: ({ colId, anchorEl }: { colId: string; anchorEl: HTMLElement }) => {
                 const api = gridRef.current?.api as any;
                 if (!api || api.isDestroyed?.()) return;
@@ -1204,9 +1215,9 @@ const AgGrid: FC<IAgGridProps> = ({
               const key = `${rowIndex}::${params.column.getColId()}`;
               if (!manualSelectedCellKeySet.has(key)) return resetStyle;
               return {
-                border: '2px dashed #1d4ed8',
+                border: `2px dashed ${colors.primary}`,
                 boxSizing: 'border-box',
-                backgroundColor: 'rgba(29, 78, 216, 0.08)',
+                backgroundColor: washColor(colors.primary, 8),
               };
             },
             lockPosition: col.locked,
@@ -1262,6 +1273,7 @@ const AgGrid: FC<IAgGridProps> = ({
     translation,
     isColumnFilterActive,
     activeFilterColIdsKey,
+    colors,
   ]);
 
   const gridColumnDefs = useMemo(
@@ -2871,6 +2883,7 @@ const AgGrid: FC<IAgGridProps> = ({
                         </div>
                         <AgGridCalculsStatistique
                           translation={translation}
+                          colorPrimary={colors.primary}
                           showToolbarStatistics={showToolbarStatistics}
                           statisticsColumns={statisticsColumns}
                           columnsRef={columnsRef}
@@ -3077,6 +3090,10 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showPropertiesDialog}
                       onClose={() => setShowPropertiesDialog(false)}
                       translation={translation}
+                      colorPrimary={colors.primary}
+                      colorDanger={colors.danger}
+                      colorAccent={colors.accent}
+                      colorDangerWash={colors.dangerWash}
                       showToolbarSaveView={showToolbarSaveView}
                       showToolbarSavedViews={showToolbarSavedViews}
                       viewName={viewName}
@@ -3104,6 +3121,10 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showCalculatedSearchDialog}
                       onClose={() => setShowCalculatedSearchDialog(false)}
                       translation={translation}
+                      colorPrimary={colors.primary}
+                      colorDanger={colors.danger}
+                      colorAccent={colors.accent}
+                      colorDangerWash={colors.dangerWash}
                       dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                       relationTree={relationTreeValue}
                       savedSorts={sortsManager.savedSorts}
@@ -3285,6 +3306,9 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showSortingDialog}
                       onClose={() => setShowSortingDialog(false)}
                       translation={translation}
+                      colorPrimary={colors.primary}
+                      colorDanger={colors.danger}
+                      colorDangerWash={colors.dangerWash}
                       columns={columns}
                       sortableColumns={sortableColumns}
                       initialSortModel={sortDialogInitialModel}
@@ -3304,6 +3328,10 @@ const AgGrid: FC<IAgGridProps> = ({
                       open={showFilterDialog}
                       onClose={() => setShowFilterDialog(false)}
                       translation={translation}
+                      colorPrimary={colors.primary}
+                      colorDanger={colors.danger}
+                      colorAccent={colors.accent}
+                      colorDangerWash={colors.dangerWash}
                       dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                       i18n={i18n}
                       lang={lang}
@@ -3388,7 +3416,7 @@ const AgGrid: FC<IAgGridProps> = ({
                           type="button"
                           className="flex w-full cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors"
                           style={{
-                            borderColor: selected ? '#2B5797' : '#E5E7EB',
+                            borderColor: selected ? colors.primary : '#E5E7EB',
                             backgroundColor: selected ? '#F3F3F5' : '#FFFFFF',
                           }}
                           aria-pressed={selected}
@@ -3397,8 +3425,8 @@ const AgGrid: FC<IAgGridProps> = ({
                           <span
                             className="inline-block h-4 w-4 shrink-0 rounded-full border-2"
                             style={{
-                              borderColor: selected ? '#2B5797' : '#CBD5E1',
-                              backgroundColor: selected ? '#2B5797' : 'transparent',
+                              borderColor: selected ? colors.primary : '#CBD5E1',
+                              backgroundColor: selected ? colors.primary : 'transparent',
                               boxShadow: selected ? 'inset 0 0 0 3px #F3F3F5' : undefined,
                             }}
                             aria-hidden
@@ -3435,6 +3463,7 @@ const AgGrid: FC<IAgGridProps> = ({
               column={headerPopupColumn}
               i18n={i18n}
               lang={lang}
+              colorPrimary={colors.primary}
               currentEntry={
                 headerFilterPopupState &&
                 monoCriteriaFilter?.colId === headerFilterPopupState.colId

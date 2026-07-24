@@ -22,6 +22,7 @@ import {
   readDateSaisieLibreConditionValueTo,
   type DateEntryMode,
 } from './DateSaisieLibre';
+import { washColor } from '../AgGrid.colors';
 
 /**
  * Delay applied to value-input changes before pushing them up to AG Grid.
@@ -75,6 +76,10 @@ export type QueryBuilderHandle = {
 
 interface QueryBuilderProps {
   translation: Translation;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
   dateSaisieLibreTranslation?: (key: string) => string;
   columns: IColumn[];
   i18n?: any;
@@ -315,16 +320,16 @@ const buildCondition = (rule: FilterRule, filterType: string, column?: IColumn):
 
 /* ------------------------------- UI ------------------------------- */
 
-const primaryButtonStyle: React.CSSProperties = {
-  background: '#2B5797',
+const getPrimaryButtonStyle = (color: string): React.CSSProperties => ({
+  background: color,
   color: '#FFFFFF',
   borderRadius: '6px',
   fontSize: '12px',
   fontWeight: 500,
   height: '31px',
   padding: '0 12px',
-  border: '1px solid #2B5797',
-};
+  border: `1px solid ${color}`,
+});
 
 const neutralButtonStyle: React.CSSProperties = {
   background: '#FFFFFF',
@@ -381,6 +386,10 @@ const sameModel = (a: any, b: any): boolean => {
 export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(function QueryBuilder(
   {
     translation,
+    colorPrimary = '#2B5797',
+    colorDanger = '#EC7B80',
+    colorAccent = '#6B8AD4',
+    colorDangerWash,
     dateSaisieLibreTranslation,
     columns,
     i18n,
@@ -391,6 +400,8 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(fu
   },
   ref,
 ) {
+  const primaryButtonStyle = useMemo(() => getPrimaryButtonStyle(colorPrimary), [colorPrimary]);
+  const dangerWash = colorDangerWash || washColor(colorDanger, 20);
   const visibleColumns = useMemo(() => filterableColumns(columns), [columns]);
 
   // Own the rule list locally so "+ Rule" can add an empty row that isn't
@@ -581,12 +592,17 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(fu
                 {index > 0 && (
                   <CombinatorBadge
                     translation={translation}
+                    colorPrimary={colorPrimary}
                     value={rule.combinator ?? 'AND'}
                     onChange={(next) => updateRule(index, { combinator: next })}
                   />
                 )}
                 <RuleRow
                   translation={translation}
+                  colorPrimary={colorPrimary}
+                  colorDanger={colorDanger}
+                  colorAccent={colorAccent}
+                  dangerWash={dangerWash}
                   dateSaisieLibreTranslation={dateSaisieLibreTranslation}
                   columns={visibleColumns}
                   i18n={i18n}
@@ -621,11 +637,12 @@ export const QueryBuilder = forwardRef<QueryBuilderHandle, QueryBuilderProps>(fu
 
 interface CombinatorBadgeProps {
   translation: Translation;
+  colorPrimary: string;
   value: ColumnCombinator;
   onChange: (next: ColumnCombinator) => void;
 }
 
-const CombinatorBadge: FC<CombinatorBadgeProps> = ({ translation, value, onChange }) => {
+const CombinatorBadge: FC<CombinatorBadgeProps> = ({ translation, colorPrimary, value, onChange }) => {
   return (
     <div className="flex items-center gap-2 pl-3">
       {(['AND', 'OR', 'EXCEPT'] as ColumnCombinator[]).map((option) => (
@@ -633,7 +650,7 @@ const CombinatorBadge: FC<CombinatorBadgeProps> = ({ translation, value, onChang
           key={option}
           type="button"
           onClick={() => onChange(option)}
-          style={value === option ? primaryButtonStyle : neutralButtonStyle}
+          style={value === option ? getPrimaryButtonStyle(colorPrimary) : neutralButtonStyle}
         >
           {translation(option)}
         </button>
@@ -644,6 +661,10 @@ const CombinatorBadge: FC<CombinatorBadgeProps> = ({ translation, value, onChang
 
 interface RuleRowProps {
   translation: Translation;
+  colorPrimary: string;
+  colorDanger: string;
+  colorAccent: string;
+  dangerWash: string;
   dateSaisieLibreTranslation?: (key: string) => string;
   columns: IColumn[];
   i18n?: any;
@@ -660,6 +681,10 @@ interface RuleRowProps {
 
 const RuleRow: FC<RuleRowProps> = ({
   translation,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  dangerWash,
   dateSaisieLibreTranslation,
   columns,
   i18n,
@@ -802,7 +827,9 @@ const RuleRow: FC<RuleRowProps> = ({
                     })
                   }
                   style={
-                    (rule.entryMode ?? 'free') === mode ? primaryButtonStyle : neutralButtonStyle
+                    (rule.entryMode ?? 'free') === mode
+                      ? getPrimaryButtonStyle(colorPrimary)
+                      : neutralButtonStyle
                   }
                 >
                   {translation(mode === 'free' ? 'Free entry' : 'From list')}
@@ -822,9 +849,9 @@ const RuleRow: FC<RuleRowProps> = ({
                     onValueChange({ value: joinCollectionTokens(next) });
                   }}
                   style={{
-                    border: '1px solid rgba(99, 143, 207, 0.4)',
-                    background: 'rgba(99, 143, 207, 0.15)',
-                    color: '#2B5797',
+                    border: `1px solid ${washColor(colorAccent, 40)}`,
+                    background: washColor(colorAccent, 15),
+                    color: colorPrimary,
                     borderRadius: '999px',
                     padding: '2px 8px',
                     fontSize: '12px',
@@ -950,9 +977,9 @@ const RuleRow: FC<RuleRowProps> = ({
           width: '31px',
           height: '31px',
           borderRadius: '8px',
-          border: '1px solid #EC7B80',
-          background: '#EC7B8033',
-          color: '#EC7B80',
+          border: `1px solid ${colorDanger}`,
+          background: dangerWash,
+          color: colorDanger,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',

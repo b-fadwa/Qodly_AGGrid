@@ -22,6 +22,7 @@ import {
   CalculatedSearchDialog,
   type CalculatedSearchEmitPayload,
 } from './dialogs/CalculatedSearchDialog';
+import { resolveAgGridColors } from './AgGrid.colors';
 
 type SavedCalculatedSearch = {
   name: string;
@@ -132,6 +133,10 @@ const AgGrid: FC<IAgGridProps> = ({
   calculatedSearch = '',
   calculatedSearches = '',
   relationTree = '',
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   style,
   className,
   classNames = [],
@@ -139,6 +144,10 @@ const AgGrid: FC<IAgGridProps> = ({
   void calculatedSearch;
   void calculatedSearches;
   void relationTree;
+  const colors = useMemo(
+    () => resolveAgGridColors(colorPrimary, colorDanger, colorAccent, colorDangerWash),
+    [colorPrimary, colorDanger, colorAccent, colorDangerWash],
+  );
   const {
     connectors: { connect },
   } = useEnhancedNode();
@@ -496,9 +505,9 @@ const AgGrid: FC<IAgGridProps> = ({
                                   width: '31px',
                                   height: '31px',
                                   borderRadius: '6px',
-                                  color: '#EC7B80',
-                                  borderColor: '#EC7B80',
-                                  backgroundColor: '#EC7B8033',
+                                  color: colors.danger,
+                                  borderColor: colors.danger,
+                                  backgroundColor: colors.dangerWash,
                                 }}
                               >
                                 <GoTrash size={14} />
@@ -564,7 +573,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 style={{
                                   height: '12px',
                                   width: '12px',
-                                  backgroundColor: '#2b5797',
+                                  backgroundColor: colors.primary,
                                   borderRadius: '4px',
                                 }}
                               />
@@ -587,8 +596,8 @@ const AgGrid: FC<IAgGridProps> = ({
                               type="button"
                               className="rounded-md border px-3 py-2 flex items-center disabled:cursor-not-allowed disabled:opacity-50"
                               style={{
-                                borderColor: '#6B8AD4',
-                                color: '#6B8AD4',
+                                borderColor: colors.accent,
+                                color: colors.accent,
                                 height: '31px',
                                 fontSize: '12px',
                                 fontWeight: 500,
@@ -631,7 +640,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                     style={{
                                       height: '12px',
                                       width: '12px',
-                                      backgroundColor: '#2b5797',
+                                      backgroundColor: colors.primary,
                                       borderRadius: '4px',
                                     }}
                                     checked={isVisible}
@@ -710,6 +719,10 @@ const AgGrid: FC<IAgGridProps> = ({
                     open={showCalculatedSearchDialog}
                     onClose={() => setShowCalculatedSearchDialog(false)}
                     translation={translation}
+                    colorPrimary={colors.primary}
+                    colorDanger={colors.danger}
+                    colorAccent={colors.accent}
+                    colorDangerWash={colors.dangerWash}
                     relationTree={[]}
                     savedSorts={[]}
                     selectedSortKey=""
@@ -878,7 +891,7 @@ const AgGrid: FC<IAgGridProps> = ({
                                 type="button"
                                 className="rounded-md border  px-3 py-2 text-sm text-white flex text-center items-center justify-center"
                                 style={{
-                                  background: '#2B5797',
+                                  background: colors.primary,
                                   height: '31px',
                                   fontSize: '12px',
                                 }}

@@ -6,6 +6,7 @@ import type { ViewsManager } from '../state/views';
 import type { SavedFilter } from '../state/types';
 import type { Translation } from '../state/sorts';
 import { savedRecordKey } from '../state/gridState';
+import { washColor } from '../AgGrid.colors';
 
 interface ViewDialogColumn {
   field: string;
@@ -42,6 +43,10 @@ interface ViewDialogProps {
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
   showToolbarSaveView: boolean;
   showToolbarSavedViews: boolean;
   viewName: string;
@@ -68,6 +73,10 @@ export const ViewDialog: FC<ViewDialogProps> = ({
   open,
   onClose,
   translation,
+  colorPrimary = '#2B5797',
+  colorDanger = '#EC7B80',
+  colorAccent = '#6B8AD4',
+  colorDangerWash,
   showToolbarSaveView,
   showToolbarSavedViews,
   viewName,
@@ -89,6 +98,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
   viewLinkedFilterId,
   setViewLinkedFilterId,
 }) => {
+  const dangerWash = colorDangerWash || washColor(colorDanger, 20);
   const [draftColumns, setDraftColumns] = useState<ViewDialogDraftColumn[]>([]);
   const [draftSelectedView, setDraftSelectedView] = useState('');
   const [draggingField, setDraggingField] = useState<string | null>(null);
@@ -358,7 +368,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                   style={{
                     height: '12px',
                     width: '12px',
-                    backgroundColor: '#2b5797',
+                    accentColor: colorPrimary,
                     borderRadius: '4px',
                   }}
                 />
@@ -385,8 +395,8 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                 type="button"
                 className="flex items-center justify-center rounded-md border px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
                 style={{
-                  borderColor: '#6B8AD4',
-                  color: '#6B8AD4',
+                  borderColor: colorAccent,
+                  color: colorAccent,
                   height: '31px',
                   fontSize: '12px',
                   fontWeight: 500,
@@ -451,7 +461,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                           className={`absolute left-0 right-0 block ${
                             dragOverPlacement === 'after' ? 'bottom-0' : 'top-0'
                           }`}
-                          style={{ height: '2px', backgroundColor: '#2b5797' }}
+                          style={{ height: '2px', backgroundColor: colorPrimary }}
                         />
                       ) : null}
                       <span
@@ -482,7 +492,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                           style={{
                             height: '12px',
                             width: '12px',
-                            backgroundColor: '#2b5797',
+                            accentColor: colorPrimary,
                             borderRadius: '4px',
                           }}
                         />
@@ -555,7 +565,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                     <span
                       aria-hidden="true"
                       className="absolute left-0 right-0 top-0 block"
-                      style={{ height: '2px', backgroundColor: '#2b5797' }}
+                      style={{ height: '2px', backgroundColor: colorPrimary }}
                     />
                   ) : null}
                 </div>
@@ -690,9 +700,9 @@ export const ViewDialog: FC<ViewDialogProps> = ({
                       width: '31px',
                       height: '31px',
                       borderRadius: '8px',
-                      color: '#EC7B80',
-                      borderColor: '#EC7B80',
-                      backgroundColor: '#EC7B8033',
+                      color: colorDanger,
+                      borderColor: colorDanger,
+                      backgroundColor: dangerWash,
                     }}
                     onClick={() => {
                       if (!draftSelectedView) return;
@@ -743,7 +753,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
             type="button"
             className="flex items-center justify-center rounded-md border px-3 py-2 text-center text-sm text-white"
             style={{
-              background: '#2B5797',
+              background: colorPrimary,
               height: '31px',
               fontSize: '12px',
             }}

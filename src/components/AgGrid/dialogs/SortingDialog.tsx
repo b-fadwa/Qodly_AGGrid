@@ -7,11 +7,15 @@ import type { SavedSort } from '../state/types';
 import { findSavedRecord, normalizeSortModel, savedRecordKey } from '../state/gridState';
 import type { SortableColumnDescriptor, Translation } from '../state/sorts';
 import { buildInitialSortDialogModel } from '../state/sorts';
+import { washColor } from '../AgGrid.colors';
 
 interface SortingDialogProps {
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorDangerWash?: string;
   columns: IColumn[];
   sortableColumns: SortableColumnDescriptor[];
   /** Current grid sort model when the dialog opened. */
@@ -43,6 +47,9 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   open,
   onClose,
   translation,
+  colorPrimary = '#2B5797',
+  colorDanger = '#EC7B80',
+  colorDangerWash,
   columns,
   sortableColumns,
   initialSortModel,
@@ -54,6 +61,7 @@ export const SortingDialog: FC<SortingDialogProps> = ({
   selectedSort,
   setSelectedSort,
 }) => {
+  const dangerWash = colorDangerWash || washColor(colorDanger, 20);
   const [sortDialogModel, setSortDialogModel] = useState<SortModelItem[]>([]);
   const [sortName, setSortName] = useState('');
   const [isDefault, setIsDefault] = useState(false);
@@ -232,6 +240,8 @@ export const SortingDialog: FC<SortingDialogProps> = ({
 
               <SavedSortsSection
                 translation={translation}
+                colorDanger={colorDanger}
+                dangerWash={dangerWash}
                 savedSorts={savedSorts}
                 sortName={sortName}
                 setSortName={setSortName}
@@ -288,7 +298,7 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                   className="rounded-md border px-3 py-2 text-sm text-white flex text-center items-center justify-center"
                   onClick={handleApply}
                   style={{
-                    background: '#2B5797',
+                    background: colorPrimary,
                     height: '31px',
                     fontSize: '12px',
                   }}
@@ -306,6 +316,8 @@ export const SortingDialog: FC<SortingDialogProps> = ({
 
 interface SavedSortsSectionProps {
   translation: Translation;
+  colorDanger: string;
+  dangerWash: string;
   savedSorts: SavedSort[];
   sortName: string;
   setSortName: (value: string) => void;
@@ -324,6 +336,8 @@ interface SavedSortsSectionProps {
 
 const SavedSortsSection: FC<SavedSortsSectionProps> = ({
   translation,
+  colorDanger,
+  dangerWash,
   savedSorts,
   sortName,
   setSortName,
@@ -438,9 +452,9 @@ const SavedSortsSection: FC<SavedSortsSectionProps> = ({
             width: '31px',
             height: '31px',
             borderRadius: '8px',
-            color: '#EC7B80',
-            borderColor: '#EC7B80',
-            backgroundColor: '#EC7B8033',
+            color: colorDanger,
+            borderColor: colorDanger,
+            backgroundColor: dangerWash,
           }}
           onClick={onDelete}
           title={translation('Delete')}

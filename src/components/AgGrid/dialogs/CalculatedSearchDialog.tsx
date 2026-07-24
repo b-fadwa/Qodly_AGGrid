@@ -14,6 +14,7 @@ import {
 
 import type { SavedSort } from '../state/types';
 import { getColumnAgGridFilterType, getColumnFilterOperators } from '../AgGrid.filtering';
+import { washColor } from '../AgGrid.colors';
 import {
   DateSaisieLibreSelect,
   dateSaisieLibreDisplayLabel,
@@ -147,8 +148,14 @@ function sortSelectValueForPayload(
   return CALCULATED_SEARCH_SORT_NONE;
 }
 
-const ACCENT = '#2B5797';
-const ACCENT_SELECTED_BG = '#2B579733'; // 20% opacity
+const styleControl14 = (color: string): CSSProperties => ({
+  width: '14px',
+  height: '14px',
+  flexShrink: 0,
+  accentColor: color,
+});
+
+const styleCheckbox14 = styleControl14;
 
 const styleSectionHeading: CSSProperties = {
   fontSize: '12px',
@@ -174,20 +181,6 @@ const styleBody11: CSSProperties = {
 const styleBody11Tight: CSSProperties = {
   fontSize: '11px',
   lineHeight: 1.25,
-};
-
-const styleControl14: CSSProperties = {
-  width: '14px',
-  height: '14px',
-  flexShrink: 0,
-  accentColor: ACCENT,
-};
-
-const styleCheckbox14: CSSProperties = {
-  width: '14px',
-  height: '14px',
-  flexShrink: 0,
-  accentColor: ACCENT,
 };
 
 function AttributeTypeIcon({ dataType }: { dataType?: string }) {
@@ -228,6 +221,8 @@ function TreeNodeRow({
   toggleKey,
   selectedKey,
   onSelect,
+  primaryColor,
+  primaryWash,
 }: {
   node: RelationTreeNode;
   depth: number;
@@ -235,6 +230,8 @@ function TreeNodeRow({
   toggleKey: (key: string) => void;
   selectedKey: string | null;
   onSelect: (node: RelationTreeNode) => void;
+  primaryColor: string;
+  primaryWash: string;
 }) {
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const expanded = expandedKeys.has(node.key);
@@ -245,7 +242,7 @@ function TreeNodeRow({
         className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-slate-50"
         style={{
           paddingLeft: `${6 + depth * 12}px`,
-          background: isSelected ? ACCENT_SELECTED_BG : undefined,
+          background: isSelected ? primaryWash : undefined,
         }}
       >
         <button
@@ -255,7 +252,7 @@ function TreeNodeRow({
             width: '12px',
             height: '18px',
             cursor: hasChildren ? 'pointer' : 'default',
-            color: isSelected ? ACCENT : '#64748B',
+            color: isSelected ? primaryColor : '#64748B',
           }}
           aria-label={expanded ? 'Collapse' : 'Expand'}
           aria-expanded={hasChildren ? expanded : undefined}
@@ -278,7 +275,7 @@ function TreeNodeRow({
           <span
             className="truncate"
             style={{
-              color: isSelected ? ACCENT : undefined,
+              color: isSelected ? primaryColor : undefined,
               fontSize: '12px',
               fontWeight: isSelected ? 600 : undefined,
             }}
@@ -297,6 +294,8 @@ function TreeNodeRow({
               toggleKey={toggleKey}
               selectedKey={selectedKey}
               onSelect={onSelect}
+              primaryColor={primaryColor}
+              primaryWash={primaryWash}
             />
           ))
         : null}
@@ -475,6 +474,10 @@ export const CalculatedSearchDialog: FC<{
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
   dateSaisieLibreTranslation?: (key: string) => string;
   relationTree: RelationTreeNode[];
   savedSorts: SavedSort[];
@@ -497,6 +500,9 @@ export const CalculatedSearchDialog: FC<{
   open,
   onClose,
   translation,
+  colorPrimary = '#2B5797',
+  colorDanger = '#EC7B80',
+  colorDangerWash,
   dateSaisieLibreTranslation,
   relationTree,
   savedSorts,
@@ -511,6 +517,8 @@ export const CalculatedSearchDialog: FC<{
   onDelete,
   onApply,
 }) => {
+  const primaryWash = washColor(colorPrimary, 20);
+  const dangerWash = colorDangerWash || washColor(colorDanger, 20);
   const [applyBusy, setApplyBusy] = useState(false);
   const [scopeOption, setScopeOption] = useState<CalculatedSearchScopeKind>('global');
   const [searchTypeOption, setSearchTypeOption] = useState<CalculatedSearchTypeKind>('replace');
@@ -1197,6 +1205,8 @@ export const CalculatedSearchDialog: FC<{
                               setTargetValue2('');
                             }
                           }}
+                          primaryColor={colorPrimary}
+                          primaryWash={primaryWash}
                         />
                       ))}
                     </div>
@@ -1219,7 +1229,7 @@ export const CalculatedSearchDialog: FC<{
                             name="calcsearch-toone-state"
                             checked={toOneHasOne}
                             onChange={() => setToOneHasOne(true)}
-                            style={styleControl14}
+                            style={styleControl14(colorPrimary)}
                           />
                           <span style={styleBody11}>{translation('Have one')}</span>
                         </label>
@@ -1229,7 +1239,7 @@ export const CalculatedSearchDialog: FC<{
                             name="calcsearch-toone-state"
                             checked={!toOneHasOne}
                             onChange={() => setToOneHasOne(false)}
-                            style={styleControl14}
+                            style={styleControl14(colorPrimary)}
                           />
                           <span style={styleBody11}>{translation('Dont have one')}</span>
                         </label>
@@ -1401,7 +1411,7 @@ export const CalculatedSearchDialog: FC<{
                                       setTargetValue('');
                                       setTargetValue2('');
                                     }}
-                                    style={styleControl14}
+                                    style={styleControl14(colorPrimary)}
                                   />
                                   <span>
                                     {translation(mode === 'free' ? 'Free entry' : 'From List')}
@@ -1612,7 +1622,7 @@ export const CalculatedSearchDialog: FC<{
                         >
                           <div
                             className="min-w-0 flex-1 px-1.5 py-1 font-semibold"
-                            style={{ color: idx === 0 ? '#94A3B8' : ACCENT }}
+                            style={{ color: idx === 0 ? '#94A3B8' : colorPrimary }}
                             role="cell"
                           >
                             <span className="inline-flex items-center gap-1">
@@ -1682,7 +1692,7 @@ export const CalculatedSearchDialog: FC<{
                       name="calcsearch-logic"
                       checked={logicForNewCondition === 'and'}
                       onChange={() => setLogicForNewCondition('and')}
-                      style={{ accentColor: ACCENT }}
+                      style={{ accentColor: colorPrimary }}
                     />
                     {translation('And')}
                   </label>
@@ -1692,7 +1702,7 @@ export const CalculatedSearchDialog: FC<{
                       name="calcsearch-logic"
                       checked={logicForNewCondition === 'or'}
                       onChange={() => setLogicForNewCondition('or')}
-                      style={{ accentColor: ACCENT }}
+                      style={{ accentColor: colorPrimary }}
                     />
                     {translation('Or')}
                   </label>
@@ -1702,7 +1712,7 @@ export const CalculatedSearchDialog: FC<{
                       name="calcsearch-logic"
                       checked={logicForNewCondition === 'except'}
                       onChange={() => setLogicForNewCondition('except')}
-                      style={{ accentColor: ACCENT }}
+                      style={{ accentColor: colorPrimary }}
                     />
                     {translation('Except')}
                   </label>
@@ -1779,7 +1789,7 @@ export const CalculatedSearchDialog: FC<{
                         checked={filterOnFiscalYears}
                         onChange={(e) => setFilterOnFiscalYears(e.target.checked)}
                         className="shrink-0 rounded border-slate-300"
-                        style={styleCheckbox14}
+                        style={styleCheckbox14(colorPrimary)}
                       />
                       {translation('Filter on fiscal years')}
                     </label>
@@ -1795,7 +1805,7 @@ export const CalculatedSearchDialog: FC<{
                         name="calcsearch-scope"
                         checked={scopeOption === 'global'}
                         onChange={() => setScopeOption('global')}
-                        style={styleControl14}
+                        style={styleControl14(colorPrimary)}
                       />
                       {translation('Global search')}
                     </label>
@@ -1805,7 +1815,7 @@ export const CalculatedSearchDialog: FC<{
                         name="calcsearch-scope"
                         checked={scopeOption === 'selection'}
                         onChange={() => setScopeOption('selection')}
-                        style={styleControl14}
+                        style={styleControl14(colorPrimary)}
                       />
                       {translation('Search in selection')}
                     </label>
@@ -1821,7 +1831,7 @@ export const CalculatedSearchDialog: FC<{
                         name="calcsearch-type"
                         checked={searchTypeOption === 'replace'}
                         onChange={() => setSearchTypeOption('replace')}
-                        style={styleControl14}
+                        style={styleControl14(colorPrimary)}
                       />
                       {translation('Replace selection')}
                     </label>
@@ -1831,7 +1841,7 @@ export const CalculatedSearchDialog: FC<{
                         name="calcsearch-type"
                         checked={searchTypeOption === 'add'}
                         onChange={() => setSearchTypeOption('add')}
-                        style={styleControl14}
+                        style={styleControl14(colorPrimary)}
                       />
                       {translation('Add to selection')}
                     </label>
@@ -1841,7 +1851,7 @@ export const CalculatedSearchDialog: FC<{
                         name="calcsearch-type"
                         checked={searchTypeOption === 'remove'}
                         onChange={() => setSearchTypeOption('remove')}
-                        style={styleControl14}
+                        style={styleControl14(colorPrimary)}
                       />
                       {translation('Remove from selection')}
                     </label>
@@ -1914,9 +1924,9 @@ export const CalculatedSearchDialog: FC<{
                     width: '26px',
                     height: '26px',
                     borderRadius: '8px',
-                    color: '#EC7B80',
-                    borderColor: '#EC7B80',
-                    backgroundColor: '#EC7B8033',
+                    color: colorDanger,
+                    borderColor: colorDanger,
+                    backgroundColor: dangerWash,
                   }}
                   onClick={() => {
                     if (!selectedCalculatedSearch) return;
@@ -1969,7 +1979,7 @@ export const CalculatedSearchDialog: FC<{
             onClick={() => void handleApply()}
             disabled={applyBusy || expression.conditions.length === 0}
             style={{
-              background: '#2B5797',
+              background: colorPrimary,
               height: '31px',
               fontSize: '12px',
             }}

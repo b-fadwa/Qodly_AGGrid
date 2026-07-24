@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 import { FaFilter } from 'react-icons/fa';
+import { washColor } from './AgGrid.colors';
 
 export type AgGridFilterHeaderParams = CustomHeaderProps & {
   filterable?: boolean;
@@ -18,6 +19,7 @@ export type AgGridFilterHeaderParams = CustomHeaderProps & {
   isColumnFilterActive?: (colId: string) => boolean;
   /** Changes when mono / multi-criteria active columns change — forces header icon refresh. */
   activeFilterColIdsKey?: string;
+  colorAccent?: string;
 };
 
 const HeaderPopover: React.FC<{ label: string; children: any }> = ({ label, children }) => {
@@ -90,6 +92,7 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
       filterable = false,
       translation,
       onOpenFilter,
+      colorAccent = '#6B8AD4',
     } = props;
     const filterBtnRef = useRef<HTMLButtonElement>(null);
     const [sortState, setSortState] = useState<string | null>(() => column.getSort() ?? null);
@@ -189,12 +192,12 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
             aria-label={translation('Filter')}
             style={{
               borderColor: filterActive
-                ? 'rgba(99, 143, 207, 0.4)'
+                ? washColor(colorAccent, 40)
                 : isFilterHovered
                   ? '#D1D5DB'
                   : 'transparent',
               backgroundColor: filterActive
-                ? 'rgba(99, 143, 207, 0.15)'
+                ? washColor(colorAccent, 15)
                 : isFilterHovered
                   ? '#F9FAFB'
                   : 'transparent',
@@ -210,7 +213,7 @@ const AgGridFilterHeader = forwardRef<{ refresh: () => boolean }, AgGridFilterHe
               onOpenFilter({ colId: column.getColId(), anchorEl: filterBtnRef.current });
             }}
           >
-            <FaFilter size={11} color={filterActive ? '#638FCF' : undefined} />
+            <FaFilter size={11} color={filterActive ? colorAccent : undefined} />
           </button>
         ) : null}
       </div>

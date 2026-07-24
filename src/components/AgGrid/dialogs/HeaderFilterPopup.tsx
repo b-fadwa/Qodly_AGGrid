@@ -54,6 +54,7 @@ interface HeaderFilterPopupProps {
   currentEntry: any;
   i18n?: any;
   lang?: string;
+  colorPrimary?: string;
   showDateFinancialToggle: boolean;
   dateFinancialFilterEnabled: boolean;
   onDateFinancialFilterEnabledChange: (enabled: boolean) => void;
@@ -207,6 +208,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
   currentEntry,
   i18n,
   lang,
+  colorPrimary = '#2B5797',
   showDateFinancialToggle,
   dateFinancialFilterEnabled,
   onDateFinancialFilterEnabledChange,
@@ -364,7 +366,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                       name={`header-filter-date-entry-mode-${colId}`}
                       checked={(row.entryMode ?? 'free') === mode}
                       onChange={() => setRow({ ...row, entryMode: mode, value: '', value2: '' })}
-                      style={{ width: '14px', height: '14px', accentColor: '#2B5797' }}
+                      style={{ width: '14px', height: '14px', accentColor: colorPrimary }}
                     />
                     <span>{translation(mode === 'free' ? 'Saisie libre' : 'From list')}</span>
                   </label>
@@ -385,7 +387,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                     style={{
                       border: '1px solid rgba(99, 143, 207, 0.4)',
                       background: 'rgba(99, 143, 207, 0.15)',
-                      color: '#2B5797',
+                      color: colorPrimary,
                       borderRadius: '999px',
                       padding: '2px 8px',
                       fontSize: '12px',
@@ -537,7 +539,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   name="header-filter-scope"
                   checked={scopeOption === value}
                   onChange={() => setScopeOption(value as FilterSearchScopeKind)}
-                  style={{ width: '14px', height: '14px', flexShrink: 0, accentColor: '#2B5797' }}
+                  style={{ width: '14px', height: '14px', flexShrink: 0, accentColor: colorPrimary }}
                 />
                 <span>{translation(label)}</span>
               </label>
@@ -570,7 +572,7 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   name="header-filter-search-type"
                   checked={searchTypeOption === value}
                   onChange={() => setSearchTypeOption(value as FilterSearchTypeKind)}
-                  style={{ width: '14px', height: '14px', flexShrink: 0, accentColor: '#2B5797' }}
+                  style={{ width: '14px', height: '14px', flexShrink: 0, accentColor: colorPrimary }}
                 />
                 <span>{translation(label)}</span>
               </label>
@@ -583,9 +585,9 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
           type="button"
           style={{
             ...styles.control,
-            background: '#2B5797',
+            background: colorPrimary,
             color: '#FFFFFF',
-            borderColor: '#2B5797',
+            borderColor: colorPrimary,
             width: 'auto',
           }}
           onClick={() => {
