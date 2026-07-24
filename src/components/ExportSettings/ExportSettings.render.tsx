@@ -32,7 +32,10 @@ const ExportSettingsRender: FC<IExportSettingsProps> = ({
   state: stateBinding = '',
   export: exportBinding = '',
   exports: exportsBinding = '',
-  accentColor,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   disabled = false,
   style,
   className,
@@ -258,7 +261,10 @@ const ExportSettingsRender: FC<IExportSettingsProps> = ({
         columns={columns}
         value={value}
         exports={savedExports}
-        accentColor={accentColor}
+        colorPrimary={colorPrimary}
+        colorDanger={colorDanger}
+        colorAccent={colorAccent}
+        colorDangerWash={colorDangerWash}
         disabled={disabled}
         i18n={i18n}
         lang={lang}

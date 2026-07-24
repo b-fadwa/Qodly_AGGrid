@@ -25,7 +25,15 @@ import {
   printColumnId,
   savedPrintFormatKey,
 } from './PrintSettings.types';
-import { DATE_FORMATS, SUBTOTAL_FUNCTIONS } from './PrintSettings.utils';
+import { DATE_FORMATS, SUBTOTAL_FUNCTIONS, darkenColor, washColor } from './PrintSettings.utils';
+
+const DEFAULT_COLOR_PRIMARY = '#2B5797';
+const DEFAULT_COLOR_DANGER = '#EC7B80';
+const DEFAULT_COLOR_ACCENT = '#6B8AD4';
+const COLOR_PRIMARY_HOVER_DARKEN_PERCENT = 18;
+const COLOR_WASH_PERCENT = 20;
+const COLOR_SELECTED_OPTION_WASH_PERCENT = 5;
+const COLOR_SELECTED_OPTION_RING_PERCENT = 18;
 
 interface ResolvedColumn extends PrintSettingsColumn {
   colId: string;
@@ -41,7 +49,10 @@ interface PrintSettingsPanelProps {
   columns: PrintSettingsColumn[];
   value: PrintFormatValue;
   formats: SavedPrintFormat[];
-  accentColor?: string;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
   disabled?: boolean;
   i18n?: PrintSettingsI18n;
   lang?: string;
@@ -91,36 +102,17 @@ const buttonStyle = {
   fontSize: '12px',
   fontWeight: 500,
 } as const;
-const primaryButtonStyle = {
-  background: '#2B5797',
-  height: '31px',
-  fontSize: '12px',
-} as const;
 const badgeStyle = {
   color: '#4A5565',
-  backgroundColor: '#F3F3F5',
+  backgroundColor: 'var(--stylebox-bg-color)',
   borderColor: '#0000001A',
   fontSize: '10px',
   fontWeight: 650,
 } as const;
-const selectedOptionStyle = {
-  color: '#2B5797',
-  backgroundColor: '#F8FBFF',
-  borderColor: '#6B8AD4',
-  boxShadow: 'inset 0 0 0 1px rgba(107, 138, 212, 0.18)',
-} as const;
 const unselectedOptionStyle = {
   color: '#4A5565',
-  backgroundColor: '#FAFAFA',
+  backgroundColor: 'var(--stylebox-bg-color)',
   borderColor: '#E5E7EB',
-} as const;
-const trashButtonStyle = {
-  width: '31px',
-  height: '31px',
-  borderRadius: '8px',
-  color: '#EC7B80',
-  borderColor: '#EC7B80',
-  backgroundColor: '#EC7B8033',
 } as const;
 
 function pickI18nString(
@@ -211,9 +203,13 @@ function getPrintColumnTypeLabel(dataType: string | undefined, translation: AgGr
 function PrintColumnTypeBadge({
   dataType,
   translation,
+  accentColor,
+  accentWash,
 }: {
   dataType?: string;
   translation: AgGridTranslation;
+  accentColor: string;
+  accentWash: string;
 }) {
   const dt = String(dataType ?? '')
     .trim()
@@ -235,9 +231,9 @@ function PrintColumnTypeBadge({
     <span
       className="inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 leading-none"
       style={{
-        color: '#64748B',
-        backgroundColor: '#F8FAFC',
-        borderColor: '#E2E8F0',
+        color: accentColor,
+        backgroundColor: accentWash,
+        borderColor: accentColor,
         fontSize: '10px',
         fontWeight: 600,
       }}
@@ -253,6 +249,10 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
   columns,
   value,
   formats,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   disabled = false,
   i18n,
   lang,
@@ -275,6 +275,50 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
   } | null>(null);
   const [selectedFormat, setSelectedFormat] = useState('');
   const [formatName, setFormatName] = useState('');
+
+  const colors = useMemo(() => {
+    const primary = colorPrimary || DEFAULT_COLOR_PRIMARY;
+    const danger = colorDanger || DEFAULT_COLOR_DANGER;
+    const accent = colorAccent || DEFAULT_COLOR_ACCENT;
+    return {
+      primary,
+      primaryHover: darkenColor(primary, COLOR_PRIMARY_HOVER_DARKEN_PERCENT),
+      accent,
+      accentWash: washColor(accent, COLOR_WASH_PERCENT),
+      danger,
+      dangerWash: colorDangerWash || washColor(danger, COLOR_WASH_PERCENT),
+      info: primary,
+    };
+  }, [colorPrimary, colorDanger, colorAccent, colorDangerWash]);
+
+  const primaryButtonStyle = useMemo(
+    () => ({ background: colors.primary, height: '31px', fontSize: '12px' }) as const,
+    [colors.primary],
+  );
+
+  const trashButtonStyle = useMemo(
+    () =>
+      ({
+        width: '31px',
+        height: '31px',
+        borderRadius: '8px',
+        color: colors.danger,
+        borderColor: colors.danger,
+        backgroundColor: colors.dangerWash,
+      }) as const,
+    [colors.danger, colors.dangerWash],
+  );
+
+  const selectedOptionStyle = useMemo(
+    () =>
+      ({
+        color: colors.primary,
+        backgroundColor: washColor(colors.accent, COLOR_SELECTED_OPTION_WASH_PERCENT),
+        borderColor: colors.accent,
+        boxShadow: `inset 0 0 0 1px ${washColor(colors.accent, COLOR_SELECTED_OPTION_RING_PERCENT)}`,
+      }) as const,
+    [colors.primary, colors.accent],
+  );
 
   const resolvedColumns = useMemo<ResolvedColumn[]>(
     () =>
@@ -414,7 +458,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
           className="flex flex-1 flex-col items-center justify-center gap-1 text-slate-400"
           style={{ minHeight: '390px' }}
         >
-          <MdOutlinePrint className="mb-1" style={{ color: '#2B5797', fontSize: '38px' }} />
+          <MdOutlinePrint className="mb-1" style={{ color: colors.primary, fontSize: '38px' }} />
           <strong className="text-sm font-medium" style={{ color: '#364153' }}>
             {t('No columns configured')}
           </strong>
@@ -469,7 +513,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                 <button
                   type="button"
                   className={`${buttonClass} shrink-0 whitespace-nowrap`}
-                  style={{ ...buttonStyle, borderColor: '#6B8AD4', color: '#6B8AD4' }}
+                  style={{ ...buttonStyle, borderColor: colors.accent, color: colors.accent }}
                   onClick={() => setFilteredVisibility(false)}
                   disabled={disabled}
                 >
@@ -478,7 +522,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
               </div>
               <div
                 className="overflow-y-auto rounded-b-lg p-1.5"
-                style={{ height: '292px', backgroundColor: '#FAFAFA' }}
+                style={{ height: '292px', backgroundColor: 'var(--stylebox-bg-color)' }}
               >
                 {filteredColumns.map((column) => {
                   const visible = visibleIds.has(column.colId);
@@ -533,7 +577,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                           className={`pointer-events-none absolute left-1 right-1 h-0.5 rounded-full ${
                             dropIndicator.edge === 'before' ? 'top-0' : 'bottom-0'
                           }`}
-                          style={{ backgroundColor: '#2B5797' }}
+                          style={{ backgroundColor: colors.primary }}
                         />
                       )}
                       <MdDragIndicator className="shrink-0 cursor-grab text-sm text-slate-400" />
@@ -543,7 +587,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                       >
                         <input
                           className="h-3 w-3 disabled:cursor-not-allowed disabled:opacity-50"
-                          style={{ accentColor: '#2B5797' }}
+                          style={{ accentColor: colors.primary }}
                           type="checkbox"
                           checked={visible}
                           disabled={disabled}
@@ -558,7 +602,12 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                           {column.label}
                         </span>
                       </label>
-                      <PrintColumnTypeBadge dataType={column.dataType} translation={t} />
+                      <PrintColumnTypeBadge
+                        dataType={column.dataType}
+                        translation={t}
+                        accentColor={colors.accent}
+                        accentWash={colors.accentWash}
+                      />
                     </div>
                   );
                 })}
@@ -593,7 +642,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                   >
                     <input
                       className="absolute right-2 top-2 h-3 w-3 disabled:cursor-not-allowed disabled:opacity-50 hidden"
-                      style={{ accentColor: '#2B5797' }}
+                      style={{ accentColor: colors.primary }}
                       type="radio"
                       name="representation"
                       checked={value.representation === 'list'}
@@ -617,7 +666,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                   >
                     <input
                       className="absolute right-2 top-2 h-3 w-3 disabled:cursor-not-allowed disabled:opacity-50 hidden"
-                      style={{ accentColor: '#2B5797' }}
+                      style={{ accentColor: colors.primary }}
                       type="radio"
                       name="representation"
                       checked={value.representation === 'table'}
@@ -706,7 +755,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 rounded-md border px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{ ...primaryButtonStyle, borderColor: '#2B5797' }}
+                  style={{ ...primaryButtonStyle, borderColor: colors.primary }}
                   onClick={addSubtotal}
                   disabled={disabled || visibleNumberColumns.length === 0}
                 >
@@ -798,7 +847,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
                               >
                                 <input
                                   className="h-3 w-3 disabled:cursor-not-allowed disabled:opacity-50"
-                                  style={{ accentColor: '#2B5797' }}
+                                  style={{ accentColor: colors.primary }}
                                   type="checkbox"
                                   checked={rule.targetColumns.includes(column.colId)}
                                   disabled={disabled}
@@ -912,8 +961,8 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
           style={{
             ...primaryButtonStyle,
             borderRadius: '6px',
-            border: '1px solid var(--info-font-color)',
-            color: 'var(--info-font-color)',
+            border: `1px solid ${colors.info}`,
+            color: colors.info,
             backgroundColor: 'transparent',
           }}
           onClick={onHelp}
@@ -927,9 +976,9 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
           className="flex items-center justify-center px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           style={{
             ...buttonStyle,
-            color: '#EC7B80',
+            color: colors.danger,
             borderRadius: '6px',
-            border: '1px solid #EC7B80',
+            border: `1px solid ${colors.danger}`,
           }}
           onClick={onCancel}
           disabled={disabled}
@@ -939,7 +988,7 @@ const PrintSettingsPanel: FC<PrintSettingsPanelProps> = ({
         <button
           type="button"
           className="flex items-center justify-center px-3 py-2 text-center text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ ...primaryButtonStyle, borderRadius: '6px', border: '1px solid #2B5797' }}
+          style={{ ...primaryButtonStyle, borderRadius: '6px', border: `1px solid ${colors.primary}` }}
           onClick={onValidate}
           disabled={disabled || columns.length === 0 || visibleIds.size === 0}
         >

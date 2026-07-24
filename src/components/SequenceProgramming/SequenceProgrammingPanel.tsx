@@ -27,6 +27,22 @@ type SequenceProgrammingI18n =
   | undefined;
 type AgGridTranslation = (key: string) => string;
 
+const DEFAULT_COLOR_PRIMARY = '#2B5797';
+const DEFAULT_COLOR_DANGER = '#EC7B80';
+const DEFAULT_COLOR_ACCENT = '#6B8AD4';
+const COLOR_PRIMARY_HOVER_DARKEN_PERCENT = 18;
+const COLOR_WASH_PERCENT = 20;
+
+// color-mix() resolves any valid CSS color — hex, rgb(a), named, or a var() reference —
+// natively in the browser, so it works even when a color prop is itself a theme variable.
+function washColor(color: string, percent: number): string {
+  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
+
+function darkenColor(color: string, percent: number): string {
+  return `color-mix(in srgb, ${color} ${100 - percent}%, black)`;
+}
+
 function pickI18nString(
   entry: Record<string, unknown> | undefined,
   lang?: string,
@@ -67,7 +83,10 @@ interface SequenceProgrammingPanelProps {
   predefinedDocuments: SequenceTranspositionOption[];
   chainedSequences: SavedSequence[];
   value: SequenceProgrammingPayload;
-  accentColor?: string;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
   disabled?: boolean;
   i18n?: SequenceProgrammingI18n;
   lang?: string;
@@ -109,8 +128,20 @@ const TranspositionTree: FC<{
   toggleExpanded: (key: string) => void;
   onSelect: (option: SequenceTranspositionOption) => void;
   emptyLabel: string;
+  primaryColor: string;
+  primaryWash: string;
   depth?: number;
-}> = ({ options, selectedKey, expandedKeys, toggleExpanded, onSelect, emptyLabel, depth = 0 }) => {
+}> = ({
+  options,
+  selectedKey,
+  expandedKeys,
+  toggleExpanded,
+  onSelect,
+  emptyLabel,
+  primaryColor,
+  primaryWash,
+  depth = 0,
+}) => {
   if (!Array.isArray(options) || options.length === 0) {
     if (depth > 0) return null;
     return (
@@ -133,8 +164,8 @@ const TranspositionTree: FC<{
               className="flex w-full items-center gap-2 rounded-md px-2 py-0.5 hover:bg-slate-50"
               style={{
                 paddingLeft: `${8 + depth * 16}px`,
-                background: selected ? 'rgba(43, 87, 151, 0.10)' : undefined,
-                color: selected ? '#2B5797' : '#334155',
+                background: selected ? primaryWash : undefined,
+                color: selected ? primaryColor : '#334155',
                 fontSize: '12px',
                 fontWeight: selected ? 600 : 500,
               }}
@@ -174,6 +205,8 @@ const TranspositionTree: FC<{
                 toggleExpanded={toggleExpanded}
                 onSelect={onSelect}
                 emptyLabel={emptyLabel}
+                primaryColor={primaryColor}
+                primaryWash={primaryWash}
                 depth={depth + 1}
               />
             ) : null}
@@ -195,6 +228,10 @@ const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
   predefinedDocuments,
   chainedSequences,
   value,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   disabled = false,
   i18n,
   lang,
@@ -234,6 +271,21 @@ const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
 
   const t = (key: string) => translateAgGridKey(i18n, lang, key);
   const translation = (key: string) => translateAgGridAlias(t, key, key);
+
+  const colors = useMemo(() => {
+    const primary = colorPrimary || DEFAULT_COLOR_PRIMARY;
+    const danger = colorDanger || DEFAULT_COLOR_DANGER;
+    const accent = colorAccent || DEFAULT_COLOR_ACCENT;
+    return {
+      primary,
+      primaryHover: darkenColor(primary, COLOR_PRIMARY_HOVER_DARKEN_PERCENT),
+      accent,
+      accentWash: washColor(accent, COLOR_WASH_PERCENT),
+      danger,
+      dangerWash: colorDangerWash || washColor(danger, COLOR_WASH_PERCENT),
+      info: primary,
+    };
+  }, [colorPrimary, colorDanger, colorAccent, colorDangerWash]);
 
   const normalizedFilters = useMemo(
     () =>
@@ -580,9 +632,9 @@ const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
                           width: '31px',
                           height: '31px',
                           borderRadius: '8px',
-                          color: '#EC7B80',
-                          borderColor: '#EC7B80',
-                          backgroundColor: '#EC7B801A',
+                          color: colors.danger,
+                          borderColor: colors.danger,
+                          backgroundColor: washColor(colors.danger, 10),
                         }}
                         onClick={() => removeFilter(index)}
                         disabled={normalizedFilters.length === 1}
@@ -665,8 +717,8 @@ const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
                       className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2 text-slate-700"
                       style={{
                         fontSize: '12px',
-                        borderColor: selectedOperation === option ? '#2B5797' : undefined,
-                        color: selectedOperation === option ? '#2B5797' : undefined,
+                        borderColor: selectedOperation === option ? colors.primary : undefined,
+                        color: selectedOperation === option ? colors.primary : undefined,
                       }}
                     >
                       <input
@@ -801,6 +853,8 @@ const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
                             ? translation('Choose a transposition type')
                             : translation('No transposition available')
                         }
+                        primaryColor={colors.primary}
+                        primaryWash={washColor(colors.primary, 10)}
                       />
                     </div>
                   </div>
@@ -864,9 +918,9 @@ const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
                     width: '31px',
                     height: '31px',
                     borderRadius: '8px',
-                    color: '#EC7B80',
-                    borderColor: '#EC7B80',
-                    backgroundColor: '#EC7B8033',
+                    color: colors.danger,
+                    borderColor: colors.danger,
+                    backgroundColor: colors.dangerWash,
                   }}
                   onClick={handleDeletePressed}
                   disabled={!selectedSequenceKey}
@@ -917,8 +971,8 @@ const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
             style={{
               height: '31px',
               borderRadius: '6px',
-              borderColor: '#EC7B80',
-              color: '#EC7B80',
+              borderColor: colors.danger,
+              color: colors.danger,
               fontSize: '12px',
             }}
             onClick={onCancel}
@@ -928,7 +982,7 @@ const SequenceProgrammingPanel: FC<SequenceProgrammingPanelProps> = ({
           <button
             type="button"
             className="flex items-center justify-center rounded-md border px-3 py-2 text-center text-sm text-white"
-            style={{ background: '#2B5797', height: '31px', fontSize: '12px' }}
+            style={{ background: colors.primary, height: '31px', fontSize: '12px' }}
             onClick={() => onApply(sequenceToPersist())}
           >
             {translation('Apply')}

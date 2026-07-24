@@ -7,7 +7,10 @@ import type { ExportFormatValue, SavedExportFormat } from './ExportSettings.type
 
 const ExportSettingsBuild: FC<IExportSettingsProps> = ({
   state,
-  accentColor,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   disabled,
   style,
   className,
@@ -54,7 +57,10 @@ const ExportSettingsBuild: FC<IExportSettingsProps> = ({
         columns={columns}
         value={value}
         exports={exports}
-        accentColor={accentColor}
+        colorPrimary={colorPrimary}
+        colorDanger={colorDanger}
+        colorAccent={colorAccent}
+        colorDangerWash={colorDangerWash}
         disabled={disabled}
         i18n={i18n}
         lang={lang}

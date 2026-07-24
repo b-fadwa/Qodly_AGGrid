@@ -298,6 +298,10 @@ export default {
     showToolbarSavedViews: true,
     showRecordCount: true,
     showRowNumbers: false,
+    colorPrimary: '#2B5797',
+    colorDanger: '#EC7B80',
+    colorAccent: '#6B8AD4',
+    colorDangerWash: 'rgba(236, 123, 128, 0.2)',
   },
 } as T4DComponentConfig<IAgGridProps>;
 
@@ -378,6 +382,10 @@ export interface IAgGridProps extends webforms.ComponentProps {
   /** Pinned left row index column (not part of Columns / saved colDef). */
   showRowNumbers?: boolean;
   rowCssField?: string;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
 }
 
 export interface IColumn {

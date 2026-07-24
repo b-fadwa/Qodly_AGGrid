@@ -6,6 +6,7 @@ export type AgGridSelectionHeaderParams = CustomHeaderProps & {
   ariaLabelSelectAll?: string;
   /** When false, header is empty (select-all only makes sense if all rows fit in one infinite block). */
   showSelectAllCheckbox?: boolean;
+  colorPrimary?: string;
 };
 
 function isSelectableDataRow(node: IRowNode): boolean {
@@ -34,7 +35,7 @@ function countSelectionState(api: AgGridSelectionHeaderParams['api']) {
 
 const AgGridSelectionHeader = forwardRef<{ refresh: () => boolean }, AgGridSelectionHeaderParams>(
   function AgGridSelectionHeader(props, ref) {
-    const { api, ariaLabelSelectAll, showSelectAllCheckbox = true } = props;
+    const { api, ariaLabelSelectAll, showSelectAllCheckbox = true, colorPrimary = '#2B5797' } = props;
     const inputRef = useRef<HTMLInputElement>(null);
 
     const compute = useCallback(() => countSelectionState(api), [api]);
@@ -107,8 +108,8 @@ const AgGridSelectionHeader = forwardRef<{ refresh: () => boolean }, AgGridSelec
         <input
           ref={inputRef}
           type="checkbox"
-          className="cursor-pointer rounded border border-gray-300 accent-[#2B5797]"
-          style={{ height: 14, width: 14 }}
+          className="cursor-pointer rounded border border-gray-300"
+          style={{ height: 14, width: 14, accentColor: colorPrimary }}
           checked={allSelected}
           onChange={onChange}
           aria-label={ariaLabelSelectAll ?? 'Select all rows'}

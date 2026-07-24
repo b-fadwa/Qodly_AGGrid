@@ -611,6 +611,29 @@ const iconSettings: TSetting[] = [
   },
 ];
 
+const designSystemSettings: TSetting[] = [
+  {
+    key: 'colorPrimary',
+    label: 'Primary color',
+    type: ESetting.COLOR_PICKER,
+  },
+  {
+    key: 'colorDanger',
+    label: 'Danger color',
+    type: ESetting.COLOR_PICKER,
+  },
+  {
+    key: 'colorAccent',
+    label: 'Accent color',
+    type: ESetting.COLOR_PICKER,
+  },
+  {
+    key: 'colorDangerWash',
+    label: 'Danger wash color',
+    type: ESetting.COLOR_PICKER,
+  },
+];
+
 const Settings: TSetting[] = [
   {
     key: 'properties',
@@ -678,6 +701,12 @@ const Settings: TSetting[] = [
     type: ESetting.GROUP,
     components: iconSettings,
   },
+  {
+    key: 'designSystem',
+    label: 'Design colors',
+    type: ESetting.GROUP,
+    components: designSystemSettings,
+  },
 ];
 
 export const BasicSettings: TSetting[] = [
@@ -688,6 +717,7 @@ export const BasicSettings: TSetting[] = [
   ...calculatedSearchSettings,
   ...commonSettings,
   ...basicSettings,
+  ...designSystemSettings,
 ];
 
 export default Settings;

@@ -6,6 +6,7 @@ import type { SavedFilter, SavedSort } from '../state/types';
 import type { Translation } from '../state/sorts';
 import { isHiddenIdColumn, findSavedRecord, savedRecordKey } from '../state/gridState';
 import { QueryBuilder, type QueryBuilderHandle } from './QueryBuilder';
+import { washColor } from '../AgGrid.colors';
 
 type FilterSearchScopeKind = 'global' | 'selection';
 type FilterSearchTypeKind = 'replace' | 'add' | 'remove';
@@ -23,6 +24,10 @@ interface FilterDialogProps {
   open: boolean;
   onClose: () => void;
   translation: Translation;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
   dateSaisieLibreTranslation?: (key: string) => string;
   i18n?: any;
   lang?: string;
@@ -71,6 +76,10 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   open,
   onClose,
   translation,
+  colorPrimary = '#2B5797',
+  colorDanger = '#EC7B80',
+  colorAccent = '#6B8AD4',
+  colorDangerWash,
   dateSaisieLibreTranslation,
   i18n,
   lang,
@@ -95,6 +104,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
   selectedFilter,
   setSelectedFilter,
 }) => {
+  const dangerWash = colorDangerWash || washColor(colorDanger, 20);
   const [filterName, setFilterName] = useState('');
   const [linkedSort, setLinkedSort] = useState('');
   const [draftFilterModel, setDraftFilterModel] = useState<any>(filterModel);
@@ -233,6 +243,10 @@ export const FilterDialog: FC<FilterDialogProps> = ({
             ref={queryBuilderRef}
             deferEmit
             translation={translation}
+            colorPrimary={colorPrimary}
+            colorDanger={colorDanger}
+            colorAccent={colorAccent}
+            colorDangerWash={dangerWash}
             dateSaisieLibreTranslation={dateSaisieLibreTranslation}
             columns={visibleColumns}
             i18n={i18n}
@@ -298,7 +312,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                         width: '14px',
                         height: '14px',
                         flexShrink: 0,
-                        accentColor: '#2B5797',
+                        accentColor: colorPrimary,
                       }}
                     />
                     <span>{translation(label)}</span>
@@ -336,7 +350,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                         width: '14px',
                         height: '14px',
                         flexShrink: 0,
-                        accentColor: '#2B5797',
+                        accentColor: colorPrimary,
                       }}
                     />
                     <span>{translation(label)}</span>
@@ -419,9 +433,9 @@ export const FilterDialog: FC<FilterDialogProps> = ({
                   width: '31px',
                   height: '31px',
                   borderRadius: '8px',
-                  color: '#EC7B80',
-                  borderColor: '#EC7B80',
-                  backgroundColor: '#EC7B8033',
+                  color: colorDanger,
+                  borderColor: colorDanger,
+                  backgroundColor: dangerWash,
                 }}
                 onClick={() => {
                   if (!selectedFilter) return;
@@ -491,7 +505,7 @@ export const FilterDialog: FC<FilterDialogProps> = ({
               onClose();
             }}
             style={{
-              background: '#2B5797',
+              background: colorPrimary,
               height: '31px',
               fontSize: '12px',
             }}

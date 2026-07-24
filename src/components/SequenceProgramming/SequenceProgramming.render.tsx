@@ -40,7 +40,10 @@ const SequenceProgrammingRender: FC<ISequenceProgrammingProps> = ({
   printFormats: printFormatsBinding = '',
   predefinedDocuments: predefinedDocumentsBinding = '',
   chainedSequences: chainedSequencesBinding = '',
-  accentColor,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   disabled = false,
   style,
   className,
@@ -439,7 +442,10 @@ const SequenceProgrammingRender: FC<ISequenceProgrammingProps> = ({
         predefinedDocuments={predefinedDocuments}
         chainedSequences={chainedSequences}
         value={value}
-        accentColor={accentColor}
+        colorPrimary={colorPrimary}
+        colorDanger={colorDanger}
+        colorAccent={colorAccent}
+        colorDangerWash={colorDangerWash}
         disabled={disabled}
         i18n={i18n}
         lang={lang}

@@ -28,7 +28,10 @@ export interface ISequenceProgrammingProps extends webforms.ComponentProps {
   predefinedDocuments?: string;
   /** Scalar array of chained-sequence choices (SavedSequence-shaped), scoped by the last transposition item picked — options 6 & 7. */
   chainedSequences?: string;
-  accentColor?: string;
+  colorPrimary?: string;
+  colorDanger?: string;
+  colorAccent?: string;
+  colorDangerWash?: string;
 }
 
 export default {
@@ -109,7 +112,10 @@ export default {
     printFormats: '',
     predefinedDocuments: '',
     chainedSequences: '',
-    accentColor: '#6B8AD4',
+    colorPrimary: '#2B5797',
+    colorDanger: '#EC7B80',
+    colorAccent: '#6B8AD4',
+    colorDangerWash: 'rgba(236, 123, 128, 0.2)',
     style: { width: '100%', height: '620px' },
   },
 } as T4DComponentConfig<ISequenceProgrammingProps>;

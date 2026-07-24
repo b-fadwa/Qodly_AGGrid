@@ -61,8 +61,23 @@ const datasourceSettings: TSetting[] = [
 
 const appearanceSettings: TSetting[] = [
   {
-    key: 'accentColor',
+    key: 'colorPrimary',
+    label: 'Primary color',
+    type: ESetting.COLOR_PICKER,
+  },
+  {
+    key: 'colorDanger',
+    label: 'Danger color',
+    type: ESetting.COLOR_PICKER,
+  },
+  {
+    key: 'colorAccent',
     label: 'Accent color',
+    type: ESetting.COLOR_PICKER,
+  },
+  {
+    key: 'colorDangerWash',
+    label: 'Danger wash color',
     type: ESetting.COLOR_PICKER,
   },
 ];

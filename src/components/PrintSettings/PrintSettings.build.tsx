@@ -7,7 +7,10 @@ import type { PrintFormatValue, SavedPrintFormat } from './PrintSettings.types';
 
 const PrintSettingsBuild: FC<IPrintSettingsProps> = ({
   state,
-  accentColor,
+  colorPrimary,
+  colorDanger,
+  colorAccent,
+  colorDangerWash,
   disabled,
   style,
   className,
@@ -54,7 +57,10 @@ const PrintSettingsBuild: FC<IPrintSettingsProps> = ({
         columns={columns}
         value={value}
         formats={formats}
-        accentColor={accentColor}
+        colorPrimary={colorPrimary}
+        colorDanger={colorDanger}
+        colorAccent={colorAccent}
+        colorDangerWash={colorDangerWash}
         disabled={disabled}
         i18n={i18n}
         lang={lang}
