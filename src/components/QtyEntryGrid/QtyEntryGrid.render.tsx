@@ -167,6 +167,7 @@ const RowNumberCell: FC<ICellRendererParams> = (params) => (
 const BoolCheckboxCell = (params: any) => {
   const { value, node, colDef, context } = params;
   const gridDisabled = !!context?.gridDisabled;
+  const colorPrimary = context?.colorPrimary || '#2B5797';
 
   return (
     <div className="flex items-center justify-center h-full">
@@ -180,7 +181,12 @@ const BoolCheckboxCell = (params: any) => {
             node.setDataValue(colDef.field, e.target.checked);
           }
         }}
-        style={{ width: 14, height: 14, cursor: gridDisabled ? 'default' : 'pointer' }}
+        style={{
+          width: 14,
+          height: 14,
+          cursor: gridDisabled ? 'default' : 'pointer',
+          accentColor: colorPrimary,
+        }}
       />
     </div>
   );
@@ -212,6 +218,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
   columns,
   rowCssField,
   spacing,
+  colorPrimary,
   accentColor,
   backgroundColor,
   textColor,
@@ -921,7 +928,7 @@ const QtyEntryGrid: FC<IQtyEntryGridProps> = ({
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
           getRowClass={getRowClass}
-          context={{ gridDisabled: disabled }}
+          context={{ gridDisabled: disabled, colorPrimary }}
           theme={theme}
           className={cn({ 'pointer-events-none opacity-40': disabled })}
         />

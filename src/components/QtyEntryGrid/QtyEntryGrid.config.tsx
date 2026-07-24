@@ -214,6 +214,7 @@ export default {
     enableCopySelectedValue: false,
     rowCssField: '',
     showRowNumbers: false,
+    colorPrimary: '#2B5797',
   },
 } as T4DComponentConfig<IQtyEntryGridProps>;
 
@@ -238,6 +239,7 @@ export interface IQtyEntryGridProps extends webforms.ComponentProps {
   enableCopySelectedValue?: boolean;
   enableCopySelectedRow?: boolean;
   showRowNumbers?: boolean;
+  colorPrimary?: string;
 }
 
 export interface IQtyEntryColumn {

@@ -212,6 +212,12 @@ const generalSettings: TSetting[] = [
     type: ESetting.COLOR_PICKER,
     defaultValue: '',
   },
+  {
+    key: 'colorPrimary',
+    label: 'Primary color',
+    type: ESetting.COLOR_PICKER,
+    defaultValue: '#2B5797',
+  },
 ];
 
 const Settings: TSetting[] = [
