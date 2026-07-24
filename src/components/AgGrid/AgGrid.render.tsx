@@ -3417,7 +3417,7 @@ const AgGrid: FC<IAgGridProps> = ({
                           className="flex w-full cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors"
                           style={{
                             borderColor: selected ? colors.primary : '#E5E7EB',
-                            backgroundColor: selected ? '#F3F3F5' : '#FFFFFF',
+                            backgroundColor: selected ? 'var(--stylebox-bg-color)' : '#FFFFFF',
                           }}
                           aria-pressed={selected}
                           onClick={() => applyUserCopyMode(opt.value)}
@@ -3427,7 +3427,9 @@ const AgGrid: FC<IAgGridProps> = ({
                             style={{
                               borderColor: selected ? colors.primary : '#CBD5E1',
                               backgroundColor: selected ? colors.primary : 'transparent',
-                              boxShadow: selected ? 'inset 0 0 0 3px #F3F3F5' : undefined,
+                              boxShadow: selected
+                                ? 'inset 0 0 0 3px var(--stylebox-bg-color)'
+                                : undefined,
                             }}
                             aria-hidden
                           />

@@ -180,7 +180,7 @@ const styles = {
     maxWidth: '350px',
     maxHeight: '70vh',
     overflow: 'auto',
-    background: '#F3F4F6',
+    background: 'var(--stylebox-bg-color)',
     border: '1px solid #0000001A',
     borderRadius: '8px',
     boxShadow: '0 16px 24px rgba(0, 0, 0, 0.12)',
@@ -539,7 +539,12 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   name="header-filter-scope"
                   checked={scopeOption === value}
                   onChange={() => setScopeOption(value as FilterSearchScopeKind)}
-                  style={{ width: '14px', height: '14px', flexShrink: 0, accentColor: colorPrimary }}
+                  style={{
+                    width: '14px',
+                    height: '14px',
+                    flexShrink: 0,
+                    accentColor: colorPrimary,
+                  }}
                 />
                 <span>{translation(label)}</span>
               </label>
@@ -572,7 +577,12 @@ export const HeaderFilterPopup: FC<HeaderFilterPopupProps> = ({
                   name="header-filter-search-type"
                   checked={searchTypeOption === value}
                   onChange={() => setSearchTypeOption(value as FilterSearchTypeKind)}
-                  style={{ width: '14px', height: '14px', flexShrink: 0, accentColor: colorPrimary }}
+                  style={{
+                    width: '14px',
+                    height: '14px',
+                    flexShrink: 0,
+                    accentColor: colorPrimary,
+                  }}
                 />
                 <span>{translation(label)}</span>
               </label>

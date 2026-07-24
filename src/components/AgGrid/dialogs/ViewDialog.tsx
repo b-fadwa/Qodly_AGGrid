@@ -411,7 +411,7 @@ export const ViewDialog: FC<ViewDialogProps> = ({
           <div
             className="h-96 space-y-1 overflow-y-auto rounded-lg border p-2"
             style={{
-              backgroundColor: '#FAFAFA',
+              backgroundColor: 'var(--stylebox-bg-color)',
               borderColor: '#D1D5DC',
               borderRadius: '10px',
             }}

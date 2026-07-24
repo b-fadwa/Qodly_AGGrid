@@ -169,7 +169,7 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                         <select
                           className="min-w-0 flex-1 px-2 py-1"
                           style={{
-                            backgroundColor: '#F3F3F5',
+                            backgroundColor: 'var(--stylebox-bg-color)',
                             borderRadius: '8px',
                             height: '36px',
                             fontSize: '14px',
@@ -187,7 +187,7 @@ export const SortingDialog: FC<SortingDialogProps> = ({
                         <select
                           className="w-28 rounded-md"
                           style={{
-                            backgroundColor: '#F3F3F5',
+                            backgroundColor: 'var(--stylebox-bg-color)',
                             borderRadius: '8px',
                             height: '36px',
                             width: '128px',
